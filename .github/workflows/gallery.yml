@@ -1,0 +1,56 @@
+name: Gallery
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/gallery*']
+    paths:
+      - 'packages/gallery-*/**'
+      - 'deployment/gallery/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'mise.toml'
+      - '.pnpmfile.cjs'
+      - '.github/workflows/gallery.yml'
+  pull_request:
+    branches: ['codex/gallery']
+    paths:
+      - 'packages/gallery-*/**'
+      - 'deployment/gallery/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'mise.toml'
+      - '.pnpmfile.cjs'
+      - '.github/workflows/gallery.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gallery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, same as upstream baseline
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0, same as upstream baseline
+        with:
+          node-version: '24.15.0'
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10, same as upstream baseline
+        with:
+          version: '11.22.0'
+          run_install: false
+      - name: Install only Gallery workspace dependencies
+        run: pnpm --filter '@gallery/*' install --frozen-lockfile --ignore-scripts
+      - run: pnpm gallery:doctor
+      - run: pnpm gallery:check
+      - run: pnpm gallery:test
+      - run: pnpm gallery:build
+      - run: pnpm gallery:smoke

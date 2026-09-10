@@ -1,0 +1,27 @@
+{
+  "name": "@gallery/admin",
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "dev": "vite dev --host 127.0.0.1 --port 3101 --strictPort",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "build": "vite build",
+    "start": "node build"
+  },
+  "dependencies": {
+    "@gallery/core": "workspace:*",
+    "@gallery/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "5.5.7",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "7.3.0",
+    "@types/node": "24.13.3",
+    "svelte": "5.56.9",
+    "svelte-check": "4.7.6",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vite": "8.2.2"
+  }
+}

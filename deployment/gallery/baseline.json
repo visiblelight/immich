@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "galleryVersion": "0.1.0-dev.0",
+  "phase": "A-foundation-complete",
+  "immich": {
+    "sourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056",
+    "sourceVersion": "3.2.0-rc.0",
+    "upstream": "https://github.com/immich-app/immich.git",
+    "sourceVerifiedInUpstreamHistory": true,
+    "observedUpstreamMain": "d6dc6dcc3b18635f3389403f72a9e2d619e5f83f",
+    "upgradeCandidate": {
+      "tag": "v3.2.0",
+      "commit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a",
+      "validated": false
+    }
+  },
+  "toolchain": {
+    "node": "24.15.0",
+    "pnpm": "11.22.0"
+  },
+  "productionReady": false,
+  "databaseMigrationsApplied": false
+}

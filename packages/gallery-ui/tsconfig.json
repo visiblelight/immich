@@ -1,0 +1,4 @@
+{
+  "extends": "../../deployment/gallery/tsconfig.base.json",
+  "include": ["src/**/*.ts", "src/**/*.svelte"]
+}

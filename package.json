@@ -5,6 +5,13 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "gallery:doctor": "node deployment/gallery/scripts/doctor.mjs",
+    "gallery:check": "pnpm --filter '@gallery/*' -r run check",
+    "gallery:build": "pnpm --filter '@gallery/*' -r run build",
+    "gallery:test": "pnpm --filter '@gallery/*' -r --if-present run test",
+    "gallery:dev:public": "pnpm --filter @gallery/public dev",
+    "gallery:dev:admin": "pnpm --filter @gallery/admin dev",
+    "gallery:smoke": "node deployment/gallery/scripts/smoke.mjs",
     "format": "prettier --cache --check i18n/",
     "format:fix": "prettier --cache --write --list-different i18n"
   },
