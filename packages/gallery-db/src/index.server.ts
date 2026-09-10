@@ -10,3 +10,14 @@ export function createDatabase<Schema>(connectionString: string, service: Databa
     dialect: new PostgresDialect({ pool: new pg.Pool(databaseConfig(connectionString, service)) }),
   });
 }
+
+export {
+  listSourceAssets,
+  listSourceAlbums,
+  qualifySourceSelection,
+  type SourceAsset,
+  type SourceFilters,
+} from './source.server.ts';
+export { readPublishedDerivative, type MediaRoot, type MediaVariant } from './media.server.ts';
+export { getMapClusters, type MapRequest, type MapCluster } from './map.server.ts';
+export { assertDatabaseCompatibility } from './compatibility.server.ts';

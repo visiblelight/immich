@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "galleryVersion": "0.1.0-dev.0",
-  "phase": "A-foundation-complete",
+  "phase": "B-data-permissions-validated",
   "immich": {
     "sourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056",
     "sourceVersion": "3.2.0-rc.0",
@@ -19,5 +19,19 @@
     "pnpm": "11.22.0"
   },
   "productionReady": false,
-  "databaseMigrationsApplied": false
+  "databaseMigrationsApplied": false,
+  "databaseVerification": {
+    "postgresVersion": "14.19",
+    "isolationOnly": true,
+    "businessTables": 12,
+    "migrationTables": 1,
+    "controlledViews": 11,
+    "migrations": [
+      "0001",
+      "0002"
+    ],
+    "integrationTestsPassed": 16,
+    "syntheticMapPoints": 10000,
+    "immichOriginalMigrationAndDriftChecksPassed": true
+  }
 }

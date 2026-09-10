@@ -13,7 +13,10 @@
     "gallery:dev:admin": "pnpm --filter @gallery/admin dev",
     "gallery:smoke": "node deployment/gallery/scripts/smoke.mjs",
     "format": "prettier --cache --check i18n/",
-    "format:fix": "prettier --cache --write --list-different i18n"
+    "format:fix": "prettier --cache --write --list-different i18n",
+    "gallery:test:db": "node deployment/gallery/scripts/database-check.mjs",
+    "gallery:db": "node packages/gallery-db/scripts/database.ts",
+    "gallery:prepare:db-tests": "node deployment/gallery/scripts/prepare-database-check.mjs"
   },
   "packageManager": "pnpm@11.22.0",
   "engines": {

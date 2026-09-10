@@ -1,6 +1,6 @@
 # Gallery 数据库设计与完整数据字典
 
-状态：已确认。版本：0.1，2026-09-10。本文未执行任何建表操作。
+状态：设计已确认；阶段 B 已生成迁移并在隔离 PostgreSQL 14 验证。版本：0.2，2026-09-10。现有 Immich 库未执行 Gallery 建表。
 
 ## 1. 设计边界
 
@@ -308,7 +308,7 @@ erDiagram
 
 ## 19. 数据库角色与视图
 
-拟建对象均属于 gallery，名称待迁移落地时固定：
+对象均属于 gallery；迁移已固定以下角色与视图名称：
 
 | 角色 | 授权范围 |
 |---|---|
@@ -317,7 +317,7 @@ erDiagram
 | `gallery_admin` | 管理业务表读写、会话凭据、受限资源投影视图；快照仅 INSERT/SELECT，日志仅 INSERT；不写来源范围及迁移表 |
 | `gallery_public` | 只读公开投影视图；不能直接读 Immich 核心表、用户、会话、草稿、历史快照 |
 
-受控投影至少包含：admin_source_asset、admin_source_album、admin_source_tag、published_album、published_photo、published_site、published_homepage、published_cover。地图通过 published_photo 的已脱敏最新坐标查询，不另存聚合表。
+受控投影至少包含：admin_source_asset、admin_source_album、admin_source_tag、published_album、published_photo、published_site、published_homepage、published_cover。另有 admin_source_album_asset、admin_source_tag_asset 和 published_media，共 11 个视图。地图通过 published_photo 的已脱敏最新坐标查询，不另存聚合表。
 
 初始化分为两层：首次由具备建角色及授权能力的数据库管理连接创建角色、Gallery schema，并给 NOLOGIN 视图所有者授予明确的 Immich 列级只读权限；后续普通 Gallery 迁移使用 gallery_migrator。不能假定只拥有 gallery schema 的角色可以自行授权访问 public 表。管理连接不进入常驻容器，初始化命令不把凭据输出到日志。
 
@@ -333,4 +333,5 @@ erDiagram
 - 已发布相册本期只下线；历史快照先保留，不提供任意历史 URL 或管理界面。后续清理必须排除当前指针，不能删到在线内容。
 - 第一批迁移顺序：账号 → site（暂不加 hero FK）→ 来源范围 → album（暂不加 current FK）→ draft/photo → release/release_photo → 补组合 FK、hero FK → 首页、审计、视图和授权。
 - 所有自定义对象由独立 Gallery 迁移管理，不修改 Immich 迁移记录。真实 SQL、约束错误回归与备份恢复由技术验证阶段交付。
-- 当前文档是完整的逻辑字段设计，迁移尚未生成；不将其中任何表计为已存在。
+- 本阶段已生成 0001/0002 迁移及初始化 SQL，并在临时库建立全部 13 张表。迁移记录表由迁移器创建；真实图库仍未初始化 Gallery。
+- 已验证内容与应用层待实现规则分别记录于[阶段 B 验收](../delivery/phase-b.md)；可复现操作见[数据库开发说明](../development/database.md)。

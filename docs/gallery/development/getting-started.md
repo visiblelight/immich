@@ -54,7 +54,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:dev:admin
 | 接口 | 阶段 A 预期 |
 |---|---|
 | GET /health/live | 200，service/version/status；只说明 Node 进程可响应 |
-| GET /health/ready | 503，foundation-only；数据库与授权未验证 |
+| GET /health/ready | 503，foundation-only；应用尚未接入数据库与登录授权 |
 | GET / | 503，站点未开放 |
 
 gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证以上行为并自动停止，仅依赖本地回环网络，不需要数据库。完整视觉方向仍按已确认流程另行提交。
@@ -63,7 +63,7 @@ gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证
 
 只能从 `@gallery/db/server` 引入连接工厂；不能在组件和通用 load 文件里使用。工厂要求显式连接串及 public/admin 服务类型，没有默认连接串，不会读取 Immich 的环境变量或在模块导入时连接数据库。
 
-当前仅有配置防误用检查：public 必须使用 gallery_public，admin 必须使用 gallery_admin，拒绝通过 URL 查询参数覆盖角色。实际数据库 GRANT/视图隔离属于阶段 B，不能把角色名字检查当成数据库权限保证。远程数据库 TLS 配置也在阶段 B 以结构化选项设计；不要自行拼接 URL 参数绕过限制。
+运行配置要求 public 使用 gallery_public、admin 使用 gallery_admin，拒绝通过 URL 查询参数覆盖角色。阶段 B 已在隔离 PG14 中验证实际 GRANT、受控视图和资源适配；操作见[数据库开发说明](database.md)。后续接入应用时必须运行角色／权限／结构兼容检查，不能只检查角色名。远程 TLS 尚未验收，随部署环境配置验证，不自行拼接 URL 参数绕过限制。
 
 `deployment/gallery/.env.example` 与两个服务的 `.env.example` 只提供明确配置位置，不包含真实凭据。阶段 A 不自动加载它们，不打开任何现有数据库。
 
