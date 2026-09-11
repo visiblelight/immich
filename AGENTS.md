@@ -15,4 +15,5 @@ These instructions apply to Gallery work. Preserve Immich's existing architectur
 - Do not edit Immich tables, migrations or media for routine Gallery functionality. Add Gallery migrations and matching data-dictionary changes together.
 - Frontend visual direction is an explicit user review milestone. Infrastructure scaffolding is not an approved product design.
 - Existing user changes must be preserved; do not stage unrelated files or push remote branches without the relevant authorization.
+- 此后新建的所有 Git commit（包括合并提交）必须使用中文标题，并附详细中文正文，说明问题或目的、主要改动、验证结果，以及适用的兼容性、数据迁移或回滚注意事项。可以保留必要的技术名称和 Conventional Commits 前缀，但不能仅有一句标题。
 - This project targets local development and Docker Compose. Do not initialize a second repository, register a hosted Site, change databases, or replace the approved stack to follow a generic site template.
