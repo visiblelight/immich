@@ -1,6 +1,6 @@
 # Gallery 运行、账号维护与恢复
 
-2026-09-11。适用于当前本地 MVP；公网 DNS/TLS 与完整 Immich 应用升级仍需单独验收。Gallery 的数据、部署代码及文档保持在同一个产品分支，运行时不执行自动迁移。
+2026-09-11。适用于当前本地 MVP；公网 DNS/TLS、真机与 ML 仍需单独验收；稳定版照片工作流升级见[升级记录](../delivery/immich-v3.2.0.md)。Gallery 的数据、部署代码及文档保持在同一个产品分支，运行时不执行自动迁移。
 
 ## 管理员维护
 
@@ -74,3 +74,7 @@ GALLERY_UPGRADE_CHECK=1 sh deployment/gallery/scripts/pnpm.sh gallery:test:db /a
 ```
 
 准备命令从 Git 对象提取候选服务端源码，单独编译原始迁移／结构检查代码，使用已锁定的隔离验证依赖；不编译或启动完整 Immich 服务。输出保存于 `.gallery-local/upgrade/` 与 `.gallery-local/phase-b/`。不能以该结果替代完整服务端／Web／移动备份客户端升级验收，亦不能把它写成“生产升级完成”。完整升级仍需独立工作树、备份副本、候选 Immich 服务和 Gallery 端到端回归后再合并。
+
+## v3.2.0 完整照片工作流升级
+
+已在独立工作树、数据库和媒体副本中完成官方稳定镜像启动、Web 登录看图、Gallery 发布链路与旧版备份恢复。脚本、镜像、步骤及验收边界见[升级记录](../delivery/immich-v3.2.0.md)。上文候选数据库检查仍是快速预检，不替代这一完整流程。

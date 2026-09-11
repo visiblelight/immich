@@ -3,18 +3,19 @@
   "galleryVersion": "0.1.0-dev.0",
   "phase": "D-E-complete-F-local-validation",
   "immich": {
-    "sourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056",
-    "sourceVersion": "3.2.0-rc.0",
+    "sourceCommit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a",
+    "sourceVersion": "3.2.0",
     "upstream": "https://github.com/immich-app/immich.git",
     "sourceVerifiedInUpstreamHistory": true,
     "observedUpstreamMain": "d6dc6dcc3b18635f3389403f72a9e2d619e5f83f",
     "upgradeCandidate": {
       "tag": "v3.2.0",
       "commit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a",
-      "validated": false,
+      "validated": true,
       "databaseMigrationAndDriftValidated": true,
-      "validationScope": "original migration/schema runtime; full Immich application upgrade pending"
-    }
+      "validationScope": "isolated full official server/Web, Gallery photo flow, and restored previous-server/Gallery rollback; mobile and ML excluded"
+    },
+    "previousSourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056"
   },
   "toolchain": {
     "node": "24.15.0",
@@ -28,11 +29,7 @@
     "businessTables": 13,
     "migrationTables": 1,
     "controlledViews": 11,
-    "migrations": [
-      "0001",
-      "0002",
-      "0003"
-    ],
+    "migrations": ["0001", "0002", "0003"],
     "integrationTestsPassed": 20,
     "syntheticMapPoints": 10000,
     "immichOriginalMigrationAndDriftChecksPassed": true,
@@ -43,6 +40,8 @@
     "composeLocal": true,
     "syntheticDatabaseRestore": true,
     "publicDomainsAndTls": false,
-    "physicalMobile": false
+    "physicalMobile": false,
+    "fullImmichPhotoUpgrade": true,
+    "realBackupCopyRestore": true
   }
 }

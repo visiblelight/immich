@@ -1,0 +1,99 @@
+# Only for a protected local copy of the development database and media.
+# All service names/ports/network/storage are isolated from the working environment.
+services:
+  gateway:
+    image: ${TEST_GALLERY_IMAGE:-gallery:immich-v3.2.0}
+    read_only: true
+    networks: [default, access]
+    ports: ['127.0.0.1:45432:45432', '127.0.0.1:40283:40283', '127.0.0.1:4100:4100', '127.0.0.1:4101:4101']
+    healthcheck: { disable: true }
+    command:
+      - node
+      - -e
+      - "const net=require('node:net');for(const [port,host,target] of [[45432,'database',5432],[40283,'immich',2283],[4100,'public',3000],[4101,'admin',3000]])net.createServer(s=>{const t=net.connect(target,host);s.on('error',()=>t.destroy());t.on('error',()=>s.destroy());s.pipe(t).pipe(s);}).listen(port,'0.0.0.0');"
+  database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    environment:
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:?}
+      POSTGRES_DB: immich
+    tmpfs: [/var/lib/postgresql/data]
+    shm_size: 128mb
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d immich]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: docker.io/valkey/valkey:9@sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf
+  immich:
+    image: ${TEST_IMMICH_IMAGE:?Set a verified image digest}
+    environment:
+      DB_HOSTNAME: database
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${TEST_DB_PASSWORD}
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: redis
+      IMMICH_LOG_LEVEL: warn
+    volumes:
+      - type: bind
+        source: ${TEST_MEDIA:?Copy media before starting}
+        target: /data
+        bind: { create_host_path: false }
+    depends_on:
+      database: { condition: service_healthy }
+      redis: { condition: service_started }
+  public:
+    image: ${TEST_GALLERY_IMAGE:-gallery:immich-v3.2.0}
+    user: node
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      GALLERY_DATABASE_URL: ${TEST_PUBLIC_DATABASE_URL:?}
+      GALLERY_PUBLIC_ORIGIN: http://127.0.0.1:4100
+      GALLERY_MEDIA_SOURCE_ROOT: /data/thumbs
+      GALLERY_MEDIA_MOUNTED_ROOT: /media/thumbs
+      GALLERY_DESIGN_PREVIEW: '0'
+      ORIGIN: http://127.0.0.1:4100
+      HOST: 0.0.0.0
+      PORT: '3000'
+    volumes:
+      - type: bind
+        source: ${TEST_MEDIA}/thumbs
+        target: /media/thumbs
+        read_only: true
+        bind: { create_host_path: false }
+    command: [node, packages/gallery-public/build/index.js]
+    depends_on:
+      database: { condition: service_healthy }
+  admin:
+    image: ${TEST_GALLERY_IMAGE:-gallery:immich-v3.2.0}
+    user: node
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      GALLERY_DATABASE_URL: ${TEST_ADMIN_DATABASE_URL:?}
+      GALLERY_ADMIN_ORIGIN: http://localhost:4101
+      GALLERY_PUBLIC_ORIGIN: http://127.0.0.1:4100
+      GALLERY_MEDIA_SOURCE_ROOT: /data/thumbs
+      GALLERY_MEDIA_MOUNTED_ROOT: /media/thumbs
+      GALLERY_DESIGN_PREVIEW: '0'
+      ORIGIN: http://localhost:4101
+      HOST: 0.0.0.0
+      PORT: '3000'
+    volumes:
+      - type: bind
+        source: ${TEST_MEDIA}/thumbs
+        target: /media/thumbs
+        read_only: true
+        bind: { create_host_path: false }
+    command: [node, packages/gallery-admin/build/index.js]
+    depends_on:
+      database: { condition: service_healthy }
+networks:
+  default:
+    internal: true
+  access: {}
