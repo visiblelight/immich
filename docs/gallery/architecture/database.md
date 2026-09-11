@@ -1,5 +1,7 @@
 # Gallery 数据库设计与完整数据字典
 
+> 2026-09-11 范围修订：见 [ADR 0002](../decisions/0002-albums-first.md)。首页／地图暂缓，详细介绍不再插图，关于未来由文章选篇。本文保留已验证结构和扩展边界，不代表相应 UI 仍在 MVP；本轮未修改迁移或新增文章表。
+
 状态：设计已确认；阶段 B 已生成迁移并在隔离 PostgreSQL 14 验证。版本：0.2，2026-09-10。现有 Immich 库未执行 Gallery 建表。
 
 ## 1. 设计边界
@@ -94,7 +96,7 @@
 | `name` | text，必填 | 站点名，1–100 字符 |
 | `tagline` | text，必填，默认 '' | 简短标语 |
 | `intro` | text，必填，默认 '' | 首页介绍 |
-| `about_document` | jsonb，必填，默认空文档 | 关于正文；MVP 仅文本块和安全链接，不允许私有 Asset 引用 |
+| `about_document` | jsonb，必填，默认空文档 | 既有关于正文结构；未来文章选篇不以此字段冒充关联，需另行设计新迁移 |
 | `contact_links` | jsonb，必填，默认 [] | 受限的 label/url 列表，最多 10 项 |
 | `hero_album_id` | uuid，可空，FK → album.id | 首页主视觉使用所选相册当前有效封面；允许先无主视觉 |
 | `seo_description` | text，必填，默认 '' | 网站默认摘要 |
@@ -277,16 +279,12 @@ UNIQUE `(release_id,immich_asset_id)`，UNIQUE `(release_id,position)`；索引 
       "id": "b2", "type": "paragraph",
       "children": [{ "text": "山谷里的光线逐渐明亮。", "marks": ["emphasis"] }]
     },
-    {
-      "id": "b3", "type": "photo_pair",
-      "photoIds": ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"],
-      "caption": "同一清晨的两个视角"
-    }
+    { "id": "b3", "type": "paragraph", "children": [{ "text": "沿着山路继续往前。" }] }
   ]
 }
 ```
 
-图片引用 Gallery photoId，不使用任意文件路径或 HTML。保存时校验格式，发布时要求所有 photoId 都在该 release 的照片清单；移除正文引用的照片必须同时修改正文，否则拒绝发布。块 ID 在文档中唯一。
+应用层仅接受文字块、允许的标记与安全链接；拒绝图片块、任意文件路径和 HTML。照片只存在于相册成员列表，不再由介绍文档引用。块 ID 在文档中唯一。此为后续应用校验要求，现有迁移仅约束 JSON 顶层结构，不声称已实现该白名单。
 
 ## 18. 关系图
 

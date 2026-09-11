@@ -79,4 +79,4 @@ gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证
 sh deployment/gallery/scripts/pnpm.sh gallery:design
 ```
 
-打开 http://127.0.0.1:3100/design。该脚本显式设置 `GALLERY_DESIGN_PREVIEW=1`；普通 public 开发／运行命令不开启该入口。切换模式需要停止占用 3100 端口的服务后重启。示例内容不连接数据库。设计取舍、八张关键画面和素材许可见[视觉方向对比](../design/directions.md)。
+打开 http://127.0.0.1:3100/design。该脚本显式设置 `GALLERY_DESIGN_PREVIEW=1`；普通 public 开发／运行命令不开启该入口。切换模式需要停止占用 3100 端口的服务后重启。示例内容不连接数据库。设计取舍、八张关键画面和素材许可见[当前相册浏览布局](../design/album-browser.md)。

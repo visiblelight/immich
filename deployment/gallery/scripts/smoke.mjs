@@ -54,7 +54,7 @@ async function verify(name, designPreview = false) {
     assert.equal(page.status, 503, 'unconfigured service must not expose a working gallery/admin page');
     await page.text();
     if (name === 'public') {
-      for (const path of ['/design', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
+      for (const path of ['/design', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
         const preview = await fetch(`${origin}${path}`);
         assert.equal(preview.status, designPreview ? 200 : 404, `preview gate: ${path}`);
         if (designPreview) {
@@ -66,6 +66,11 @@ async function verify(name, designPreview = false) {
       const invalid = await fetch(`${origin}/design/unknown`);
       assert.equal(invalid.status, 404);
       await invalid.text();
+      for (const path of ['/design?album=missing', '/design?page=missing']) {
+        const missing = await fetch(`${origin}${path}`, { signal: AbortSignal.timeout(2000) });
+        assert.equal(missing.status, 404);
+        await missing.text();
+      }
     }
     console.log(`PASS gallery-${name} (design=${designPreview}): production build starts, liveness 200, readiness/root 503`);
   } finally {
