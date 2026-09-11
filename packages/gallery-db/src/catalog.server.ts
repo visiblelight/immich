@@ -1,12 +1,22 @@
 import { sql, type Kysely } from 'kysely';
-import { ensure, uuid, type DisplayAlbum, type DisplayPhoto, type TextBlock } from '@gallery/core';
+import {
+  ensure,
+  uuid,
+  type DisplayAlbum,
+  type DisplayPhoto,
+  type TextBlock,
+  type PhotoGroup,
+  documentMarkdown,
+  literalMarkdown,
+  markdownSummary,
+} from '@gallery/core';
 type AlbumRow = {
   album_id: string;
   slug: string;
   title: string;
   summary: string;
   parent_album_id: string | null;
-  description_document: { blocks: TextBlock[] };
+  description_document: { blocks: TextBlock[]; markdown?: string; groups?: PhotoGroup[] };
   photo_album_id: string | null;
   photo_id: string | null;
   count: string;
@@ -33,9 +43,11 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         id: r.album_id,
         slug: r.slug,
         title: r.title,
-        summary: r.summary,
+        summary: r.summary || markdownSummary(documentMarkdown(r.description_document)),
         parent: r.parent_album_id ?? '',
-        blocks: r.description_document.blocks,
+        blocks: [],
+        markdown: documentMarkdown(r.description_document, r.summary),
+        groups: r.description_document.groups ?? [],
         cover: r.photo_id ? `/media/${r.photo_album_id}/${r.photo_id}?variant=thumbnail` : null,
         count: Number(r.count),
         photos: [],
@@ -46,20 +58,32 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         const photos = (
           await sql<{
             photo_id: string;
+            group_id: string | null;
+            description_format: string;
+            taken_at: Date | null;
+            first_added_at: Date | null;
+            estimated: boolean;
             title: string;
             description: string;
             alt_text: string;
             public_exif: DisplayPhoto['exif'];
             latitude: number | null;
             longitude: number | null;
-          }>`SELECT photo_id,title,description,alt_text,public_exif,latitude,longitude FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(
+          }>`SELECT photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(
             trx,
           )
         ).rows;
         active.photos = photos.map((p) => ({
           id: p.photo_id,
+          group: active.groups?.find((g) => g.id === p.group_id),
+          takenAt: p.taken_at?.toISOString() ?? null,
+          addedAt: p.first_added_at?.toISOString() ?? null,
+          addedEstimated: p.estimated,
+          albumId: active.id,
+          albumSlug: active.slug,
+          albumTitle: active.title,
           title: p.title,
-          description: p.description,
+          description: p.description_format === 'plain' ? literalMarkdown(p.description) : p.description,
           alt: p.alt_text,
           exif: p.public_exif,
           latitude: p.latitude,
@@ -93,7 +117,7 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
           title: string;
           summary: string;
           parent_album_id: string | null;
-          description_document: { blocks: TextBlock[] };
+          description_document: { blocks: TextBlock[]; markdown?: string; groups?: PhotoGroup[] };
           cover_asset_id: string | null;
           count: string;
           show_exif: boolean;
@@ -105,9 +129,11 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
         id: r.id,
         slug: r.slug,
         title: r.title,
-        summary: r.summary,
+        summary: r.summary || markdownSummary(documentMarkdown(r.description_document)),
         parent: r.parent_album_id ?? '',
-        blocks: r.description_document.blocks,
+        blocks: [],
+        markdown: documentMarkdown(r.description_document, r.summary),
+        groups: r.description_document.groups ?? [],
         cover: r.cover_asset_id ? `/media/source/${r.cover_asset_id}?variant=thumbnail` : null,
         count: Number(r.count),
         photos: [],
@@ -117,6 +143,9 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
       const photos = (
         await sql<{
           id: string;
+          group_id: string | null;
+          description_format: string;
+          taken_at: Date | null;
           title: string;
           description: string;
           alt_text: string;
@@ -128,14 +157,16 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
           focal_length: number | null;
           iso: number | null;
           exposure_time: string | null;
-        }>`SELECT p.id,p.title,p.description,p.alt_text,p.immich_asset_id AS asset,s.make,s.model,s.lens_model,s.f_number,s.focal_length,s.iso,s.exposure_time FROM gallery.album_photo p JOIN gallery.admin_source_asset s ON s.asset_id=p.immich_asset_id WHERE p.album_id=${albumId}::uuid ORDER BY p.position,p.id`.execute(
+        }>`SELECT p.id,p.title,p.description,p.alt_text,p.group_id,p.description_format,s.taken_at,p.immich_asset_id AS asset,s.make,s.model,s.lens_model,s.f_number,s.focal_length,s.iso,s.exposure_time FROM gallery.album_photo p JOIN gallery.admin_source_asset s ON s.asset_id=p.immich_asset_id WHERE p.album_id=${albumId}::uuid ORDER BY p.position,p.id`.execute(
           trx,
         )
       ).rows;
       active.photos = photos.map((p) => ({
         id: p.id,
+        group: active.groups?.find((g) => g.id === p.group_id),
+        takenAt: p.taken_at?.toISOString() ?? null,
         title: p.title,
-        description: p.description,
+        description: p.description_format === 'plain' ? literalMarkdown(p.description) : p.description,
         alt: p.alt_text,
         exif: rows.find((a) => a.id === albumId)?.show_exif
           ? {

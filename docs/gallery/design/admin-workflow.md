@@ -1,5 +1,7 @@
 # Gallery 后台：相册工作台交互预览
 
+2026-09-11 补充：本文早期的两项导航、文字块正文和逐张排序规则，由已确认的 [ADR 0004](../decisions/0004-markdown-photo-groups.md) 更新；实际完成及验证范围见 [交互升级记录](../delivery/interaction-upgrade.md)。
+
 状态：后台视觉细节按用户要求暂缓。本文记录 /design 示例原型；真实后台已接入 /albums，见 [本地 MVP 交付](../delivery/mvp-local.md)。2026-09-11。
 
 用户已决定暂时保留当前前台布局，视觉细节后续调整，优先验证整体流程闭环。这不是前台最终视觉验收。

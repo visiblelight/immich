@@ -79,7 +79,7 @@ export async function workflow(
   content.cover = asset;
   content.location = 'exact';
   content.showExif = true;
-  content.blocks = [{ kind: 'paragraph', text: 'First published story' }];
+  content.markdown = 'First published story';
   const expected = await versions(child);
   await saveAlbum(db, user, child, { ...expected, content });
   await assert.rejects(saveAlbum(db, user, child, { ...expected, content }), /另一个窗口/);
@@ -114,7 +114,7 @@ export async function workflow(
   assert.equal((await publicCatalog(pub, slug)).active?.photos[0]?.title, 'Published caption');
   const newContent = JSON.parse(JSON.stringify(content)) as AlbumContent;
   newContent.photos[0]!.title = 'Draft caption';
-  newContent.blocks = [{ kind: 'heading', text: 'Draft heading' }];
+  newContent.markdown = '## Draft heading';
   await saveAlbum(db, user, child, { ...(await versions(child)), content: newContent });
   assert.equal((await publicCatalog(pub, slug)).active?.photos[0]?.title, 'Published caption');
   await owner.query('UPDATE public.asset_exif SET latitude=41.6168,longitude=41.6367 WHERE "assetId"=$1', [asset]);

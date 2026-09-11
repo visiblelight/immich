@@ -1,5 +1,7 @@
 # Gallery MVP 需求与页面流程
 
+2026-09-11 补充：本文早期的两项导航、文字块正文和逐张排序规则，由已确认的 [ADR 0004](../decisions/0004-markdown-photo-groups.md) 更新；实际完成及验证范围见 [交互升级记录](../delivery/interaction-upgrade.md)。
+
 状态：按用户反馈更新。版本：0.2，2026-09-11。
 
 范围调整见 [ADR 0002](../decisions/0002-albums-first.md)。独立用户、相册和发布规则保留。

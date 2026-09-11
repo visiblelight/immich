@@ -1,5 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import Markdown from './Markdown.svelte';
+  import { documentMarkdown } from '../../gallery-core/src/markdown';
   import type { DisplayAlbum, DisplayPhoto } from '../../gallery-core/src/content';
   let {
     site,
@@ -10,6 +12,8 @@
     initialPhotoId = null,
     initialPage = 1,
     navigatePhoto,
+    feed,
+    navigateBoundary,
   }: {
     site: { name: string; tagline: string; contactLinks?: import('../../gallery-core/src/content').ContactLink[] };
     albums: DisplayAlbum[];
@@ -19,13 +23,44 @@
     initialPhotoId?: string | null;
     initialPage?: number;
     navigatePhoto?: (photo: DisplayPhoto | null, replace?: boolean) => void;
+    navigateBoundary?: (offset: number) => void;
+    feed?: { months: { month: string; count: number }[]; sort: string; month: string; page: number; total: number };
   } = $props();
-  let viewer: HTMLDialogElement;
   let photo = $state<DisplayPhoto | null>(null);
-  let info = $state(true);
-  let page = $state(
-    untrack(() => Math.max(0, Math.min(Math.ceil((active?.photos.length ?? 1) / 48) - 1, initialPage - 1))),
+  let viewer: HTMLDialogElement;
+  let imageViewport = $state<HTMLDivElement>();
+  let zoom = $state(false),
+    touchX = 0,
+    touchY = 0;
+  let items = $derived.by(() => {
+    const photos = active?.photos ?? [];
+    if (feed) return photos;
+    const seen = new Set<string>();
+    return photos
+      .filter((p) => {
+        const id = p.group?.id || p.id;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .map((p) => (p.group ? (photos.find((x) => x.id === p.group!.cover && x.group?.id === p.group!.id) ?? p) : p));
+  });
+  let variants = $derived(
+    photo?.group && !feed ? (active?.photos ?? []).filter((p) => p.group?.id === photo?.group?.id) : [],
   );
+  const itemIndex = (p: DisplayPhoto) =>
+    items.findIndex((x) => x.id === p.id || (!feed && p.group && x.group?.id === p.group.id));
+  const date = (value?: string | null) =>
+    value
+      ? new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(
+          new Date(value),
+        )
+      : '日期未知';
+  const feedLink = (page: number, month = feed?.month ?? '', sort = feed?.sort ?? 'taken') =>
+    `/photos?${new URLSearchParams({ sort, month, page: String(page) })}`;
+
+  let info = $state(true);
+  let page = $state(untrack(() => Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1))));
   let pageAlbum = $state<string | null>(null);
   let albumPage = $state(0);
   $effect(() => {
@@ -33,13 +68,13 @@
     if (current !== pageAlbum) {
       pageAlbum = current;
       albumPage = 0;
-      page = Math.max(0, Math.min(Math.ceil((active?.photos.length ?? 1) / 48) - 1, initialPage - 1));
+      page = Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1));
       photo = null;
       viewer?.close();
       if (initialPhotoId && active) {
         const index = active.photos.findIndex((p) => p.id === initialPhotoId);
-        page = Math.max(0, Math.floor(index / 48));
         const selected = active.photos[index];
+        page = selected ? Math.max(0, Math.floor(itemIndex(selected) / 48)) : 0;
         if (selected)
           void tick()
             .then(() => {
@@ -67,7 +102,7 @@
     }
     return result;
   });
-  const photoLink = (p: DisplayPhoto) => `/albums/${active?.slug}/photos/${p.id}`;
+  const photoLink = (p: DisplayPhoto) => `/albums/${p.albumSlug || active?.slug}/photos/${p.id}`;
   function closePhoto() {
     photo = null;
     if (initialPhotoId && navigatePhoto) navigatePhoto(null, true);
@@ -81,33 +116,46 @@
     await tick();
     viewer.showModal();
   }
-  function shift(offset: number) {
-    if (!photo || !active) return;
-    const index = active.photos.findIndex((p) => p.id === photo!.id);
-    const next = active.photos[(index + offset + active.photos.length) % active.photos.length] ?? null;
-    if (!preview && navigatePhoto && next) navigatePhoto(next, true);
+  function choose(next: DisplayPhoto | null) {
+    if (!next) return;
+    zoom = false;
+    if (!preview && navigatePhoto) navigatePhoto(next, true);
     else photo = next;
   }
+  function shift(offset: number) {
+    if (!photo) return;
+    const index = itemIndex(photo),
+      next = index + offset;
+    if (feed && (next < 0 || next >= items.length)) {
+      navigateBoundary?.(offset);
+      return;
+    }
+    choose(items[(next + items.length) % items.length] ?? null);
+  }
+  function angle(offset: number) {
+    if (!photo || variants.length < 2) return;
+    const i = variants.findIndex((p) => p.id === photo!.id);
+    choose(variants[(i + offset + variants.length) % variants.length]!);
+  }
   function keys(e: KeyboardEvent) {
-    if (!viewer?.open) return;
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      shift(1);
+    if (!viewer?.open || !e.key.startsWith('Arrow')) return;
+    e.preventDefault();
+    if (zoom) {
+      imageViewport?.scrollBy({
+        left: e.key === 'ArrowRight' ? 100 : e.key === 'ArrowLeft' ? -100 : 0,
+        top: e.key === 'ArrowDown' ? 100 : e.key === 'ArrowUp' ? -100 : 0,
+      });
+      return;
     }
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      shift(-1);
-    }
+    if (e.key === 'ArrowRight') shift(1);
+    if (e.key === 'ArrowLeft') shift(-1);
+    if (e.key === 'ArrowDown') angle(1);
+    if (e.key === 'ArrowUp') angle(-1);
   }
 </script>
 
 <svelte:window onkeydown={keys} />
-{#snippet story()}<p class="intro">{active?.summary}</p>
-  {#each active?.blocks ?? [] as block}{#if block.kind === 'heading'}<h3>
-        {block.text}
-      </h3>{:else if block.kind === 'quote'}<blockquote>{block.text}</blockquote>{:else}<p>
-        {block.text}
-      </p>{/if}{/each}{/snippet}
+{#snippet story()}<Markdown text={active ? documentMarkdown(active, active.summary) : ''} />{/snippet}
 {#if preview}<div class="preview-notice">
     草稿预览 · 仅管理员可见 · 当前显示已保存内容 <a href="/albums">返回工作台 →</a>
   </div>{/if}
@@ -115,7 +163,9 @@
   <header>
     <a class="brand" href="/albums">{site.name}</a>
     <nav aria-label="主导航">
-      <a class:chosen={!about} href="/albums">相册</a>{#if !preview}<a class:chosen={about} href="/about">关于</a>{/if}
+      <a class:chosen={!about && !feed} href="/albums">相册</a>{#if !preview}<a class:chosen={!!feed} href="/photos"
+          >相片</a
+        ><a class:chosen={about} href="/about">关于</a>{/if}
     </nav>
   </header>
   {#snippet albumPagination()}
@@ -140,6 +190,69 @@
               </li>{/each}
           </ul>{/if}
       </article>
+    {:else if feed}<div class="heading feed-heading">
+        <div>
+          <p class="kicker">PHOTOGRAPHS</p>
+          <h1>相片</h1>
+          <p>{feed.total} 张 · {feed.sort === 'taken' ? '按拍摄时间' : '按首次加入 Gallery 时间'}</p>
+        </div>
+        <label
+          >排序<select
+            aria-label="相片排序"
+            value={feed.sort}
+            onchange={(e) => {
+              window.location.href = feedLink(1, '', e.currentTarget.value);
+            }}><option value="taken">拍摄时间 · 从新到旧</option><option value="added">最近加入 Gallery</option></select
+          ></label
+        >
+      </div>
+      <div class="timeline-layout">
+        <div class="timeline-photos">
+          {#each items as p, index (p.id)}{@const month =
+              (feed.sort === 'added' ? p.addedAt : p.takenAt)?.slice(0, 7) || 'unknown'}
+            {#if index === 0 || month !== ((feed.sort === 'added' ? items[index - 1]?.addedAt : items[index - 1]?.takenAt)?.slice(0, 7) || 'unknown')}<h2
+                class="month-heading"
+              >
+                {month === 'unknown' ? '日期未知' : month.replace('-', ' 年 ') + ' 月'}
+              </h2>{/if}
+            <button class="photo" id={`photo-${p.id}`} onclick={() => show(p)}
+              ><img
+                src={p.thumbnail}
+                alt={p.alt || p.title || p.group?.title || '查看照片'}
+                width="600"
+                height="450"
+                loading="lazy"
+              /><span>{p.title || p.group?.title || p.albumTitle}{p.group ? ' · 照片组' : ''}</span></button
+            >
+          {/each}
+          {#if !items.length}<p class="empty">这里还没有公开照片。</p>{/if}
+          <div class="pagination feed-pagination">
+            {#if feed.page > 1}<a href={feedLink(feed.page - 1)}>上一页</a>{/if}<span
+              >{feed.page} / {Math.max(1, Math.ceil(feed.total / 48))}</span
+            >{#if feed.page * 48 < feed.total}<a href={feedLink(feed.page + 1)}>下一页</a>{/if}
+          </div>
+        </div>
+        <aside class="timeline">
+          <label
+            >跳转年月<select
+              aria-label="跳转年月"
+              value={feed.month}
+              onchange={(e) => {
+                window.location.href = feedLink(1, e.currentTarget.value);
+              }}
+              ><option value="">全部时间</option>{#each feed.months as m}<option value={m.month}
+                  >{m.month === 'unknown' ? '日期未知' : m.month} · {m.count}</option
+                >{/each}</select
+            ></label
+          >
+          <nav aria-label="照片时间轴">
+            <a class:chosen={!feed.month} href={feedLink(1, '')}>全部</a>{#each feed.months as m}<a
+                class:chosen={feed.month === m.month}
+                href={feedLink(1, m.month)}>{m.month === 'unknown' ? '日期未知' : m.month}<small>{m.count}</small></a
+              >{/each}
+          </nav>
+        </aside>
+      </div>
     {:else if !active}<div class="heading">
         <p class="kicker">COLLECTIONS</p>
         <h1>相册</h1>
@@ -188,9 +301,10 @@
             {@render albumPagination()}{/if}
           <h2 class="section-title">照片 <span>{active.photos.length}</span></h2>
           <div class="photos-grid">
-            {#each active.photos.slice(page * 48, (page + 1) * 48) as p}<button
+            {#each items.slice(page * 48, (page + 1) * 48) as p}<button
                 id={`photo-${p.id}`}
                 class="photo"
+                class:stack={!!p.group}
                 onclick={() => show(p)}
                 ><img
                   src={p.thumbnail}
@@ -198,15 +312,18 @@
                   loading="lazy"
                   width="600"
                   height="450"
-                />{#if p.title}<span>{p.title}</span>{/if}</button
+                />{#if p.group}<span class="stack-label"
+                    >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group.title ||
+                      '照片组'}</span
+                  >{:else if p.title}<span>{p.title}</span>{/if}</button
               >{/each}
           </div>
           {#if !active.photos.length}<p class="empty">
               本册暂无直接照片{children.length ? '，可以继续浏览子相册。' : '。'}
-            </p>{/if}{#if active.photos.length > 48}<div class="pagination">
+            </p>{/if}{#if items.length > 48}<div class="pagination">
               <button disabled={page === 0} onclick={() => page--}>上一页</button><span
-                >{page + 1} / {Math.ceil(active.photos.length / 48)}</span
-              ><button disabled={(page + 1) * 48 >= active.photos.length} onclick={() => page++}>下一页</button>
+                >{page + 1} / {Math.ceil(items.length / 48)}</span
+              ><button disabled={(page + 1) * 48 >= items.length} onclick={() => page++}>下一页</button>
             </div>{/if}
         </div>
         <aside>
@@ -219,17 +336,41 @@
 </div>
 <dialog bind:this={viewer} aria-label="照片大图" onclose={closePhoto}>
   {#if photo}<div class="viewer-toolbar">
-      <span>{active ? active.photos.findIndex((p) => p.id === photo!.id) + 1 : 1} / {active?.photos.length}</span>
+      <span
+        >{feed ? '相片' : '相册项目'}
+        {itemIndex(photo) + 1} / {items.length}{variants.length
+          ? ` · 组内 ${variants.findIndex((p) => p.id === photo!.id) + 1} / ${variants.length}`
+          : ''}</span
+      >
       <div>
         {#if !preview}<a class="photo-permalink" href={photoLink(photo)}>照片直链</a>{/if}
-        <button onclick={() => (info = !info)}>{info ? '隐藏信息' : '显示信息'}</button><button
-          aria-label="关闭大图"
-          onclick={() => viewer.close()}>×</button
-        >
+        <button onclick={() => (zoom = !zoom)}>{zoom ? '适应屏幕' : '放大查看'}</button><button
+          onclick={() => (info = !info)}>{info ? '隐藏信息' : '显示信息'}</button
+        ><button aria-label="关闭大图" onclick={() => viewer.close()}>×</button>
       </div>
     </div>
     <div class="viewer-body" class:without-info={!info}>
-      <div class="full-image">
+      <div
+        role="group"
+        aria-label="照片画面"
+        class="full-image"
+        class:has-variants={variants.length > 0}
+        class:zoomed={zoom}
+        bind:this={imageViewport}
+        onpointerdown={(e) => {
+          touchX = e.clientX;
+          touchY = e.clientY;
+        }}
+        onpointerup={(e) => {
+          if (
+            !zoom &&
+            e.pointerType === 'touch' &&
+            Math.abs(e.clientX - touchX) > 60 &&
+            Math.abs(e.clientY - touchY) < 60
+          )
+            shift(e.clientX < touchX ? 1 : -1);
+        }}
+      >
         <img src={photo.src} alt={photo.alt || photo.title || '照片'} />
         <div class="viewer-arrows">
           <button aria-label="上一张照片" onclick={() => shift(-1)}>←</button><button
@@ -237,36 +378,271 @@
             onclick={() => shift(1)}>→</button
           >
         </div>
+        {#if variants.length}<div class="group-variants" aria-label="组内视角">
+            <span>不同角度 · 上下键切换</span>{#each variants as p, index}<button
+                class:chosen={p.id === photo.id}
+                aria-label={`查看组内第 ${index + 1} 张`}
+                aria-pressed={p.id === photo.id}
+                onclick={() => choose(p)}
+                ><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
+              >{/each}
+          </div>{/if}
       </div>
-      {#if info}<aside>
-          <h2>{photo.title || '未命名照片'}</h2>
-          <p>{photo.description}</p>
-          {#if photo.exif}<h3>EXIF</h3>
-            <dl>
-              {#each Object.entries(photo.exif).filter(([, value]) => value !== null && value !== '') as [key, value]}<div
+      {#if info}<aside class="photo-information">
+          <section class="work-description">
+            <h2>{photo.group?.title || photo.title || '未命名照片'}</h2>
+            {#if photo.group?.description}<Markdown text={photo.group.description} />{/if}
+            {#if photo.group && photo.title && photo.title !== photo.group.title}<h3 class="angle-title">
+                {photo.title}
+              </h3>{/if}
+            {#if photo.description}<Markdown text={photo.description} />{/if}
+          </section>
+          <section class="capture-facts">
+            <p><span>拍摄日期</span><strong>{date(photo.takenAt)}</strong></p>
+            {#if feed?.sort === 'added' && photo.addedAt}<p>
+                <span>加入 Gallery</span><strong
+                  >{date(photo.addedAt)}{photo.addedEstimated ? '（历史估算）' : ''}</strong
                 >
-                  <dt>
-                    {(
-                      {
-                        make: '品牌',
-                        model: '相机',
-                        lensModel: '镜头',
-                        fNumber: '光圈',
-                        focalLength: '焦距',
-                        iso: 'ISO',
-                        exposureTime: '快门',
-                      } as Record<string, string>
-                    )[key] ?? key}
-                  </dt>
-                  <dd>{value}</dd>
-                </div>{/each}
-            </dl>{/if}{#if photo.latitude !== null && photo.longitude !== null}<h3>位置</h3>
-            <p>{photo.latitude.toFixed(4)}, {photo.longitude.toFixed(4)}</p>{/if}
+              </p>{/if}
+            {#if photo.latitude !== null && photo.longitude !== null}<details>
+                <summary>拍摄位置</summary>
+                <p class="coordinates">{photo.latitude.toFixed(4)}, {photo.longitude.toFixed(4)}</p>
+              </details>{/if}
+          </section>
+          {#if photo.exif && Object.values(photo.exif).some((v) => v !== null && v !== '')}<details
+              class="camera-details"
+            >
+              <summary>拍摄参数</summary>
+              <dl>
+                {#each Object.entries(photo.exif).filter(([key, value]) => ['make', 'model', 'lensModel', 'fNumber', 'focalLength', 'iso', 'exposureTime'].includes(key) && value !== null && value !== '') as [key, value]}<div
+                  >
+                    <dt>
+                      {(
+                        {
+                          make: '品牌',
+                          model: '相机',
+                          lensModel: '镜头',
+                          fNumber: '光圈',
+                          focalLength: '焦距',
+                          iso: 'ISO',
+                          exposureTime: '快门',
+                        } as Record<string, string>
+                      )[key]}
+                    </dt>
+                    <dd>
+                      {key === 'fNumber'
+                        ? `f/${value}`
+                        : key === 'focalLength'
+                          ? `${value} mm`
+                          : key === 'exposureTime'
+                            ? `${value} s`
+                            : value}
+                    </dd>
+                  </div>{/each}
+              </dl>
+            </details>{/if}
+          {#if photo.occurrences?.length}<section class="photo-context">
+              <h3>所在相册</h3>
+              {#each photo.occurrences as occurrence}<a
+                  href={`/albums/${occurrence.albumSlug}/photos/${occurrence.photoId}`}>{occurrence.albumTitle} →</a
+                >{/each}{#if photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
+            </section>{/if}
         </aside>{/if}
-    </div>{/if}
+    </div>
+  {/if}
 </dialog>
 
 <style>
+  .feed-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: start;
+    flex-wrap: wrap;
+  }
+  select {
+    display: block;
+    padding: 10px;
+    margin-top: 8px;
+    border: 1px solid #dce2d6;
+    background: white;
+    color: inherit;
+    max-width: 100%;
+  }
+  .timeline-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px;
+    gap: 40px;
+  }
+  .timeline-photos {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 22px 16px;
+    align-content: start;
+  }
+  .month-heading,
+  .feed-pagination {
+    grid-column: 1/-1;
+  }
+  .month-heading {
+    font-size: 19px;
+    margin: 18px 0 0;
+    font-weight: 500;
+  }
+  .timeline {
+    position: sticky;
+    top: 20px;
+    align-self: start;
+    max-height: 80dvh;
+    overflow: auto;
+  }
+  .timeline nav {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 15px;
+  }
+  .timeline a {
+    display: flex;
+    justify-content: space-between;
+  }
+  .timeline small {
+    color: #8c9881;
+  }
+  .stack img {
+    box-shadow:
+      4px 4px 0 #e0e7d9,
+      8px 8px 0 #edf1e8;
+  }
+  .stack-label {
+    margin-top: 8px;
+  }
+  .work-description {
+    padding-bottom: 24px;
+  }
+  .capture-facts {
+    border-top: 1px solid #384433;
+    padding: 22px 0;
+  }
+  .capture-facts p {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 0 0 15px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .capture-facts span {
+    color: #8c9c85;
+    font-size: 11px;
+  }
+  .capture-facts strong {
+    font-weight: 400;
+  }
+  .camera-details {
+    border-block: 1px solid #384433;
+    padding: 18px 0;
+  }
+  .camera-details summary,
+  .capture-facts summary {
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .photo-context {
+    margin-top: 25px;
+  }
+  .photo-context a {
+    display: block;
+    padding: 8px 0;
+    font-size: 13px;
+    color: #becbb4;
+  }
+  .group-variants {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 20px;
+    overflow: auto;
+    border-top: 1px solid #384433;
+  }
+  .group-variants span {
+    font-size: 11px;
+    color: #a1b195;
+    white-space: nowrap;
+  }
+  .group-variants button {
+    padding: 2px;
+    background: none;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+  }
+  .group-variants button.chosen {
+    border-color: #a1ba90;
+  }
+  .group-variants img {
+    display: block;
+    width: 64px;
+    height: 48px;
+    object-fit: contain;
+  }
+  .full-image.has-variants > img {
+    height: calc(100dvh - 195px);
+  }
+  .full-image.has-variants .viewer-arrows {
+    bottom: 100px;
+  }
+  .full-image.zoomed {
+    overflow: auto;
+    height: calc(100dvh - 180px);
+  }
+  .full-image.zoomed > img {
+    width: 200%;
+    height: auto;
+    max-width: none;
+  }
+  .full-image.zoomed .viewer-arrows {
+    display: none;
+  }
+  .viewer-body aside .angle-title {
+    font-size: 15px;
+    letter-spacing: 0;
+    color: #dce6d5;
+  }
+  @media (max-width: 760px) {
+    .timeline-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    .timeline {
+      position: static;
+      order: -1;
+      max-height: none;
+    }
+    .timeline nav {
+      display: none;
+    }
+    .timeline-photos {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .group-variants span {
+      display: none;
+    }
+    .viewer-toolbar {
+      flex-wrap: wrap;
+    }
+    .viewer-toolbar > div {
+      display: flex;
+      align-items: center;
+    }
+    .viewer-body {
+      min-height: 0;
+    }
+    nav {
+      gap: 16px !important;
+    }
+  }
+
   :global(body) {
     margin: 0;
     background: #fafbf9;
@@ -425,27 +801,17 @@
     padding-top: 8px;
     overflow-wrap: anywhere;
   }
-  aside p,
-  aside blockquote {
+  aside p {
     font-size: 15px;
     line-height: 2;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     margin: 0 0 26px;
   }
-  .intro {
-    color: #87937d;
-  }
   aside h3 {
     font-size: 18px;
     font-weight: 500;
     margin: 30px 0 16px;
-  }
-  blockquote {
-    margin-left: 0;
-    padding-left: 18px;
-    border-left: 2px solid #afbea1;
-    color: #78856d;
   }
   .mobile-story {
     display: none;
@@ -686,11 +1052,21 @@
     .viewer-body {
       grid-template-columns: minmax(0, 1fr);
     }
-    .full-image > img {
-      height: 60dvh;
+    .full-image > img,
+    .full-image.has-variants > img {
+      height: auto;
+      max-height: 60dvh;
     }
     .viewer-body.without-info .full-image > img {
+      max-height: none;
       height: calc(100dvh - 110px);
+    }
+    .viewer-body.without-info .full-image.has-variants > img {
+      height: calc(100dvh - 195px);
+    }
+    .full-image.zoomed > img {
+      height: auto;
+      max-height: none;
     }
     .viewer-body aside {
       max-height: none;
@@ -712,5 +1088,10 @@
       width: calc(100vw - 16px);
       max-height: calc(100dvh - 16px);
     }
+  }
+  .viewer-body.without-info .full-image.zoomed > img,
+  .viewer-body .full-image.zoomed > img {
+    height: auto;
+    max-height: none;
   }
 </style>

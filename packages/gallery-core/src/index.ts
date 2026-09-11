@@ -11,3 +11,4 @@ export type PhotoLocationMode = LocationMode | 'inherit';
 export function liveness(service: GalleryService) {
   return { service, version: GALLERY_VERSION, status: 'alive' } as const;
 }
+export * from './markdown.ts';

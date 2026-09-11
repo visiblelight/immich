@@ -5,7 +5,7 @@
 ## 入口与初始账号
 
 - 管理后台：http://localhost:3101/albums（未登录转 /login）。
-- 公开相册：http://127.0.0.1:3100/albums；关于页 /about；根路径转相册。
+- 公开相册：http://127.0.0.1:3100/albums；全站相片 /photos；关于页 /about；根路径转相册。
 - Immich 开发后台：http://127.0.0.1:3000；API 端口 2283。
 - 独立 Gallery 管理员邮箱 `admin@gallery.local`，随机初始密码仅在本机 `.gallery-local/runtime/initial-admin.txt`。文件权限 0600，不提交 Git；登录后可在个人账号里改密。不要复用 Immich 密码。
 - `/design` 仍是示例原型，保存和发布只影响页面内存；实际操作必须进入 `/albums`。
@@ -20,8 +20,8 @@
 
 1. 在 Immich 上传并管理照片、相册、标签、位置。
 2. 登录 Gallery，新建顶级相册或子相册。从 Immich 选片，可按相册／标签／文件名／日期过滤，跨筛选和分页保留选择。
-3. 编辑每张照片独立标题、描述、替代文本，调整顺序和封面；正文使用段落、小标题、引用。
-4. 保存草稿后打开预览。保存、刷新、服务重启均不丢失已写入数据库的内容；尚未保存的表单内容不保证恢复，页面离开会提醒。
+3. 相册正文、照片描述使用 Markdown，支持预览、全屏、.md 导入导出。画面描述和位置策略在照片高级设置中。拖动手柄排列照片；多选组成照片组，编辑共用标题、说明、封面及成员顺序。
+4. 保存草稿后打开预览。相册中左右切换项目，上下键或缩略图切换组内视角；全站相片按每张展平、跨相册去重，可按拍摄日期或首次加入 Gallery 时间倒序浏览。保存、刷新、服务重启均不丢失已写入数据库的内容；尚未保存的表单内容不保证恢复，页面离开会提醒。
 5. 若需要 EXIF，在基本设置勾选展示。GPS 默认隐藏；相册可以选择近似或精确位置，单张照片只能进一步收紧。草稿预览当前不展示坐标，公开版本才按策略展示。
 6. 从父级到子级逐册发布。父相册可先无封面发布，再发布子级并给父级设置后代封面。首次发布后访问地址固定。
 7. 再编辑时，先保存草稿，前台保持旧版本；再次发布后才更新。下线关闭该相册分支的页面和图片；“恢复公开版本”只恢复原快照，不发布草稿。单独下线的后代保持下线。
@@ -47,7 +47,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:local:admin
 
 本地初始化命令 `gallery:local:init <明确授权的 Immich 所有者 UUID>` 只针对此仓库既有 `immich_postgres` 开发容器，先执行完整 pg_dump，再创建 Gallery 角色、schema、迁移和初始用户。当前机器已经执行，**不要重复初始化**。已有 schema 或运行配置会拒绝覆盖。
 
-后续迁移用 Node 24 加载 `.gallery-local/runtime/migration.env` 运行 `packages/gallery-db/scripts/database.ts migrate`。来源范围同一脚本的 `source-enable` / `source-disable` 仅使用迁移角色；常驻后台不能自行扩大白名单。
+.gallery-local/runtime 配置沿用，0004 升级步骤与备份位置见 [交互升级记录](../delivery/interaction-upgrade.md)。后续迁移用 Node 24 加载 `.gallery-local/runtime/migration.env` 运行 `packages/gallery-db/scripts/database.ts migrate`。来源范围同一脚本的 `source-enable` / `source-disable` 仅使用迁移角色；常驻后台不能自行扩大白名单。
 
 ## 验证与恢复边界
 

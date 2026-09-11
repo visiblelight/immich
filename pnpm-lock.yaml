@@ -358,6 +358,10 @@ importers:
         version: 8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.102.0)(terser@5.49.0)(tsx@4.23.12)(yaml@2.9.0)
 
   packages/gallery-core:
+    dependencies:
+      marked:
+        specifier: 16.4.2
+        version: 16.4.2
     devDependencies:
       '@types/node':
         specifier: 24.13.3

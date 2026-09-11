@@ -4,10 +4,15 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0",
-  "exports": { ".": "./src/entry.js" },
+  "exports": {
+    ".": "./src/entry.js"
+  },
   "scripts": {
     "check": "tsc6 --noEmit",
     "build": "pnpm run check"
+  },
+  "dependencies": {
+    "marked": "16.4.2"
   },
   "devDependencies": {
     "@types/node": "24.13.3",

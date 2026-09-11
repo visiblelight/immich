@@ -1,6 +1,14 @@
+import { blocksMarkdown } from './markdown.ts';
 export type TextBlock = { kind: 'paragraph' | 'heading' | 'quote'; text: string };
 export type Location = 'hidden' | 'approximate' | 'exact';
+export interface PhotoGroup {
+  id: string;
+  title: string;
+  description: string;
+  cover: string;
+}
 export interface DraftPhoto {
+  group?: string;
   id: string;
   asset: string;
   title: string;
@@ -15,6 +23,8 @@ export interface AlbumContent {
   position: number;
   summary: string;
   blocks: TextBlock[];
+  markdown?: string;
+  groups?: PhotoGroup[];
   photos: DraftPhoto[];
   cover: string;
   location: Location;
@@ -53,6 +63,14 @@ export interface SourcePhoto {
   exif: Record<string, string | number | null>;
 }
 export interface DisplayPhoto {
+  group?: PhotoGroup;
+  takenAt?: string | null;
+  addedAt?: string | null;
+  addedEstimated?: boolean;
+  albumId?: string;
+  albumSlug?: string;
+  albumTitle?: string;
+  occurrences?: { albumSlug: string; albumTitle: string; photoId: string }[];
   id: string;
   src: string;
   thumbnail: string;
@@ -70,6 +88,8 @@ export interface DisplayAlbum {
   summary: string;
   parent: string;
   blocks: TextBlock[];
+  markdown?: string;
+  groups?: PhotoGroup[];
   cover: string | null;
   count: number;
   photos: DisplayPhoto[];
@@ -122,10 +142,11 @@ export function validateContent(input: unknown): AlbumContent {
     const photo = p as Record<string, unknown>;
     ensure(['inherit', 'hidden', 'approximate', 'exact'].includes(String(photo.location)), '照片位置策略无效。');
     return {
+      group: photo.group ? uuid(photo.group) : '',
       id: uuid(photo.id),
       asset: uuid(photo.asset),
       title: text(photo.title, 200, '照片标题'),
-      description: text(photo.description, 10000, '照片描述'),
+      description: text(photo.description, 50000, '照片描述'),
       alt: text(photo.alt, 500, '替代文本'),
       location: photo.location as DraftPhoto['location'],
     };
@@ -135,6 +156,39 @@ export function validateContent(input: unknown): AlbumContent {
       new Set(photos.map((p) => p.id)).size === photos.length,
     '同一相册不能重复收录照片。',
   );
+  ensure(c.groups === undefined || Array.isArray(c.groups), '照片组格式无效。');
+  const groups: PhotoGroup[] = Array.isArray(c.groups)
+    ? c.groups.map((input: unknown) => {
+        ensure(!!input && typeof input === 'object', '照片组格式无效。');
+        const g = input as Record<string, unknown>;
+        const group = {
+          id: uuid(g.id),
+          title: text(g.title, 200, '照片组标题'),
+          description: text(g.description, 10000, '照片组说明'),
+          cover: uuid(g.cover),
+        };
+        const members = photos.filter((p) => p.group === group.id);
+        ensure(
+          members.length >= 2 && members.some((p) => p.id === group.cover),
+          '照片组至少需要两张照片，封面必须属于该组。',
+        );
+        return group;
+      })
+    : [];
+  ensure(groups.length <= 500 && new Set(groups.map((g) => g.id)).size === groups.length, '照片组数量或标识无效。');
+  ensure(
+    photos.every((p) => !p.group || groups.some((g) => g.id === p.group)),
+    '照片所属的照片组不存在。',
+  );
+  const markdown = c.markdown === undefined ? blocksMarkdown(blocks) : text(c.markdown, 250000, 'Markdown');
+  ensure(
+    new TextEncoder().encode(JSON.stringify({ markdown, groups })).length <= 1000000,
+    '相册正文和照片组说明合计过长，请适当缩短。',
+  );
+  // Flatten groups at their first appearance so every group remains one ordered item.
+  const ordered: DraftPhoto[] = [];
+  for (const p of photos)
+    if (!ordered.includes(p)) ordered.push(...(p.group ? photos.filter((x) => x.group === p.group) : [p]));
   return {
     title,
     slug,
@@ -142,7 +196,9 @@ export function validateContent(input: unknown): AlbumContent {
     position: Number(c.position),
     summary: text(c.summary, 2000, '简介'),
     blocks,
-    photos,
+    markdown,
+    groups,
+    photos: ordered,
     cover: c.cover === '' ? '' : uuid(c.cover),
     location: c.location as Location,
     showExif: c.showExif,
@@ -156,6 +212,8 @@ export function emptyAlbum(title: string, slug: string, parent = ''): AlbumConte
     position: 0,
     summary: '',
     blocks: [],
+    markdown: '',
+    groups: [],
     photos: [],
     cover: '',
     location: 'hidden',

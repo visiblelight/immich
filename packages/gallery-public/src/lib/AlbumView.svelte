@@ -16,13 +16,22 @@
   function navigatePhoto(photo: DisplayPhoto | null, replace = false) {
     if (!data.active) return;
     const base = `/albums/${data.active.slug}`;
-    const index = data.active.photos.findIndex((p) => p.id === data.photoId);
-    void goto(
-      photo
-        ? `${base}/photos/${photo.id}`
-        : `${base}?page=${Math.max(1, Math.floor(index / 48) + 1)}#photo-${data.photoId}`,
-      { replaceState: replace, noScroll: !!photo, keepFocus: false },
+    const selected = data.active.photos.find((p) => p.id === data.photoId);
+    const items = data.active.photos.filter(
+      (p, index, list) => !p.group || list.findIndex((member) => member.group?.id === p.group?.id) === index,
     );
+    const selectedIndex = items.findIndex((p) =>
+      selected?.group ? p.group?.id === selected.group.id : p.id === selected?.id,
+    );
+    const cover = selected?.group
+      ? (data.active.photos.find((p) => p.id === selected.group?.cover) ?? items[selectedIndex])
+      : selected;
+    const returnUrl = `${base}?page=${Math.max(1, Math.floor(selectedIndex / 48) + 1)}#photo-${cover?.id ?? ''}`;
+    void goto(photo ? `${base}/photos/${photo.id}` : returnUrl, {
+      replaceState: replace,
+      noScroll: !!photo,
+      keepFocus: false,
+    });
   }
 </script>
 

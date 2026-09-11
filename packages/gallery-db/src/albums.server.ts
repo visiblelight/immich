@@ -3,6 +3,8 @@ import { sql, type Kysely } from 'kysely';
 import sharp from 'sharp';
 import { readSourceDerivative, type MediaRoot } from './media.server.ts';
 import {
+  documentMarkdown,
+  literalMarkdown,
   assertTree,
   emptyAlbum,
   ensure,
@@ -30,7 +32,11 @@ interface DraftRow {
   position: string;
   title: string;
   summary: string;
-  description_document: { blocks: AlbumContent['blocks'] };
+  description_document: {
+    blocks: AlbumContent['blocks'];
+    markdown?: string;
+    groups?: import('@gallery/core').PhotoGroup[];
+  };
   cover_asset_id: string | null;
   location_mode: AlbumContent['location'];
   show_exif: boolean;
@@ -70,8 +76,8 @@ export async function adminState(db: Db) {
       ).rows;
       const photos = (
         await sql<
-          DraftPhoto & { album_id: string }
-        >`SELECT id,album_id,immich_asset_id AS asset,title,description,alt_text AS alt,location_mode AS location FROM gallery.album_photo ORDER BY album_id,position`.execute(
+          DraftPhoto & { album_id: string; description_format: string }
+        >`SELECT id,album_id,immich_asset_id AS asset,title,description,alt_text AS alt,location_mode AS location,group_id AS "group",description_format FROM gallery.album_photo ORDER BY album_id,position`.execute(
           trx,
         )
       ).rows;
@@ -89,11 +95,19 @@ export async function adminState(db: Db) {
           parent: r.parent_album_id ?? '',
           position: Number(r.position),
           summary: r.summary,
-          blocks: r.description_document.blocks,
+          blocks: [],
+          markdown: documentMarkdown(r.description_document, r.summary),
+          groups: r.description_document.groups ?? [],
           cover: r.cover_asset_id ?? '',
           location: r.location_mode,
           showExif: r.show_exif,
-          photos: photos.filter((p) => p.album_id === r.id).map(({ album_id, ...p }) => p),
+          photos: photos
+            .filter((p) => p.album_id === r.id)
+            .map(({ album_id, description_format, ...p }) => ({
+              ...p,
+              group: p.group ?? '',
+              description: description_format === 'plain' ? literalMarkdown(p.description) : p.description,
+            })),
         },
       }));
       return { site, albums };
@@ -247,12 +261,29 @@ export async function saveAlbum(db: Db, user: GalleryUser, id: string, input: Re
     await sql`UPDATE gallery.album SET slug=${c.slug},version=version+1,updated_at=now() WHERE id=${id}::uuid`.execute(
       trx,
     );
-    await sql`UPDATE gallery.album_draft SET title=${c.title},summary=${c.summary},description_document=${JSON.stringify({ schemaVersion: 1, blocks: c.blocks })}::jsonb,parent_album_id=${c.parent || null}::uuid,position=${c.position},cover_asset_id=${c.cover || null}::uuid,location_mode=${c.location},show_exif=${c.showExif},version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE album_id=${id}::uuid`.execute(
+    await sql`UPDATE gallery.album_draft SET title=${c.title},summary=${c.summary},description_document=${JSON.stringify({ schemaVersion: 1, blocks: [], markdown: c.markdown, groups: c.groups })}::jsonb,parent_album_id=${c.parent || null}::uuid,position=${c.position},cover_asset_id=${c.cover || null}::uuid,location_mode=${c.location},show_exif=${c.showExif},version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE album_id=${id}::uuid`.execute(
+      trx,
+    );
+    const previous = (
+      await sql<{
+        id: string;
+        asset: string;
+        created_at: Date;
+      }>`SELECT id,immich_asset_id AS asset,created_at FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx)
+    ).rows;
+    for (const p of c.photos) {
+      const old = previous.find((x) => x.id === p.id);
+      ensure(!old || old.asset === p.asset, '照片身份不能更换来源。', 409);
+    }
+    await sql`INSERT INTO gallery.asset_entry(immich_asset_id) SELECT x.asset FROM jsonb_to_recordset(${JSON.stringify(c.photos)}::jsonb) AS x(asset uuid) ON CONFLICT DO NOTHING`.execute(
       trx,
     );
     await sql`DELETE FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx);
     if (c.photos.length)
-      await sql`INSERT INTO gallery.album_photo(id,album_id,immich_asset_id,position,title,description,alt_text,location_mode) SELECT x.id,${id}::uuid,x.asset,x.position,x.title,x.description,x.alt,x.location FROM jsonb_to_recordset(${JSON.stringify(c.photos.map((p, position) => ({ ...p, position })))}::jsonb) AS x(id uuid,asset uuid,position integer,title text,description text,alt text,location text)`.execute(
+      await sql`INSERT INTO gallery.album_photo(id,album_id,immich_asset_id,position,title,description,alt_text,location_mode,group_id,description_format,created_at)
+      SELECT x.id,${id}::uuid,x.asset,x.position,x.title,x.description,x.alt,x.location,x.group_id,'markdown',coalesce(x.created_at,now())
+      FROM jsonb_to_recordset(${JSON.stringify(c.photos.map((p, position) => ({ ...p, position, group_id: p.group || null, created_at: previous.find((x) => x.id === p.id)?.created_at ?? null })))}::jsonb)
+      AS x(id uuid,asset uuid,position integer,title text,description text,alt text,location text,group_id uuid,created_at timestamptz)`.execute(
         trx,
       );
     if (previousParent !== c.parent)
@@ -337,7 +368,7 @@ export async function publishAlbum(
           }
         : null,
     }));
-    await sql`INSERT INTO gallery.album_release_photo(release_id,photo_id,immich_asset_id,position,title,description,alt_text,location_mode,public_exif) SELECT ${release}::uuid,p.id,p.immich_asset_id,p.position,p.title,p.description,p.alt_text,p.location_mode,x.exif FROM gallery.album_photo p LEFT JOIN jsonb_to_recordset(${JSON.stringify(exifs)}::jsonb) AS x(asset uuid,exif jsonb) ON x.asset=p.immich_asset_id WHERE p.album_id=${id}::uuid`.execute(
+    await sql`INSERT INTO gallery.album_release_photo(release_id,photo_id,immich_asset_id,position,title,description,alt_text,location_mode,public_exif,group_id,description_format) SELECT ${release}::uuid,p.id,p.immich_asset_id,p.position,p.title,p.description,p.alt_text,p.location_mode,x.exif,p.group_id,p.description_format FROM gallery.album_photo p LEFT JOIN jsonb_to_recordset(${JSON.stringify(exifs)}::jsonb) AS x(asset uuid,exif jsonb) ON x.asset=p.immich_asset_id WHERE p.album_id=${id}::uuid`.execute(
       trx,
     );
     await sql`UPDATE gallery.album SET status='published',current_release_id=${release}::uuid,version=version+1,first_published_at=coalesce(first_published_at,now()),last_published_at=now(),offline_at=NULL,updated_at=now() WHERE id=${id}::uuid`.execute(

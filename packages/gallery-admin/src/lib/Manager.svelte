@@ -1,15 +1,9 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import type {
-    AlbumContent,
-    DraftPhoto,
-    GallerySite,
-    GalleryUser,
-    ManagedAlbum,
-    SourcePhoto,
-    TextBlock,
-  } from '@gallery/core';
+  import type { AlbumContent, DraftPhoto, GallerySite, GalleryUser, ManagedAlbum, SourcePhoto } from '@gallery/core';
   import './design/admin.css';
+  import { MarkdownEditor } from '@gallery/ui';
+  import AlbumPhotosEditor from './AlbumPhotosEditor.svelte';
   let { initial }: { initial: { site: GallerySite; albums: ManagedAlbum[]; user: GalleryUser; publicOrigin: string } } =
     $props();
   const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -271,17 +265,6 @@
     edited = copy(p);
     void open('photo');
   }
-  function move(index: number, offset: number) {
-    if (!content) return;
-    const photos = [...content.photos];
-    [photos[index], photos[index + offset]] = [photos[index + offset]!, photos[index]!];
-    content.photos = photos;
-  }
-  function remove(asset: string) {
-    if (!content) return;
-    content.photos = content.photos.filter((p) => p.asset !== asset);
-    if (content.cover === asset) content.cover = '';
-  }
   async function confirmAction() {
     await run(async () => {
       await api(action === 'publish' ? 'publish' : action === 'delete' ? 'delete' : 'availability', {
@@ -454,51 +437,7 @@
                   </p>{/if}
               </div>
             </section>
-            <section class="panel content-panel">
-              <div class="section-heading">
-                <div>
-                  <h2>本册照片 <small>{content.photos.length}</small></h2>
-                  <p class="muted">点击照片编辑文字，用箭头调整顺序。</p>
-                </div>
-                <button class="primary" onclick={pick}>＋ 从 Immich 选片</button>
-              </div>
-              <div class="photo-grid">
-                {#each content.photos as p, index}<article class="photo-card">
-                    <button class="photo-image" onclick={() => editPhoto(p)}
-                      ><img
-                        src={media(p.asset)}
-                        alt={p.alt || p.title || '编辑照片'}
-                      />{#if content.cover === p.asset}<span class="cover-badge">封面</span>{/if}<span
-                        class="photo-index">{index + 1}</span
-                      ></button
-                    ><button class="photo-caption" onclick={() => editPhoto(p)}
-                      ><strong>{p.title || '添加照片标题'}</strong><small>照片 {index + 1}</small></button
-                    >
-                    <div class="photo-actions">
-                      <button
-                        aria-label={`前移照片 ${index + 1}`}
-                        disabled={index === 0}
-                        onclick={() => move(index, -1)}>←</button
-                      ><button
-                        aria-label={`后移照片 ${index + 1}`}
-                        disabled={index === content!.photos.length - 1}
-                        onclick={() => move(index, 1)}>→</button
-                      ><button
-                        class="text-action"
-                        disabled={content.cover === p.asset}
-                        onclick={() => (content!.cover = p.asset)}>设为封面</button
-                      ><button class="remove" aria-label={`移除照片 ${index + 1}`} onclick={() => remove(p.asset)}
-                        >×</button
-                      >
-                    </div>
-                  </article>{/each}
-              </div>
-              {#if !content.photos.length}<div class="empty large">
-                  <h3>把故事的第一张照片放进来</h3>
-                  <p>可以从多个 Immich 相册挑选，组合成自己的相册。</p>
-                  <button onclick={pick}>从 Immich 选片</button>
-                </div>{/if}
-            </section>
+            <section class="panel content-panel"><AlbumPhotosEditor bind:content {editPhoto} {pick} /></section>
           {:else if tab === 'story'}<section class="panel content-panel">
               <div class="section-heading">
                 <div>
@@ -507,31 +446,13 @@
                 </div>
                 <span class="badge">文字内容</span>
               </div>
-              <label>简短介绍<textarea rows="2" maxlength="2000" bind:value={content.summary}></textarea></label>
-              <div class="writing-toolbar">
-                <span>添加内容</span
-                >{#each [['paragraph', '段落'], ['heading', '小标题'], ['quote', '引用']] as [kind, label]}<button
-                    onclick={() => content!.blocks.push({ kind: kind as TextBlock['kind'], text: '' })}
-                    >＋ {label}</button
-                  >{/each}
-              </div>
-              <div class="blocks">
-                {#each content.blocks as block, index}<div class="text-block">
-                    <div class="block-tools">
-                      <span
-                        >{block.kind === 'heading' ? '小标题' : block.kind === 'quote' ? '引用' : '段落'}
-                        {index + 1}</span
-                      ><button aria-label={`删除文字块 ${index + 1}`} onclick={() => content!.blocks.splice(index, 1)}
-                        >删除</button
-                      >
-                    </div>
-                    <textarea
-                      aria-label={`文字块 ${index + 1}`}
-                      rows={block.kind === 'paragraph' ? 5 : 2}
-                      maxlength="10000"
-                      bind:value={block.text}></textarea>
-                  </div>{/each}
-              </div>
+              <MarkdownEditor label="相册正文" bind:value={content.markdown} filename={`${content.slug}.md`} />
+              <details style="margin-top:20px">
+                <summary>可选摘要 · 用于列表与分享</summary><label
+                  >摘要<textarea rows="2" maxlength="2000" bind:value={content.summary}></textarea></label
+                >
+                <p class="muted">留空时自动提取正文，详情页不重复展示摘要。</p>
+              </details>
             </section>
           {:else}<section class="panel content-panel form-panel">
               <h2>基本设置</h2>
@@ -861,15 +782,26 @@
           <p>{cache[edited.asset]?.filename ?? 'Immich 来源照片'}</p>
         </div>
         <div class="form-panel">
-          <label>照片标题<input maxlength="200" bind:value={edited.title} /></label><label
-            >照片描述<textarea maxlength="10000" rows="5" bind:value={edited.description}></textarea></label
-          ><label>替代文本<input maxlength="500" bind:value={edited.alt} /></label><label
-            >位置公开方式<select bind:value={edited.location}
-              ><option value="inherit">跟随相册设置</option><option value="hidden">隐藏位置</option><option
-                value="approximate">近似位置</option
-              ><option value="exact">精确位置（受相册策略限制）</option></select
-            ></label
-          >
+          <label>照片标题<input maxlength="200" bind:value={edited.title} /></label><MarkdownEditor
+            label={edited.group ? '角度说明' : '照片描述'}
+            bind:value={edited.description}
+            maxLength={50000}
+            filename="photo.md"
+          />
+          <details>
+            <summary>高级设置</summary><label
+              >画面描述（无障碍，选填）<input maxlength="500" bind:value={edited.alt} /></label
+            >
+            <p class="footnote">简要描述画面，供读屏软件或图片加载失败时使用。</p>
+            <label
+              >向访客展示的位置<select bind:value={edited.location}
+                ><option value="inherit">跟随相册设置</option><option value="hidden">隐藏位置</option><option
+                  value="approximate">近似位置</option
+                ><option value="exact">精确位置（受相册设置限制）</option></select
+              ></label
+            >
+            <p class="footnote">近似位置会模糊坐标，不等同于城市中心；不会修改 Immich 的 GPS。</p>
+          </details>
           <p class="footnote">文案只属于当前 Gallery 相册，不回写 Immich。</p>
         </div>
       </div>

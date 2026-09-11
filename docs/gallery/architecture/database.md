@@ -1,8 +1,8 @@
 # Gallery 数据库设计与完整数据字典
 
-> 2026-09-11 范围修订：见 [ADR 0002](../decisions/0002-albums-first.md)。首页／地图暂缓，详细介绍不再插图，关于未来由文章选篇。本文保留已验证结构和扩展边界，不代表相应 UI 仍在 MVP；文章模块仍未建表；本轮新增认证限流迁移 0003。
+> 2026-09-11 范围修订：见 [ADR 0002](../decisions/0002-albums-first.md)。首页／地图暂缓，详细介绍不再插图，关于未来由文章选篇。本文保留已验证结构和扩展边界，不代表相应 UI 仍在 MVP；文章模块仍未建表；认证限流见迁移 0003，Markdown、照片组及时间轴见文末 0004 增量。
 
-状态：0001–0003 与真实应用已通过隔离 PostgreSQL 14 验证；本地接入记录见 [MVP 交付](../delivery/mvp-local.md)。版本：0.3，2026-09-11。
+状态：0001–0004 与真实应用已通过隔离 PostgreSQL 14 验证；本地接入记录见 [MVP 交付](../delivery/mvp-local.md)。版本：0.4，2026-09-11。
 
 ## 1. 设计边界
 
@@ -15,7 +15,7 @@
 - Gallery 文案、照片成员、排序、封面、父级与公开设置使用草稿／发布快照。
 - 不给 Immich 核心表加字段、触发器或 Gallery 外键；自身表间正常使用外键。
 
-## 2. 表目录：13 张业务表（含认证限流）+ 1 张迁移表
+## 2. 表目录：14 张业务表（含认证限流）+ 1 张迁移表
 
 | 表 | 用途 |
 |---|---|
@@ -25,6 +25,7 @@
 | `gallery.auth_throttle` | 登录及密码修改的持久化限流 |
 | `gallery.site` | 单站点配置及全局编辑并发版本 |
 | `gallery.immich_source_owner` | 允许引用的 Immich 资源所有者白名单 |
+| `gallery.asset_entry` | 全局 Asset 首次加入 Gallery 的时间与历史估算标记，详见 0004 增量 |
 | `gallery.album` | 相册稳定身份、slug、发布状态及当前版本指针 |
 | `gallery.album_draft` | 当前相册草稿、父级和相册内容 |
 | `gallery.album_photo` | 草稿中的直接照片、独立标题描述及顺序 |
@@ -177,7 +178,7 @@ CHECK：draft 时 current_release_id/first_published_at/last_published_at/offlin
 | `immich_asset_id` | uuid，必填 | 资源引用，无指向 Immich 的 FK |
 | `position` | integer，必填，CHECK >= 0 | 相册内照片顺序 |
 | `title` | text，必填，默认 '' | Gallery 独立标题，最多 200 字符 |
-| `description` | text，必填，默认 '' | 独立多段纯文本描述，最多 10000 字符 |
+| `description` | text，必填，默认 '' | 独立描述，最多 50000 字符；由 description_format 区分旧纯文本与 Markdown |
 | `alt_text` | text，必填，默认 '' | 替代文本，最多 500 字符 |
 | `location_mode` | text，必填，默认 inherit | CHECK IN ('inherit','hidden','approximate','exact')；只能在相册上限内生效 |
 | `created_at` | timestamptz，必填，默认 now() | 加入草稿时间 |
@@ -282,7 +283,7 @@ UNIQUE `(release_id,immich_asset_id)`，UNIQUE `(release_id,position)`；索引 
 }
 ```
 
-限制为最多 200 块、每块 10000 个字符、blocks 序列化长度最多 250000 个字符；HTTP 写请求上限 2000000 字节。应用只接受 kind/text 两个键。单册最多 1000 张照片。该最小文字块编辑器替代早期未实现的 marks/children 结构，后续扩展必须版本化。
+下述为旧文档兼容限制，新编辑流程见 0004 增量。限制为最多 200 块、每块 10000 个字符、blocks 序列化长度最多 250000 个字符；HTTP 写请求上限 2000000 字节。应用只接受 kind/text 两个键。单册最多 1000 张照片。该最小文字块编辑器替代早期未实现的 marks/children 结构，后续扩展必须版本化。
 
 ## 18. 关系图
 
@@ -341,3 +342,24 @@ erDiagram
 | `reset_at` | timestamptz，必填 | 15 分钟窗口结束；索引 auth_throttle_expiry_idx |
 
 仅 gallery_admin 拥有 CRUD。登录每账号 10 次、每客户端地址 60 次／15 分钟；修改密码每用户 10 次／15 分钟。成功登录清除本账号及已过期限流行。多进程与重启共享限流状态；会话有效期 8 小时，改密撤销全部会话。反向代理部署时需另外配置可信客户端地址，当前本地服务使用直连地址。
+## 0004 增量：Markdown、照片组和加入时间
+
+2026-09-11 用户已确认，见 ADR 0004。以下为增量结构，不改写 0001–0003 或旧发布文档；实际迁移结果见本轮交付记录。
+
+`album_draft.description_document` 与 `album_release.description_document` 保留 JSON 容器及既有 schemaVersion/blocks 兼容约束，增加 `markdown: string`（最多 250000 字符）和 `groups: [{id,title,description,cover}]`。Markdown 与 groups 合计最多 1,000,000 UTF-8 字节，完整 JSONB 仍受 1 MiB 数据库约束。新保存使用空 blocks，旧文档在读取时转成 Markdown，不原地改写历史正文。组描述最多 10000 字符，封面为成员 photo ID；组定义随相册快照发布，不另建独立发布流程。保存事务验证成员至少两张、组 ID 唯一、无嵌套且封面属于该组，并将组成员归并到第一个成员的位置。
+
+`album_photo` 和 `album_release_photo` 新增 `group_id uuid NULL` 与 `description_format text NOT NULL DEFAULT 'plain'`，后者 CHECK 为 plain/markdown。旧描述按普通文字转义，避免 Markdown 符号改变历史显示；新保存为 markdown。照片描述上限调整为 50000 字符，以保留解散组时合并的组说明。group_id 引用同一草稿或快照的 groups 定义，由应用在同一保存事务内校验，不跨 Immich 建 FK。
+
+新增 `gallery.asset_entry`：
+
+| 字段 | 类型与约束 | 含义 |
+|---|---|---|
+| immich_asset_id | uuid PRIMARY KEY | Immich 逻辑资产引用，无跨 schema FK |
+| first_added_at | timestamptz NOT NULL DEFAULT now() | 首次保存进入 Gallery，服务端记录且不更新 |
+| estimated | boolean NOT NULL DEFAULT false | 旧数据只能由现有加入/发布时间估算时为 true |
+
+索引 `(first_added_at DESC,immich_asset_id)`。admin 仅 SELECT/INSERT，不可 UPDATE/DELETE；public 无直接权限；view_owner 可读。历史回填取现存草稿创建时间、历史发布时刻的最小值，标记 estimated。移除、再添加、重排、跨相册复用和重新发布不会刷新 first_added_at。保存现存成员时也保留 album_photo.created_at。
+
+受控 published_photo 视图末尾增加 group_id、description_format、taken_at、first_added_at、estimated。仍从当前可公开相册、有效祖先及来源视图出发；GPS 继续使用原有脱敏逻辑。taken_at 沿用 Immich fileCreatedAt，年月按 UTC 确定以避免访问者时区改变分组；无法确定时归到 unknown。全站查询先应用权限，再按 Asset 去重，代表出现位置按相册首次发布时间及稳定 ID 选择。返回的标题、组说明、EXIF 和位置全部来自该代表上下文；其他相册入口仅列当前可公开出现位置。
+
+0004 使旧打开表单的 album.version 递增，避免旧客户端覆盖新增字段。现有 photo ID 与 URL 不变；新增前台 /photos 不按 Asset ID 直接授予媒体访问。

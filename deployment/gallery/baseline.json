@@ -26,15 +26,16 @@
   "databaseVerification": {
     "postgresVersion": "14.19",
     "isolationOnly": false,
-    "businessTables": 13,
+    "businessTables": 14,
     "migrationTables": 1,
     "controlledViews": 11,
     "migrations": [
       "0001",
       "0002",
-      "0003"
+      "0003",
+      "0004"
     ],
-    "integrationTestsPassed": 20,
+    "integrationTestsPassed": 21,
     "syntheticMapPoints": 10000,
     "immichOriginalMigrationAndDriftChecksPassed": true,
     "testData": "isolated synthetic fixtures; real local integration uses explicit source scope"
@@ -48,5 +49,13 @@
     "fullImmichPhotoUpgrade": true,
     "realBackupCopyRestore": true,
     "stableWorkingDevelopment": true
+  },
+  "interactionUpgrade": {
+    "markdown": true,
+    "photoGroups": true,
+    "photoTimeline": true,
+    "dragOrdering": true,
+    "legacySnapshotPreserved": true,
+    "physicalMobileVerified": false
   }
 }
