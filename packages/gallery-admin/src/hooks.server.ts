@@ -11,7 +11,10 @@ export const handle: Handle = async ({ event, resolve }) => {
       !['GET', 'HEAD', 'OPTIONS'].includes(event.request.method) &&
       event.request.headers.get('origin') !== app.origin
     )
-      return new Response('请求来源无效。', { status: 403 });
+      return Response.json(
+        { message: `请求来源与后台地址不一致，请通过 ${app.origin}/login 登录。` },
+        { status: 403, headers: { 'cache-control': 'no-store' } },
+      );
     event.locals.user = await sessionUser(app.db, event.cookies.get('gallery_admin_session'));
     const open = event.url.pathname === '/login' || event.url.pathname === '/api/login';
     if (!open && !event.locals.user) {
@@ -27,9 +30,13 @@ export const handle: Handle = async ({ event, resolve }) => {
     response.headers.set('x-frame-options', 'DENY');
     return response;
   } catch (e) {
-    return new Response(e instanceof GalleryError ? e.message : 'Gallery 暂时无法连接数据服务。', {
+    const message = e instanceof GalleryError ? e.message : 'Gallery 暂时无法连接数据服务。';
+    const options = {
       status: e instanceof GalleryError ? e.status : 503,
       headers: { 'cache-control': 'no-store' },
-    });
+    };
+    return event.url.pathname.startsWith('/api/')
+      ? Response.json({ message }, options)
+      : new Response(message, options);
   }
 };

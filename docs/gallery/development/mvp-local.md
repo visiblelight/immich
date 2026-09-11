@@ -10,6 +10,8 @@
 - 独立 Gallery 管理员邮箱 `admin@gallery.local`，随机初始密码仅在本机 `.gallery-local/runtime/initial-admin.txt`。文件权限 0600，不提交 Git；登录后可在个人账号里改密。不要复用 Immich 密码。
 - `/design` 仍是示例原型，保存和发布只影响页面内存；实际操作必须进入 `/albums`。
 
+后台登录和写入会校验浏览器 Origin 与 `GALLERY_ADMIN_ORIGIN` 完全一致。当前请使用 `http://127.0.0.1:3101/login`，不要替换为 localhost、局域网 IP 或其他域名。来源不匹配返回 403 JSON 并提示配置入口，登录页也能显示非 JSON 故障信息。正式域名调整需要同步运行配置并重启后台，不通过关闭来源检查来解决。
+
 本地数据库已初始化 Gallery，来源范围只包含本轮明确选择的 Immich 用户。没有自动创建公开相册。浏览器验收用草稿已删除；照片仍由 Immich 管理。
 
 ## 日常流程

@@ -99,7 +99,16 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     cookie = signed.headers.get('set-cookie')!.split(';')[0]!;
     assert.match(signed.headers.get('set-cookie')!, /HttpOnly/i);
     assert.match(signed.headers.get('set-cookie')!, /SameSite=Strict/i);
-    await api('create', { title: 'forbidden' }, 403, 'https://unrelated.example');
+    const rejected = await api('create', { title: 'forbidden' }, 403, 'https://unrelated.example');
+    assert.match(rejected.headers.get('content-type') ?? '', /application\/json/);
+    assert.match((await rejected.json()).message, /请求来源与后台地址不一致/);
+    const wrongLogin = await api(
+      'login',
+      { email: 'gallery@example.invalid', password: 'replacement-synthetic-password' },
+      403,
+      `http://localhost:${ports.admin}`,
+    );
+    assert.ok((await wrongLogin.json()).message.includes(origins.admin + '/login'));
     assert.equal(
       (
         await fetch(`${origins.admin}/api/create`, {

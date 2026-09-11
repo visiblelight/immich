@@ -14,8 +14,14 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message ?? '登录失败');
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+      const data = isJson ? await response.json() : { message: await response.text() };
+      if (!response.ok || !isJson) {
+        const text = typeof data.message === 'string' ? data.message : '';
+        throw new Error(
+          text && !text.trimStart().startsWith('<') ? text : `登录服务暂不可用（${response.status}），请稍后重试。`,
+        );
+      }
       window.location.assign('/albums');
     } catch (e) {
       message = e instanceof Error ? e.message : '登录暂不可用';
