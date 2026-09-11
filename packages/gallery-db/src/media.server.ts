@@ -2,6 +2,7 @@ import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { sql, type Kysely } from 'kysely';
+import sharp from 'sharp';
 
 export type MediaVariant = 'preview' | 'thumbnail';
 export interface MediaRoot {
@@ -18,6 +19,44 @@ interface MediaRow {
   thumbnail_id: string;
   thumbnail_path: string;
   thumbnail_update_id: string;
+}
+
+/** Admin caller must authenticate first; source scope is still enforced here. */
+export async function readSourceDerivative(
+  db: Kysely<unknown>,
+  assetId: string,
+  variant: MediaVariant,
+  root: MediaRoot,
+): Promise<Buffer> {
+  if (variant !== 'preview' && variant !== 'thumbnail') throw new Error('Media unavailable');
+  const media = (
+    await sql<MediaRow>`SELECT asset_id,is_edited,asset_update_id,preview_id,preview_path,preview_update_id,thumbnail_id,thumbnail_path,thumbnail_update_id FROM gallery.admin_source_asset WHERE asset_id=${assetId}::uuid`.execute(
+      db,
+    )
+  ).rows[0];
+  if (!media) throw new Error('Media unavailable');
+  const filePath = await resolveDerivedPath(media[`${variant}_path`], root);
+  const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size > 64 * 1024 * 1024) throw new Error('Media unavailable');
+    return await file.readFile();
+  } finally {
+    await file.close();
+  }
+}
+/** Re-encode every output without EXIF/XMP/IPTC/GPS; originals are never served. */
+export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promise<Buffer> {
+  return sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' })
+    .rotate()
+    .resize({
+      width: variant === 'thumbnail' ? 600 : 2560,
+      height: variant === 'thumbnail' ? 600 : 2560,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .webp({ quality: variant === 'thumbnail' ? 78 : 88 })
+    .toBuffer();
 }
 const inside = (root: string, file: string) => {
   const relative = path.relative(root, file);

@@ -48,9 +48,9 @@ jobs:
           version: '11.22.0'
           run_install: false
       - name: Install only Gallery workspace dependencies
-        run: pnpm --filter '@gallery/*' install --frozen-lockfile --ignore-scripts
-      - run: pnpm gallery:doctor
-      - run: pnpm gallery:check
-      - run: pnpm gallery:test
-      - run: pnpm gallery:build
-      - run: pnpm gallery:smoke
+        run: sh deployment/gallery/scripts/pnpm.sh install --frozen-lockfile --ignore-scripts
+      - run: sh deployment/gallery/scripts/pnpm.sh gallery:doctor
+      - run: sh deployment/gallery/scripts/pnpm.sh gallery:check
+      - run: sh deployment/gallery/scripts/pnpm.sh gallery:test
+      - run: sh deployment/gallery/scripts/pnpm.sh gallery:build
+      - run: sh deployment/gallery/scripts/pnpm.sh gallery:smoke

@@ -5,6 +5,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "gallery:local:init": "node packages/gallery-db/scripts/initialize-local.ts",
+    "gallery:local:public": "node --env-file=.gallery-local/runtime/public.env packages/gallery-public/build/index.js",
+    "gallery:local:admin": "node --env-file=.gallery-local/runtime/admin.env packages/gallery-admin/build/index.js",
     "gallery:doctor": "node deployment/gallery/scripts/doctor.mjs",
     "gallery:check": "pnpm --filter '@gallery/*' -r run check",
     "gallery:build": "pnpm --filter '@gallery/*' -r run build",

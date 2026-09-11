@@ -1,4 +1,5 @@
 export const GALLERY_VERSION = '0.1.0-dev.0';
+export * from './content.ts';
 
 export type GalleryService = 'gallery-public' | 'gallery-admin';
 export type UserRole = 'admin' | 'member';

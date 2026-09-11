@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "galleryVersion": "0.1.0-dev.0",
-  "phase": "D-admin-workflow-prototype-awaiting-review",
+  "phase": "D-E-functional-local-mvp",
   "immich": {
     "sourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056",
     "sourceVersion": "3.2.0-rc.0",
@@ -19,19 +19,22 @@
     "pnpm": "11.22.0"
   },
   "productionReady": false,
-  "databaseMigrationsApplied": false,
+  "databaseMigrationsApplied": true,
   "databaseVerification": {
     "postgresVersion": "14.19",
-    "isolationOnly": true,
-    "businessTables": 12,
+    "isolationOnly": false,
+    "businessTables": 13,
     "migrationTables": 1,
     "controlledViews": 11,
     "migrations": [
       "0001",
-      "0002"
+      "0002",
+      "0003"
     ],
-    "integrationTestsPassed": 16,
+    "integrationTestsPassed": 18,
     "syntheticMapPoints": 10000,
-    "immichOriginalMigrationAndDriftChecksPassed": true
-  }
+    "immichOriginalMigrationAndDriftChecksPassed": true,
+    "testData": "isolated synthetic fixtures; real local integration uses explicit source scope"
+  },
+  "databaseMigrationTarget": "local-development-only"
 }

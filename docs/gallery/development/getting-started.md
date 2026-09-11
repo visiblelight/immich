@@ -1,12 +1,12 @@
 # Gallery 本地开发
 
-状态：工程基础与阶段 C 预览说明。2026-09-10。
+状态：本地功能 MVP。2026-09-11。实际登录和操作优先阅读 [MVP 本地使用](mvp-local.md)。
 
 ## 当前能力边界
 
 已经创建五个 workspace 包。core/db/ui 是由消费端构建器编译的 TypeScript/Svelte 源码包，build 脚本对它们执行类型／组件检查；public/admin 使用 adapter-node 输出真正独立的 Node 服务构建产物。
 
-应用尚未接入用户登录、相册业务或公开图库；数据库模块已完成阶段 B 隔离验证。根页面返回 503 是有意的未开放状态，不是已交付的视觉方案。不会展示该占位页作为产品预览。
+应用已接入独立登录、相册编辑发布与真实公开图库。配置缺失时仍返回 503；配置完整且数据库兼容时根路径跳转到相册页，后台先要求登录。`/design` 保留示例预览，与真实数据隔离。
 
 ## 工具链
 
@@ -23,7 +23,7 @@
 
 ```sh
 # 已有正确 Node/pnpm 的常规环境：
-pnpm --filter '@gallery/*' install --frozen-lockfile --ignore-scripts
+sh deployment/gallery/scripts/pnpm.sh install --frozen-lockfile --ignore-scripts
 pnpm gallery:doctor
 pnpm gallery:check
 pnpm gallery:test
@@ -41,7 +41,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:build
 sh deployment/gallery/scripts/pnpm.sh gallery:smoke
 ```
 
-首次安装针对 Gallery 的五个包，跳过生命周期脚本；SvelteKit sync 在 check 中显式执行。pnpm 会维护根共享锁文件，并可能检查全工作区锁定依赖的供应链策略，但不会因此启动 Immich 或 CVAT 服务。不要关闭仓库既有依赖审核策略来加速安装。
+安装范围为 Gallery 五个包和根脚本包，包装器也让嵌套 pnpm 校验使用同一过滤范围与 store。首次安装，跳过生命周期脚本；SvelteKit sync 在 check 中显式执行。pnpm 会维护根共享锁文件，并可能检查全工作区锁定依赖的供应链策略，但不会因此启动 Immich 或 CVAT 服务。不要关闭仓库既有依赖审核策略来加速安装。
 
 ## 开发服务
 
@@ -53,10 +53,10 @@ sh deployment/gallery/scripts/pnpm.sh gallery:dev:admin
 
 默认只监听 127.0.0.1，public 为 3100，admin 为 3101；端口被占用会报错，不悄悄改到别的端口。
 
-| 接口 | 阶段 A 预期 |
+| 接口 | 未配置环境的冒烟预期 |
 |---|---|
 | GET /health/live | 200，service/version/status；只说明 Node 进程可响应 |
-| GET /health/ready | 503，foundation-only；应用尚未接入数据库与登录授权 |
+| GET /health/ready | 503，foundation-only；当前进程缺少显式运行配置 |
 | GET / | 503，站点未开放 |
 
 gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证以上行为并自动停止，仅依赖本地回环网络，不需要数据库。设计预览额外验证开关和响应头，见下文。
@@ -65,9 +65,9 @@ gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证
 
 只能从 `@gallery/db/server` 引入连接工厂；不能在组件和通用 load 文件里使用。工厂要求显式连接串及 public/admin 服务类型，没有默认连接串，不会读取 Immich 的环境变量或在模块导入时连接数据库。
 
-运行配置要求 public 使用 gallery_public、admin 使用 gallery_admin，拒绝通过 URL 查询参数覆盖角色。阶段 B 已在隔离 PG14 中验证实际 GRANT、受控视图和资源适配；操作见[数据库开发说明](database.md)。后续接入应用时必须运行角色／权限／结构兼容检查，不能只检查角色名。远程 TLS 尚未验收，随部署环境配置验证，不自行拼接 URL 参数绕过限制。
+运行配置要求 public 使用 gallery_public、admin 使用 gallery_admin，拒绝通过 URL 查询参数覆盖角色。阶段 B 已在隔离 PG14 中验证实际 GRANT、受控视图和资源适配；操作见[数据库开发说明](database.md)。应用现已在 readiness 和真实请求入口执行角色／权限／结构兼容检查，每个进程缓存成功结果最多 15 秒。远程 TLS 尚未验收，随部署环境配置验证，不自行拼接 URL 参数绕过限制。
 
-`deployment/gallery/.env.example` 与两个服务的 `.env.example` 只提供明确配置位置，不包含真实凭据。阶段 A 不自动加载它们，不打开任何现有数据库。
+`deployment/gallery/.env.example` 与两个服务的 `.env.example` 不包含真实凭据。此机器的实际配置在忽略目录 `.gallery-local/runtime/`；`gallery:local:*` 显式加载相应 env 文件。上面的 dev 命令不自动读取该目录，真实数据热更新调试须用 Node `--env-file` 启动 Vite，见 MVP 使用说明。
 
 ## CI 与目录
 

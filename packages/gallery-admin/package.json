@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@gallery/core": "workspace:*",
+    "@gallery/db": "workspace:*",
     "@gallery/ui": "workspace:*"
   },
   "devDependencies": {

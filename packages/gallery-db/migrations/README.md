@@ -1,8 +1,9 @@
 # Gallery migrations
 
-Phase B implements and verifies `0001_foundation.sql` (12 business tables) and
-`0002_source_and_public_views.sql` (11 controlled views). The migration runner
-owns the 13th table, `gallery.schema_migration`.
+0001 creates 12 business tables, 0002 creates 11 controlled views, and 0003 adds
+persistent authentication throttling. The runner owns schema_migration: 14 tables
+in total. Exact columns, constraints and permissions are documented in
+`docs/gallery/architecture/database.md`.
 
 Bootstrap is a separate, one-time database-owner operation in
 `deployment/gallery/database/bootstrap.sql`; the normal runner requires an actual
@@ -10,7 +11,6 @@ Bootstrap is a separate, one-time database-owner operation in
 Migrations use an advisory lock, SHA-256 history checks and one transaction per file.
 Do not edit an applied migration; introduce the next numbered SQL file.
 
-The original Immich database has **not** received these migrations. Phase B ran
-only against isolated PostgreSQL 14 with synthetic data. Reproduction, bootstrap,
-source-owner commands and validation limits are documented in
-`docs/gallery/development/database.md` and `docs/gallery/delivery/phase-b.md`.
+See `docs/gallery/development/mvp-local.md` for explicit local integration and
+`docs/gallery/delivery/mvp-local.md` for actual verification and deployment limits.
+Phase B records remain historical evidence of the original isolated validation.

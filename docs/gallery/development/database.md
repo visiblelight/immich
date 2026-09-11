@@ -1,12 +1,13 @@
 # Gallery 数据库开发与验证
 
-阶段 B 已实现，2026-09-10。当前实际图库未执行 Gallery 初始化或迁移。
+本文主体记录阶段 B 的隔离验证方法。2026-09-11 更新：0003 认证限流与实际应用已接入，本地开发图库已初始化；当前启动与操作以 [MVP 本地使用](mvp-local.md) 为准。
 
 ## 1. 代码与权限
 
 - `packages/gallery-db/migrations/0001_foundation.sql`：12 张业务表、约束、索引、管理角色权限。
 - `0002_source_and_public_views.sql`：11 个 security_barrier 视图，由 NOLOGIN 的 gallery_view_owner 持有。
-- `src/migrate.server.ts`：第 13 张 schema_migration、advisory lock、校验和、事务与顺序检查。
+- `0003_auth_throttle.sql`：持久化认证限流表；现在共 14 张表。
+- `src/migrate.server.ts`：schema_migration、advisory lock、校验和、事务与顺序检查。
 - `src/source.server.ts`：独立选片 DTO、相册／标签过滤、游标分页、提交 ID 再校验。
 - `src/map.server.ts`：读取当前发布分支；按 Asset 去重、取较保守精度后再 bbox 过滤和完整聚合，支持跨日期变更线。一次视口最多约 65×65 个格子。
 - `src/media.server.ts`：每次先查询当前公开资格；只接受 preview/thumbnail，限制真实路径与文件大小，匹配 isEdited，版本包含文件 ID/updateId。返回值只是服务端图片处理流水线的输入，**不能直接作为公开 HTTP 图片响应**。

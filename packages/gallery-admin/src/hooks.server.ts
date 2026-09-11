@@ -1,0 +1,35 @@
+import type { Handle } from '@sveltejs/kit';
+import { GalleryError } from '@gallery/core';
+import { sessionUser } from '@gallery/db/server';
+import { getRuntime } from '$lib/server/runtime';
+export const handle: Handle = async ({ event, resolve }) => {
+  if (event.url.pathname.startsWith('/design') || event.url.pathname.startsWith('/health/')) return resolve(event);
+  try {
+    const app = getRuntime();
+    await app.ready();
+    if (
+      !['GET', 'HEAD', 'OPTIONS'].includes(event.request.method) &&
+      event.request.headers.get('origin') !== app.origin
+    )
+      return new Response('请求来源无效。', { status: 403 });
+    event.locals.user = await sessionUser(app.db, event.cookies.get('gallery_admin_session'));
+    const open = event.url.pathname === '/login' || event.url.pathname === '/api/login';
+    if (!open && !event.locals.user) {
+      return event.url.pathname.startsWith('/api/') || event.url.pathname.startsWith('/media/')
+        ? Response.json({ message: '请先登录 Gallery。' }, { status: 401, headers: { 'cache-control': 'no-store' } })
+        : new Response(null, { status: 303, headers: { location: '/login', 'cache-control': 'no-store' } });
+    }
+    const response = await resolve(event);
+    response.headers.set('cache-control', 'no-store');
+    response.headers.set('x-robots-tag', 'noindex, nofollow');
+    response.headers.set('x-content-type-options', 'nosniff');
+    response.headers.set('referrer-policy', 'same-origin');
+    response.headers.set('x-frame-options', 'DENY');
+    return response;
+  } catch (e) {
+    return new Response(e instanceof GalleryError ? e.message : 'Gallery 暂时无法连接数据服务。', {
+      status: e instanceof GalleryError ? e.status : 503,
+      headers: { 'cache-control': 'no-store' },
+    });
+  }
+};

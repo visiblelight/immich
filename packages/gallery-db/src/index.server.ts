@@ -21,3 +21,8 @@ export {
 export { readPublishedDerivative, type MediaRoot, type MediaVariant } from './media.server.ts';
 export { getMapClusters, type MapRequest, type MapCluster } from './map.server.ts';
 export { assertDatabaseCompatibility } from './compatibility.server.ts';
+export * from './auth.server.ts';
+export * from './albums.server.ts';
+export * from './catalog.server.ts';
+export * from './runtime.server.ts';
+export { readSourceDerivative, sanitizeImage } from './media.server.ts';

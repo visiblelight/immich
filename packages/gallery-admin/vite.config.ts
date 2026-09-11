@@ -3,5 +3,5 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [sveltekit()],
-  ssr: { noExternal: [/^@gallery\//] },
+  ssr: { noExternal: ['@gallery/ui'], external: ['@gallery/db', '@gallery/core'] },
 });

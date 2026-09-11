@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { workflow } from './workflow.ts';
+import { httpWorkflow } from './http-workflow.ts';
 import pg from 'pg';
 import { sql } from 'kysely';
 import { migrate, migrationDirectory } from '../../src/migrate.server.ts';
@@ -134,7 +136,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
     await admin.connect();
     await pub.connect();
     await t.test('transactional migration, repeat execution, role identity', async () => {
-      assert.deepEqual(await migrate(migrator), ['0001', '0002']);
+      assert.deepEqual(await migrate(migrator), ['0001', '0002', '0003']);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
       assert.equal(
@@ -143,7 +145,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
           )
         ).rows[0].count,
-        '13',
+        '14',
       );
     });
     await t.test('runtime compatibility checks validate service roles and view contracts', async () => {
@@ -161,7 +163,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         await assert.rejects(migrate(migrator, dirUrl), /history mismatch/);
         await copyFile(new URL('0001_foundation.sql', migrationDirectory), path.join(directory, '0001_foundation.sql'));
         await writeFile(
-          path.join(directory, '0003_failure.sql'),
+          path.join(directory, '0004_failure.sql'),
           'CREATE TABLE gallery.rollback_probe(id integer); SELECT 1/0;',
         );
         await assert.rejects(migrate(migrator, dirUrl), (e: { code: string }) => e.code === '22012');
@@ -170,7 +172,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           null,
         );
         assert.equal(
-          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='0003'")).rows[0].count,
+          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='0004'")).rows[0].count,
           '0',
         );
       } finally {
@@ -576,6 +578,12 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         JSON.stringify(plan.rows, null, 2),
       );
       console.log(`Map fixture: 10,000 points, ${clusters.length} clusters, ${ms.toFixed(1)} ms; SQL plan recorded.`);
+    });
+    await t.test('real Gallery workflow, publication isolation, conflicts, metadata stripping and authentication', async () => {
+      await workflow(adminDb, publicDb, owner, ids.user, assets[0]!, assets[2]!, mediaRoot);
+    });
+    await t.test('production HTTP login, CSRF, publish, media revocation and restart persistence', async () => {
+      await httpWorkflow(assets[0]!, mediaRoot);
     });
   } finally {
     await Promise.allSettled([

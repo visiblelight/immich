@@ -1,9 +1,7 @@
 import { json } from '@sveltejs/kit';
-
-export function GET() {
-  // Replace only after schema, authorization and required services are verified.
-  return json(
-    { service: 'gallery-admin', status: 'not-ready', reason: 'foundation-only' },
-    { status: 503, headers: { 'Cache-Control': 'no-store' } },
-  );
+import { env } from '$env/dynamic/private';
+import { getRuntime } from '$lib/server/runtime';
+export async function GET(){
+  if(!env.GALLERY_DATABASE_URL)return json({service:'gallery-admin',status:'not-ready',reason:'foundation-only'},{status:503,headers:{'cache-control':'no-store'}});
+  try{await getRuntime().ready();return json({service:'gallery-admin',status:'ready'},{headers:{'cache-control':'no-store'}});}catch{return json({service:'gallery-admin',status:'not-ready',reason:'database-unavailable'},{status:503,headers:{'cache-control':'no-store'}});}
 }

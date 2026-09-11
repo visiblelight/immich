@@ -1,8 +1,8 @@
 # Gallery 数据库设计与完整数据字典
 
-> 2026-09-11 范围修订：见 [ADR 0002](../decisions/0002-albums-first.md)。首页／地图暂缓，详细介绍不再插图，关于未来由文章选篇。本文保留已验证结构和扩展边界，不代表相应 UI 仍在 MVP；本轮未修改迁移或新增文章表。
+> 2026-09-11 范围修订：见 [ADR 0002](../decisions/0002-albums-first.md)。首页／地图暂缓，详细介绍不再插图，关于未来由文章选篇。本文保留已验证结构和扩展边界，不代表相应 UI 仍在 MVP；文章模块仍未建表；本轮新增认证限流迁移 0003。
 
-状态：设计已确认；阶段 B 已生成迁移并在隔离 PostgreSQL 14 验证。版本：0.2，2026-09-10。现有 Immich 库未执行 Gallery 建表。
+状态：0001–0003 与真实应用已通过隔离 PostgreSQL 14 验证；本地接入记录见 [MVP 交付](../delivery/mvp-local.md)。版本：0.3，2026-09-11。
 
 ## 1. 设计边界
 
@@ -15,13 +15,14 @@
 - Gallery 文案、照片成员、排序、封面、父级与公开设置使用草稿／发布快照。
 - 不给 Immich 核心表加字段、触发器或 Gallery 外键；自身表间正常使用外键。
 
-## 2. 表目录：12 张业务表 + 1 张迁移表
+## 2. 表目录：13 张业务表（含认证限流）+ 1 张迁移表
 
 | 表 | 用途 |
 |---|---|
 | `gallery.user` | 独立用户身份和角色 |
 | `gallery.user_credential` | 密码哈希，与用户资料分开 |
 | `gallery.session` | 可撤销登录会话 |
+| `gallery.auth_throttle` | 登录及密码修改的持久化限流 |
 | `gallery.site` | 单站点配置及全局编辑并发版本 |
 | `gallery.immich_source_owner` | 允许引用的 Immich 资源所有者白名单 |
 | `gallery.album` | 相册稳定身份、slug、发布状态及当前版本指针 |
@@ -67,7 +68,7 @@
 | 字段 | 定义 | 解释 |
 |---|---|---|
 | `user_id` | uuid，PK，FK → user.id，必填 | 一人一条密码凭据；ON DELETE CASCADE |
-| `password_hash` | text，必填 | 带算法及参数的自描述哈希，使用经过维护的密码库；算法参数在实现时基准测试后固定 |
+| `password_hash` | text，必填 | 版本化密码哈希，使用 Node crypto.scrypt；scrypt-v1 固定 N=32768、r=8、p=3、随机 16 字节盐、64 字节密钥 |
 | `password_changed_at` | timestamptz，必填，默认 now() | 最近密码变更时间 |
 | `created_at` | timestamptz，必填，默认 now() | 创建时间 |
 | `updated_at` | timestamptz，必填，默认 now() | 更新时间 |
@@ -268,23 +269,20 @@ UNIQUE `(release_id,immich_asset_id)`，UNIQUE `(release_id,position)`；索引 
 
 ## 17. 富文本结构
 
-默认空文档为 `{"schemaVersion":1,"blocks":[]}`。JSON 顶层必须 object；应用使用版本化 schema 限定块与标记，限制最多 1000 块、UTF-8 序列化大小 1 MiB，超限提示管理员。普通站点关于文档只允许文本块。
+当前 MVP 的文字编辑器支持段落、小标题和引用，不支持插图、任意 HTML、链接或行内加粗。数据库文档形状如下，应用 API 接收其中的 blocks 列表；服务端在写入时补充 schemaVersion。
 
 ```json
 {
   "schemaVersion": 1,
   "blocks": [
-    { "id": "b1", "type": "heading", "level": 2, "text": "清晨抵达" },
-    {
-      "id": "b2", "type": "paragraph",
-      "children": [{ "text": "山谷里的光线逐渐明亮。", "marks": ["emphasis"] }]
-    },
-    { "id": "b3", "type": "paragraph", "children": [{ "text": "沿着山路继续往前。" }] }
+    { "kind": "heading", "text": "清晨抵达" },
+    { "kind": "paragraph", "text": "山谷里的光线逐渐明亮。" },
+    { "kind": "quote", "text": "沿着山路继续往前。" }
   ]
 }
 ```
 
-应用层仅接受文字块、允许的标记与安全链接；拒绝图片块、任意文件路径和 HTML。照片只存在于相册成员列表，不再由介绍文档引用。块 ID 在文档中唯一。此为后续应用校验要求，现有迁移仅约束 JSON 顶层结构，不声称已实现该白名单。
+限制为最多 200 块、每块 10000 个字符、blocks 序列化长度最多 250000 个字符；HTTP 写请求上限 2000000 字节。应用只接受 kind/text 两个键。单册最多 1000 张照片。该最小文字块编辑器替代早期未实现的 marks/children 结构，后续扩展必须版本化。
 
 ## 18. 关系图
 
@@ -331,5 +329,15 @@ erDiagram
 - 已发布相册本期只下线；历史快照先保留，不提供任意历史 URL 或管理界面。后续清理必须排除当前指针，不能删到在线内容。
 - 第一批迁移顺序：账号 → site（暂不加 hero FK）→ 来源范围 → album（暂不加 current FK）→ draft/photo → release/release_photo → 补组合 FK、hero FK → 首页、审计、视图和授权。
 - 所有自定义对象由独立 Gallery 迁移管理，不修改 Immich 迁移记录。真实 SQL、约束错误回归与备份恢复由技术验证阶段交付。
-- 本阶段已生成 0001/0002 迁移及初始化 SQL，并在临时库建立全部 13 张表。迁移记录表由迁移器创建；真实图库仍未初始化 Gallery。
+- 已生成 0001/0002/0003 迁移及初始化 SQL；现有迁移文件不改写。14 张表与 11 个受控视图已通过隔离验证；本地应用状态见 MVP 交付记录。
 - 已验证内容与应用层待实现规则分别记录于[阶段 B 验收](../delivery/phase-b.md)；可复现操作见[数据库开发说明](../development/database.md)。
+
+## 21. `gallery.auth_throttle`（0003）
+
+| 字段 | 定义 | 解释 |
+|---|---|---|
+| `key_hash` | bytea，PK，必填，长度 32 字节 | 带用途前缀的账号、客户端地址或密码修改用户 ID 的 SHA-256；不存原始值 |
+| `attempts` | integer，必填，CHECK > 0 | 当前窗口尝试次数；原子 UPSERT 累加 |
+| `reset_at` | timestamptz，必填 | 15 分钟窗口结束；索引 auth_throttle_expiry_idx |
+
+仅 gallery_admin 拥有 CRUD。登录每账号 10 次、每客户端地址 60 次／15 分钟；修改密码每用户 10 次／15 分钟。成功登录清除本账号及已过期限流行。多进程与重启共享限流状态；会话有效期 8 小时，改密撤销全部会话。反向代理部署时需另外配置可信客户端地址，当前本地服务使用直连地址。

@@ -325,6 +325,9 @@ importers:
       '@gallery/core':
         specifier: workspace:*
         version: link:../gallery-core
+      '@gallery/db':
+        specifier: workspace:*
+        version: link:../gallery-db
       '@gallery/ui':
         specifier: workspace:*
         version: link:../gallery-ui
@@ -365,12 +368,18 @@ importers:
 
   packages/gallery-db:
     dependencies:
+      '@gallery/core':
+        specifier: workspace:*
+        version: link:../gallery-core
       kysely:
         specifier: 0.28.17
         version: 0.28.17
       pg:
         specifier: 8.23.0
         version: 8.23.0
+      sharp:
+        specifier: ^0.35.3
+        version: 0.35.3(@types/node@24.13.3)
     devDependencies:
       '@types/node':
         specifier: 24.13.3
@@ -387,6 +396,9 @@ importers:
       '@gallery/core':
         specifier: workspace:*
         version: link:../gallery-core
+      '@gallery/db':
+        specifier: workspace:*
+        version: link:../gallery-db
       '@gallery/ui':
         specifier: workspace:*
         version: link:../gallery-ui
