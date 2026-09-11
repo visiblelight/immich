@@ -1,5 +1,16 @@
 <script lang="ts">
-  import { literalMarkdown, type AlbumContent, type DraftPhoto, type PhotoGroup } from '@gallery/core';
+  import {
+    literalMarkdown,
+    albumPhotoItems,
+    photoItemKey,
+    orderAlbumPhotos,
+    groupSelectedPhotos,
+    type AlbumContent,
+    type DraftPhoto,
+    type PhotoGroup,
+  } from '@gallery/core';
+  import { flip } from 'svelte/animate';
+  import { onDestroy, tick } from 'svelte';
   import { MarkdownEditor } from '@gallery/ui';
   let {
     content = $bindable(),
@@ -8,37 +19,52 @@
   }: { content: AlbumContent; editPhoto: (p: DraftPhoto) => void; pick: () => void } = $props();
   let selected = $state<string[]>([]),
     notice = $state(''),
-    editing = $state(''),
-    dragKey = $state(''),
-    over = $state(''),
-    scope = $state('');
+    editing = $state('');
+  let dragKey = $state(''),
+    scope = $state(''),
+    dragging = $state(false),
+    previewOrder = $state<string[]>([]);
+  let ghost = $state<{ src: string; title: string; x: number; y: number } | null>(null);
   let root: HTMLElement;
+  let pointerId = -1,
+    startX = 0,
+    startY = 0,
+    scrollY = 0,
+    lastX = 0,
+    lastY = 0,
+    frame = 0,
+    suppressClickUntil = 0;
+  let originalKeys: string[] = [],
+    slots: { x: number; y: number; width: number; height: number }[] = [];
   const media = (p: DraftPhoto) => `/media/source/${p.asset}?variant=thumbnail`;
   let groups = $derived(content.groups ?? []);
-  let items = $derived.by(() => {
-    const seen = new Set<string>();
-    return content.photos.filter((p) => {
-      const key = p.group || p.id;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  });
+  let baseItems = $derived(albumPhotoItems(content.photos));
+  let selectedPhotos = $derived(content.photos.filter((p) => !p.group && selected.includes(p.id)));
+  let items = $derived(
+    dragging && !scope ? previewOrder.map((key) => baseItems.find((p) => photoItemKey(p) === key)!) : baseItems,
+  );
   const members = (id: string) => content.photos.filter((p) => p.group === id);
+  const shownMembers = (id: string) =>
+    dragging && scope === id ? previewOrder.map((key) => members(id).find((p) => p.id === key)!) : members(id);
   const group = (id: string) => groups.find((g) => g.id === id);
   const cover = (p: DraftPhoto) => (p.group ? (members(p.group).find((x) => x.id === group(p.group!)?.cover) ?? p) : p);
+  const motionDuration = () =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
   function normalize() {
-    content.photos = items.flatMap((p) => (p.group ? members(p.group) : [p]));
+    content.photos = orderAlbumPhotos(content.photos, albumPhotoItems(content.photos).map(photoItemKey));
   }
   function makeGroup() {
-    const chosen = content.photos.filter((p) => selected.includes(p.id) && !p.group);
-    if (chosen.length < 2) return;
-    const id = crypto.randomUUID();
-    content.groups = [...groups, { id, title: '', description: '', cover: chosen[0]!.id }];
-    for (const p of chosen) p.group = id;
-    normalize();
+    if (selectedPhotos.length < 2) return;
+    const result = groupSelectedPhotos(
+      content.photos,
+      selectedPhotos.map((p) => p.id),
+      crypto.randomUUID(),
+    );
+    content.groups = [...groups, result.group];
+    content.photos = result.photos;
     selected = [];
-    editing = id;
+    void openGroup(result.group.id);
+    notice = '已将选中的照片组成一组，请保存草稿。';
   }
   function preservedDescription(g: PhotoGroup, p: DraftPhoto) {
     return [g.title ? `## ${literalMarkdown(g.title)}` : '', g.description, p.description].filter(Boolean).join('\n\n');
@@ -78,86 +104,169 @@
     if (content.cover === p.asset) content.cover = '';
     selected = selected.filter((id) => id !== p.id);
   }
-  function reorder(key: string, target: string, groupId = '') {
-    if (key === target) return;
-    if (groupId) {
-      const list = members(groupId),
-        from = list.findIndex((p) => p.id === key),
-        to = list.findIndex((p) => p.id === target);
-      if (from < 0 || to < 0) return;
-      const [p] = list.splice(from, 1);
-      list.splice(to, 0, p!);
-      let n = 0;
-      content.photos = content.photos.map((p) => (p.group === groupId ? list[n++]! : p));
-    } else {
-      const list = [...items],
-        from = list.findIndex((p) => (p.group || p.id) === key),
-        to = list.findIndex((p) => (p.group || p.id) === target);
-      if (from < 0 || to < 0) return;
-      const [p] = list.splice(from, 1);
-      list.splice(to, 0, p!);
-      content.photos = list.flatMap((p) => (p.group ? members(p.group) : [p]));
-    }
-  }
   function arrow(key: string, offset: number, groupId = '') {
-    const list = groupId ? members(groupId) : items;
-    const i = list.findIndex((p) => (groupId ? p.id : p.group || p.id) === key),
-      next = list[i + offset];
-    if (next) reorder(key, groupId ? next.id : next.group || next.id, groupId);
+    const keys = groupId ? members(groupId).map((p) => p.id) : baseItems.map(photoItemKey);
+    const from = keys.indexOf(key),
+      to = from + offset;
+    if (from < 0 || to < 0 || to >= keys.length) return;
+    keys.splice(to, 0, keys.splice(from, 1)[0]!);
+    content.photos = orderAlbumPhotos(content.photos, keys, groupId);
+    notice = `已移到第 ${to + 1} ${groupId ? '张' : '项'}，请保存草稿。`;
   }
+  function cancelDrag() {
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    if (pointerId >= 0 && root?.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
+    pointerId = -1;
+    dragKey = '';
+    dragging = false;
+    previewOrder = [];
+    ghost = null;
+  }
+  onDestroy(cancelDrag);
   function start(e: PointerEvent, key: string, groupId = '') {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || dragKey) return;
     e.preventDefault();
     dragKey = key;
-    over = key;
     scope = groupId;
+    pointerId = e.pointerId;
+    startX = lastX = e.clientX;
+    startY = lastY = e.clientY;
+    scrollY = window.scrollY;
+    originalKeys = groupId ? members(groupId).map((p) => p.id) : baseItems.map(photoItemKey);
+    slots = Array.from(root.querySelectorAll<HTMLElement>('[data-order]'))
+      .filter((el) => el.dataset.scope === groupId)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      });
+    previewOrder = [...originalKeys];
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
-  function pointer(e: PointerEvent) {
-    if (!dragKey) return;
-    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-order]');
-    if (target && root.contains(target) && target.dataset.scope === scope) over = target.dataset.order!;
+  function targetAtPointer() {
+    const offset = window.scrollY - scrollY;
+    let target = -1,
+      distance = Infinity;
+    slots.forEach((r, index) => {
+      const y = r.y - offset;
+      // Fixed slots avoid animated cards repeatedly swapping underneath the pointer.
+      if (lastX < r.x - 14 || lastX > r.x + r.width + 14 || lastY < y - 14 || lastY > y + r.height + 14) return;
+      const d = Math.hypot(lastX - r.x - r.width / 2, lastY - y - r.height / 2);
+      if (d < distance) {
+        target = index;
+        distance = d;
+      }
+    });
+    if (target < 0) return;
+    const next = originalKeys.filter((key) => key !== dragKey);
+    next.splice(target, 0, dragKey);
+    if (next.join() !== previewOrder.join()) previewOrder = next;
   }
-  function drop() {
-    if (dragKey && over) reorder(dragKey, over, scope);
-    dragKey = '';
-    over = '';
+  function autoScroll() {
+    if (!dragging) return;
+    const edge = 75;
+    const amount =
+      lastY < edge
+        ? -Math.ceil((edge - lastY) / 4)
+        : lastY > window.innerHeight - edge
+          ? Math.ceil((lastY - window.innerHeight + edge) / 4)
+          : 0;
+    if (amount) {
+      window.scrollBy(0, amount);
+      targetAtPointer();
+    }
+    frame = requestAnimationFrame(autoScroll);
+  }
+  function pointer(e: PointerEvent) {
+    if (!dragKey || e.pointerId !== pointerId) return;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    if (!dragging && Math.hypot(lastX - startX, lastY - startY) < 6) return;
+    if (!dragging) {
+      dragging = true;
+      root.setPointerCapture(pointerId);
+      const p = scope
+        ? members(scope).find((p) => p.id === dragKey)!
+        : cover(baseItems.find((p) => photoItemKey(p) === dragKey)!);
+      ghost = {
+        src: media(p),
+        title: scope ? p.title || '组内照片' : group(p.group || '')?.title || p.title || '照片',
+        x: lastX,
+        y: lastY,
+      };
+      frame = requestAnimationFrame(autoScroll);
+    }
+    ghost = { ...ghost!, x: lastX, y: lastY };
+    targetAtPointer();
+  }
+  function drop(e: PointerEvent) {
+    if (e.pointerId !== pointerId) return;
+    if (dragging) {
+      content.photos = orderAlbumPhotos(content.photos, previewOrder, scope);
+      notice = `已移到第 ${previewOrder.indexOf(dragKey) + 1} ${scope ? '张' : '项'}，请保存草稿。`;
+      suppressClickUntil = performance.now() + 250;
+    }
+    cancelDrag();
+  }
+  async function openGroup(id: string) {
+    editing = id;
+    await tick();
+    root
+      .querySelector('.group-panel')
+      ?.scrollIntoView({ behavior: motionDuration() ? 'smooth' : 'auto', block: 'start' });
+  }
+  function clickPhoto(p: DraftPhoto, groupId = '') {
+    if (performance.now() < suppressClickUntil) return;
+    if (groupId) void openGroup(groupId);
+    else editPhoto(p);
   }
 </script>
 
 <svelte:window
   onpointermove={pointer}
   onpointerup={drop}
-  onpointercancel={() => {
-    dragKey = '';
-    over = '';
+  onpointercancel={cancelDrag}
+  onkeydown={(e) => {
+    if (e.key === 'Escape' && dragKey) {
+      e.preventDefault();
+      suppressClickUntil = performance.now() + 250;
+      cancelDrag();
+    }
   }}
 />
-<section class="photo-editor" bind:this={root}>
-  {#if notice}<p role="alert">{notice}</p>{/if}
+<section class="album-photo-editor" bind:this={root} class:is-dragging={dragging}>
+  <p class="order-notice" role="status" aria-live="polite">{notice || '排序和分组先保存草稿，发布后更新前台。'}</p>
   <div class="section-heading">
     <div>
       <h2>本册照片 <small>{content.photos.length}</small></h2>
-      <p class="muted">拖动手柄调整顺序；多选照片组成一组。</p>
+      <p class="muted">拖动照片或手柄排序；手机上拖动手柄。多选照片可组成一组。</p>
     </div>
     <button class="primary" onclick={pick}>＋ 从 Immich 选片</button>
   </div>
   <div class="selection-bar">
-    <span>已选择 {selected.length} 张</span><button disabled={selected.length < 2} onclick={makeGroup}
+    <span>已选择 {selectedPhotos.length} 张</span><button disabled={selectedPhotos.length < 2} onclick={makeGroup}
       >组成照片组</button
-    ><button disabled={!selected.length} onclick={() => (selected = [])}>清除选择</button>
+    ><button disabled={!selectedPhotos.length} onclick={() => (selected = [])}>清除选择</button>
   </div>
-  <div class="photo-grid">
+  {#if selectedPhotos.length}<div class="selection-preview" aria-label="已选照片">
+      {#each selectedPhotos as p (p.id)}<img
+          src={media(p)}
+          alt={p.title || `已选照片 ${content.photos.indexOf(p) + 1}`}
+        />{/each}
+    </div>{/if}
+  <div class="collection-grid">
     {#each items as p, index (p.group || p.id)}{@const g = p.group ? group(p.group) : undefined}{@const key =
         p.group || p.id}
       <article
-        class="photo-card"
+        class="collection-card"
         class:stack={!!g}
-        class:drop-target={!!dragKey && over === key}
+        class:drag-placeholder={dragging && !scope && dragKey === key}
+        class:selected-card={!g && selected.includes(p.id)}
+        animate:flip={{ duration: motionDuration() }}
         data-order={key}
         data-scope=""
       >
-        <div class="card-top">
+        <div class="collection-top">
           <button
             class="drag"
             aria-label={`拖动项目 ${index + 1}`}
@@ -178,16 +287,22 @@
               />选择</label
             >{/if}<small>{index + 1}{g ? ` · 照片组 ${members(g.id).length} 张` : ''}</small>
         </div>
-        <button class="photo-image" onclick={() => (g ? (editing = g.id) : editPhoto(p))}
+        <button
+          class="collection-image"
+          onpointerdown={(e) => {
+            if (e.pointerType !== 'touch') start(e, key);
+          }}
+          onclick={() => clickPhoto(p, g?.id)}
           ><img
+            draggable="false"
             src={media(cover(p))}
             alt={p.alt || g?.title || p.title || '编辑照片'}
           />{#if content.cover === cover(p).asset}<span class="cover-badge">相册封面</span>{/if}</button
         >
-        <button class="photo-caption" onclick={() => (g ? (editing = g.id) : editPhoto(p))}
+        <button class="collection-caption" onclick={() => clickPhoto(p, g?.id)}
           ><strong>{g?.title || p.title || (g ? '编辑照片组' : '添加照片标题')}</strong></button
         >
-        <div class="photo-actions">
+        <div class="collection-actions">
           <button aria-label={`前移项目 ${index + 1}`} disabled={index === 0} onclick={() => arrow(key, -1)}>←</button
           ><button
             aria-label={`后移项目 ${index + 1}`}
@@ -217,14 +332,15 @@
         filename="photo-group.md"
       />
       <p class="muted">共用说明只写一次；点击成员编辑角度说明。成员的拍摄参数独立显示。</p>
-      <div class="photo-grid">
-        {#each members(g.id) as p, index (p.id)}<article
-            class="photo-card"
-            class:drop-target={!!dragKey && over === p.id}
+      <div class="collection-grid">
+        {#each shownMembers(g.id) as p, index (p.id)}<article
+            class="collection-card"
+            class:drag-placeholder={dragging && scope === g.id && dragKey === p.id}
+            animate:flip={{ duration: motionDuration() }}
             data-order={p.id}
             data-scope={g.id}
           >
-            <div class="card-top">
+            <div class="collection-top">
               <button
                 class="drag"
                 aria-label={`拖动组内照片 ${index + 1}`}
@@ -237,10 +353,15 @@
                 }}>⠿</button
               ><small>{index + 1}{g.cover === p.id ? ' · 组封面' : ''}</small>
             </div>
-            <button class="photo-image" onclick={() => editPhoto(p)}
-              ><img src={media(p)} alt={p.alt || p.title || '编辑角度说明'} /></button
+            <button
+              class="collection-image"
+              onpointerdown={(e) => {
+                if (e.pointerType !== 'touch') start(e, p.id, g.id);
+              }}
+              onclick={() => clickPhoto(p)}
+              ><img draggable="false" src={media(p)} alt={p.alt || p.title || '编辑角度说明'} /></button
             >
-            <div class="photo-actions">
+            <div class="collection-actions">
               <button
                 disabled={index === 0}
                 aria-label={`前移组内照片 ${index + 1}`}
@@ -261,6 +382,7 @@
             if (p) {
               p.group = g.id;
               normalize();
+              selected = selected.filter((id) => id !== p.id);
             }
             e.currentTarget.value = '';
           }}
@@ -272,66 +394,247 @@
       <button class="dissolve" onclick={() => dissolve(g.id)}>解散照片组（保留说明）</button>
     </section>{/each}
 </section>
+{#if dragging && ghost}<div
+    class="drag-ghost"
+    aria-hidden="true"
+    style:left={`${ghost.x + 16}px`}
+    style:top={`${ghost.y + 14}px`}
+  >
+    <img src={ghost.src} alt="" /><strong>{ghost.title}</strong><span
+      >松开移到第 {previewOrder.indexOf(dragKey) + 1} 位 · Esc 取消</span
+    >
+  </div>{/if}
 
 <style>
-  .selection-bar,
-  .card-top {
+  .album-photo-editor {
+    display: block;
+    min-width: 0;
+  }
+  .order-notice {
+    font-size: 12px;
+    color: #647659;
+    margin: 0 0 16px;
+    line-height: 1.6;
+  }
+  .selection-bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     margin-bottom: 16px;
   }
-  .card-top {
-    margin: 0;
-    padding: 6px 8px;
-    justify-content: space-between;
-    font-size: 12px;
+  .selection-bar button {
+    white-space: nowrap;
   }
-  .card-top label {
+  .selection-preview {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 18px;
+    overflow: auto;
+  }
+  .selection-preview img {
+    width: 64px;
+    height: 48px;
+    object-fit: contain;
+    background: #eef1e9;
+    border: 2px solid #728961;
+    border-radius: 4px;
+  }
+  .collection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+  .collection-card {
+    min-width: 0;
+    border: 1px solid #dfe5d8;
+    border-radius: 8px;
+    background: white;
+    overflow: hidden;
+    position: relative;
+  }
+  .collection-top {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+    min-height: 42px;
+    padding: 6px 10px;
+    box-sizing: border-box;
+    font-size: 12px;
   }
-  .card-top input {
-    width: auto;
+  .collection-top small {
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .collection-top label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    margin: 0;
+  }
+  .collection-top input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    flex: none;
   }
   .drag {
     touch-action: none;
     cursor: grab;
-    font-size: 23px;
+    font-size: 24px;
     border: 0;
     background: none;
-    padding: 2px 10px;
+    padding: 0 8px;
+    min-height: 32px;
+    flex: none;
+  }
+  .collection-image {
+    display: block;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #edf0e8;
+    cursor: grab;
+    overflow: hidden;
+  }
+  .collection-image img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+  }
+  .collection-caption {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 12px 12px 8px;
+    text-align: left;
+    border: 0;
+    background: none;
+  }
+  .collection-caption strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .collection-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px;
+  }
+  .collection-actions button {
+    white-space: nowrap;
+    flex: none;
+    padding: 6px 8px;
+    font-size: 12px;
+    border: 0;
+    background: #f5f7f1;
+    min-height: 32px;
+  }
+  .collection-actions .text-action {
+    margin-left: auto;
   }
   .stack {
     box-shadow:
-      4px 4px 0 #e6ebdf,
-      8px 8px 0 #f1f3ed;
+      3px 3px 0 #e6ebdf,
+      6px 6px 0 #f1f3ed;
   }
-  .drop-target {
-    outline: 3px solid #708a59;
-    outline-offset: 3px;
+  .selected-card {
+    border-color: #6f875b;
+    box-shadow: 0 0 0 2px #6f875b;
+  }
+  .drag-placeholder {
+    opacity: 0.28;
+    border: 2px dashed #647e52;
+    box-shadow: none;
+  }
+  .is-dragging {
+    user-select: none;
+    cursor: grabbing;
+  }
+  .is-dragging .collection-image,
+  .is-dragging .drag {
+    cursor: grabbing;
   }
   .group-panel {
+    display: block;
+    min-width: 0;
     border-top: 2px solid #dbe3d1;
-    margin-top: 35px;
+    margin-top: 32px;
     padding-top: 24px;
   }
   .group-panel > label {
     display: block;
     margin: 20px 0;
+    font-size: 13px;
   }
   .group-panel input,
   .group-panel select {
     display: block;
     width: 100%;
+    max-width: 100%;
     padding: 10px;
     box-sizing: border-box;
+    margin-top: 8px;
   }
   .dissolve {
     margin-top: 20px;
+    white-space: normal;
   }
-  .photo-editor :global(.photo-image img) {
+  .drag-ghost {
+    position: fixed;
+    z-index: 2000;
     pointer-events: none;
+    width: 170px;
+    max-width: 40vw;
+    padding: 7px;
+    background: #fff;
+    border: 1px solid #789065;
+    border-radius: 9px;
+    box-shadow: 0 14px 38px #21331e44;
+    transform: rotate(3deg);
+  }
+  .drag-ghost img {
+    display: block;
+    width: 100%;
+    height: 110px;
+    object-fit: contain;
+    background: #edf0e8;
+  }
+  .drag-ghost strong,
+  .drag-ghost span {
+    display: block;
+    padding: 5px 2px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .drag-ghost span {
+    font-size: 10px;
+    color: #60724f;
+  }
+  @container (max-width:480px) {
+    .collection-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .section-heading {
+      flex-wrap: wrap;
+    }
+    .collection-actions button {
+      min-height: 38px;
+    }
   }
 </style>

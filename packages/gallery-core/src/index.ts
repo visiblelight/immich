@@ -12,3 +12,4 @@ export function liveness(service: GalleryService) {
   return { service, version: GALLERY_VERSION, status: 'alive' } as const;
 }
 export * from './markdown.ts';
+export * from './photo-order.ts';

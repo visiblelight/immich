@@ -437,7 +437,9 @@
                   </p>{/if}
               </div>
             </section>
-            <section class="panel content-panel"><AlbumPhotosEditor bind:content {editPhoto} {pick} /></section>
+            <section class="panel content-panel">
+              {#key id}<AlbumPhotosEditor bind:content {editPhoto} {pick} />{/key}
+            </section>
           {:else if tab === 'story'}<section class="panel content-panel">
               <div class="section-heading">
                 <div>
