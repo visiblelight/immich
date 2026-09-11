@@ -72,6 +72,15 @@ async function verify(name, designPreview = false) {
         await missing.text();
       }
     }
+    if (name === 'admin') {
+      const preview = await fetch(`${origin}/design`);
+      assert.equal(preview.status, designPreview ? 200 : 404);
+      if (designPreview) {
+        assert.equal(preview.headers.get('cache-control'), 'no-store');
+        assert.equal(preview.headers.get('x-robots-tag'), 'noindex, nofollow');
+      }
+      await preview.text();
+    }
     console.log(`PASS gallery-${name} (design=${designPreview}): production build starts, liveness 200, readiness/root 503`);
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
@@ -86,3 +95,5 @@ async function verify(name, designPreview = false) {
 await verify('public');
 await verify('admin');
 await verify('public', true);
+
+await verify('admin', true);

@@ -82,3 +82,11 @@ sh deployment/gallery/scripts/pnpm.sh gallery:design
 ```
 
 打开 http://127.0.0.1:3100/design。该脚本显式设置 `GALLERY_DESIGN_PREVIEW=1`；普通 public 开发／运行命令不开启该入口。切换模式需要停止占用 3100 端口的服务后重启。示例内容不连接数据库。设计取舍、八张关键画面和素材许可见[当前相册浏览布局](../design/album-browser.md)。
+
+## 后台工作台交互预览
+
+```sh
+sh deployment/gallery/scripts/pnpm.sh gallery:design:admin
+```
+
+打开 http://127.0.0.1:3101/design。普通后台开发命令默认不开启设计入口；如已有服务占用 3101，应先停该服务再切换。此模式只使用示例数据，保存和发布只在当前页面内存生效，刷新重置。页面范围与真实业务边界见[后台设计记录](../design/admin-workflow.md)。无需安装新依赖或改动 Immich 容器。

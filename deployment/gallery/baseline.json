@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "galleryVersion": "0.1.0-dev.0",
-  "phase": "C-album-browser-awaiting-review",
+  "phase": "D-admin-workflow-prototype-awaiting-review",
   "immich": {
     "sourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056",
     "sourceVersion": "3.2.0-rc.0",
