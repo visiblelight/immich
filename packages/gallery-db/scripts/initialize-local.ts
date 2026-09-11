@@ -90,14 +90,14 @@ try {
   await client.query('COMMIT');
   await writeFile(
     path.join(root, 'initial-admin.txt'),
-    `Gallery 管理后台：http://127.0.0.1:3101/login\n邮箱：admin@gallery.local\n初始密码：${password}\n登录后可在个人账号中修改密码。不要提交或分享此文件。\n`,
+    `Gallery 管理后台：http://localhost:3101/login\n邮箱：admin@gallery.local\n初始密码：${password}\n登录后可在个人账号中修改密码。不要提交或分享此文件。\n`,
     { mode: 0o600, flag: 'wx' },
   );
   for (const service of ['admin', 'public']) {
     const port = service === 'admin' ? 3101 : 3100;
     await writeFile(
       path.join(root, `${service}.env`),
-      `GALLERY_DATABASE_URL=${roleUrl(service)}\nGALLERY_ADMIN_ORIGIN=http://127.0.0.1:3101\nGALLERY_PUBLIC_ORIGIN=http://127.0.0.1:3100\nGALLERY_MEDIA_SOURCE_ROOT=/data/thumbs\nGALLERY_MEDIA_MOUNTED_ROOT=${media}\nGALLERY_DESIGN_PREVIEW=1\nHOST=127.0.0.1\nPORT=${port}\nORIGIN=http://127.0.0.1:${port}\nBODY_SIZE_LIMIT=2M\n`,
+      `GALLERY_DATABASE_URL=${roleUrl(service)}\nGALLERY_ADMIN_ORIGIN=http://localhost:3101\nGALLERY_PUBLIC_ORIGIN=http://127.0.0.1:3100\nGALLERY_MEDIA_SOURCE_ROOT=/data/thumbs\nGALLERY_MEDIA_MOUNTED_ROOT=${media}\nGALLERY_DESIGN_PREVIEW=1\nHOST=127.0.0.1\nPORT=${port}\nORIGIN=http://${service === 'admin' ? 'localhost' : '127.0.0.1'}:${port}\nBODY_SIZE_LIMIT=2M\n`,
       { mode: 0o600, flag: 'wx' },
     );
   }

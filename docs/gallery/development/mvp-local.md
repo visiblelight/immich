@@ -4,13 +4,15 @@
 
 ## 入口与初始账号
 
-- 管理后台：http://127.0.0.1:3101/albums（未登录转 /login）。
+- 管理后台：http://localhost:3101/albums（未登录转 /login）。
 - 公开相册：http://127.0.0.1:3100/albums；关于页 /about；根路径转相册。
 - Immich 开发后台：http://127.0.0.1:3000；API 端口 2283。
 - 独立 Gallery 管理员邮箱 `admin@gallery.local`，随机初始密码仅在本机 `.gallery-local/runtime/initial-admin.txt`。文件权限 0600，不提交 Git；登录后可在个人账号里改密。不要复用 Immich 密码。
 - `/design` 仍是示例原型，保存和发布只影响页面内存；实际操作必须进入 `/albums`。
 
-后台登录和写入会校验浏览器 Origin 与 `GALLERY_ADMIN_ORIGIN` 完全一致。当前请使用 `http://127.0.0.1:3101/login`，不要替换为 localhost、局域网 IP 或其他域名。来源不匹配返回 403 JSON 并提示配置入口，登录页也能显示非 JSON 故障信息。正式域名调整需要同步运行配置并重启后台，不通过关闭来源检查来解决。
+后台登录和写入会校验浏览器 Origin 与 `GALLERY_ADMIN_ORIGIN` 完全一致。当前后台入口为 `http://localhost:3101/login`；旧的 `127.0.0.1:3101` 业务页面 GET/HEAD 自动跳转到配置入口，POST 不重定向。原因是实际 Chrome 在 IP 回环地址上发送的 Origin 丢失了端口；使用 localhost 避开该行为，仍保留完整协议、主机与端口校验。前台仍使用 `http://127.0.0.1:3100/albums`。不要关闭来源检查或只比较主机名。
+
+2026-09-11 已在用户 Chrome 中抓取到 `Origin: http://127.0.0.1`、`Referer: http://127.0.0.1:3101/login`、`Sec-Fetch-Site: same-origin`；与[其他项目的一手复现记录](https://github.com/deepseek-ai/deepseek-harness/discussions/910)一致。未修改浏览器扩展或安全设置。修复后在同一个 Chrome 普通窗口验证：旧登录链接刷新跳转 localhost，原账号密码登录成功并进入现有相册工作台；18 项隔离集成测试（含跨来源／跨端口拒绝、POST 不转发）通过。
 
 本地数据库已初始化 Gallery，来源范围只包含本轮明确选择的 Immich 用户。没有自动创建公开相册。浏览器验收用草稿已删除；照片仍由 Immich 管理。
 

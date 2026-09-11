@@ -6,6 +6,20 @@ export const handle: Handle = async ({ event, resolve }) => {
   if (event.url.pathname.startsWith('/design') || event.url.pathname.startsWith('/health/')) return resolve(event);
   try {
     const app = getRuntime();
+    // Chromium can omit the port from Origin on IP-literal loopback URLs.
+    // Navigate old local page links to the configured hostname before submitting;
+    // never redirect a POST or relax the origin/port check.
+    const origin = new URL(app.origin);
+    if (
+      ['GET', 'HEAD'].includes(event.request.method) &&
+      origin.hostname === 'localhost' &&
+      event.request.headers.get('host') === `127.0.0.1${origin.port ? ':' + origin.port : ''}`
+    ) {
+      return new Response(null, {
+        status: 307,
+        headers: { location: `${app.origin}${event.url.pathname}${event.url.search}`, 'cache-control': 'no-store' },
+      });
+    }
     await app.ready();
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(event.request.method) &&

@@ -23,7 +23,7 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     passwords: Record<string, string>;
   };
   const ports = { admin: await port(), public: await port() };
-  const origins = { admin: `http://127.0.0.1:${ports.admin}`, public: `http://127.0.0.1:${ports.public}` };
+  const origins = { admin: `http://localhost:${ports.admin}`, public: `http://127.0.0.1:${ports.public}` };
   const children: ChildProcess[] = [];
   async function start(service: 'admin' | 'public') {
     const url = new URL(config.ownerUrl);
@@ -92,6 +92,14 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
   try {
     let admin = await start('admin');
     let pub = await start('public');
+    const oldLink = await fetch(`http://127.0.0.1:${ports.admin}/login?from=old-link`, { redirect: 'manual' });
+    assert.equal(oldLink.status, 307);
+    assert.equal(oldLink.headers.get('location'), `${origins.admin}/login?from=old-link`);
+    const wrongHost = await fetch(`${origins.admin}/login`, {
+      headers: { host: 'example.invalid' },
+      redirect: 'manual',
+    });
+    assert.equal(wrongHost.status, 200); // No redirect to any value supplied by a request header.
     assert.equal((await fetch(`${origins.admin}/albums`, { redirect: 'manual' })).status, 303);
     await api('source', undefined, 401);
     assert.equal((await fetch(`${origins.admin}/media/source/${asset}`)).status, 401);
@@ -106,9 +114,29 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
       'login',
       { email: 'gallery@example.invalid', password: 'replacement-synthetic-password' },
       403,
-      `http://localhost:${ports.admin}`,
+      `http://127.0.0.1:${ports.admin}`,
     );
     assert.ok((await wrongLogin.json()).message.includes(origins.admin + '/login'));
+    await api(
+      'login',
+      { email: 'gallery@example.invalid', password: 'replacement-synthetic-password' },
+      403,
+      'http://127.0.0.1',
+    );
+    await api(
+      'login',
+      { email: 'gallery@example.invalid', password: 'replacement-synthetic-password' },
+      403,
+      `http://localhost:${ports.public}`,
+    );
+    const oldPost = await fetch(`http://127.0.0.1:${ports.admin}/api/login`, {
+      method: 'POST',
+      headers: { origin: 'http://127.0.0.1', 'content-type': 'application/json' },
+      body: '{}',
+      redirect: 'manual',
+    });
+    assert.equal(oldPost.status, 403);
+    assert.equal(oldPost.headers.get('location'), null);
     assert.equal(
       (
         await fetch(`${origins.admin}/api/create`, {
