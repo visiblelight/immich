@@ -14,12 +14,12 @@ async function availablePort() {
   return port;
 }
 
-async function verify(name) {
+async function verify(name, designPreview = false) {
   const port = await availablePort();
   const origin = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['build/index.js'], {
     cwd: fileURLToPath(new URL(`../../../packages/gallery-${name}/`, import.meta.url)),
-    env: { PATH: process.env.PATH, HOST: '127.0.0.1', PORT: String(port), ORIGIN: origin, NODE_ENV: 'production' },
+    env: { PATH: process.env.PATH, HOST: '127.0.0.1', PORT: String(port), ORIGIN: origin, NODE_ENV: 'production', GALLERY_DESIGN_PREVIEW: designPreview ? '1' : '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -53,7 +53,21 @@ async function verify(name) {
     const page = await fetch(origin, { signal: AbortSignal.timeout(2000) });
     assert.equal(page.status, 503, 'unconfigured service must not expose a working gallery/admin page');
     await page.text();
-    console.log(`PASS gallery-${name}: production build starts, liveness 200, readiness/root 503`);
+    if (name === 'public') {
+      for (const path of ['/design', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
+        const preview = await fetch(`${origin}${path}`);
+        assert.equal(preview.status, designPreview ? 200 : 404, `preview gate: ${path}`);
+        if (designPreview) {
+          assert.equal(preview.headers.get('cache-control'), 'no-store');
+          assert.equal(preview.headers.get('x-robots-tag'), 'noindex, nofollow');
+        }
+        await preview.text();
+      }
+      const invalid = await fetch(`${origin}/design/unknown`);
+      assert.equal(invalid.status, 404);
+      await invalid.text();
+    }
+    console.log(`PASS gallery-${name} (design=${designPreview}): production build starts, liveness 200, readiness/root 503`);
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const closed = once(child, 'close');
@@ -66,3 +80,4 @@ async function verify(name) {
 
 await verify('public');
 await verify('admin');
+await verify('public', true);

@@ -1,0 +1,58 @@
+export const imageCredits = [
+  {
+    id: 'mountains',
+    title: '高加索山地',
+    author: 'Joni Jiniani',
+    page: 'https://unsplash.com/photos/green-mountain-under-white-sky-during-daytime-S-ESGcjaybM',
+    license: 'Unsplash License',
+    licenseUrl: 'https://unsplash.com/license',
+    source: 'https://images.unsplash.com/photo-1594748526885-d184fe0259a0?auto=format&fit=max&fm=jpg&q=85&w=1800',
+  },
+  {
+    id: 'tbilisi',
+    title: 'Tbilisi, Panoramic view, Georgia',
+    author: 'Vyacheslav Argenberg',
+    page: 'https://commons.wikimedia.org/wiki/File:Tbilisi,_Panoramic_view,_Georgia.jpg',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    source:
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Tbilisi%2C_Panoramic_view%2C_Georgia.jpg/1280px-Tbilisi%2C_Panoramic_view%2C_Georgia.jpg',
+  },
+  {
+    id: 'street',
+    title: '第比利斯街道路牌',
+    author: 'Serenay Bayar',
+    page: 'https://unsplash.com/photos/a-pole-with-a-bunch-of-street-signs-on-it-hIiYjG7dpkk',
+    license: 'Unsplash License',
+    licenseUrl: 'https://unsplash.com/license',
+    source: 'https://images.unsplash.com/photo-1717537252755-b774af8b4f0e?auto=format&fit=max&fm=jpg&q=85&w=1200',
+  },
+  {
+    id: 'detail',
+    title: 'Old Tbilisi, Georgia',
+    author: 'Vyacheslav Argenberg',
+    page: 'https://commons.wikimedia.org/wiki/File:Old_Tbilisi,_Georgia.jpg',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    source:
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Old_Tbilisi%2C_Georgia.jpg/1280px-Old_Tbilisi%2C_Georgia.jpg',
+  },
+  {
+    id: 'coast',
+    title: '巴统日落',
+    author: 'Sadra Hakim',
+    page: 'https://unsplash.com/photos/silhouette-of-beach-house-under-orange-skies-5iFgNfYvP9c',
+    license: 'Unsplash License',
+    licenseUrl: 'https://unsplash.com/license',
+    source: 'https://images.unsplash.com/photo-1566162207816-94e1d977eb17?auto=format&fit=max&fm=jpg&q=85&w=1600',
+  },
+  {
+    id: 'dusk',
+    title: '巴统黑海海岸',
+    author: 'Max (@baseddesigner)',
+    page: 'https://unsplash.com/photos/green-trees-on-mountain-near-sea-under-blue-sky-during-daytime-1ni7X5Vnew4',
+    license: 'Unsplash License',
+    licenseUrl: 'https://unsplash.com/license',
+    source: 'https://images.unsplash.com/photo-1622383693127-a8d29be7ab7d?auto=format&fit=max&fm=jpg&q=85&w=1200',
+  },
+];

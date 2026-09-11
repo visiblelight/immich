@@ -16,7 +16,8 @@
     "format:fix": "prettier --cache --write --list-different i18n",
     "gallery:test:db": "node deployment/gallery/scripts/database-check.mjs",
     "gallery:db": "node packages/gallery-db/scripts/database.ts",
-    "gallery:prepare:db-tests": "node deployment/gallery/scripts/prepare-database-check.mjs"
+    "gallery:prepare:db-tests": "node deployment/gallery/scripts/prepare-database-check.mjs",
+    "gallery:design": "GALLERY_DESIGN_PREVIEW=1 pnpm --filter @gallery/public dev"
   },
   "packageManager": "pnpm@11.22.0",
   "engines": {

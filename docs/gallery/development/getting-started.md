@@ -1,12 +1,12 @@
-# Gallery 本地开发：阶段 A
+# Gallery 本地开发
 
-状态：工程初始化说明。2026-09-10。
+状态：工程基础与阶段 C 预览说明。2026-09-10。
 
 ## 当前能力边界
 
 已经创建五个 workspace 包。core/db/ui 是由消费端构建器编译的 TypeScript/Svelte 源码包，build 脚本对它们执行类型／组件检查；public/admin 使用 adapter-node 输出真正独立的 Node 服务构建产物。
 
-本阶段没有用户登录、相册业务、数据库迁移或公开图库。根页面返回 503 是有意的未开放状态，不是已交付的视觉方案。不会展示该占位页作为产品预览。
+应用尚未接入用户登录、相册业务或公开图库；数据库模块已完成阶段 B 隔离验证。根页面返回 503 是有意的未开放状态，不是已交付的视觉方案。不会展示该占位页作为产品预览。
 
 ## 工具链
 
@@ -57,7 +57,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:dev:admin
 | GET /health/ready | 503，foundation-only；应用尚未接入数据库与登录授权 |
 | GET / | 503，站点未开放 |
 
-gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证以上行为并自动停止，仅依赖本地回环网络，不需要数据库。完整视觉方向仍按已确认流程另行提交。
+gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证以上行为并自动停止，仅依赖本地回环网络，不需要数据库。设计预览额外验证开关和响应头，见下文。
 
 ## 数据库模块
 
@@ -72,3 +72,11 @@ gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证
 `.github/workflows/gallery.yml` 在 Gallery 分支／PR 上执行固定工具链、过滤安装、检查、测试、构建及 HTTP 冒烟，不依赖 Immich 官方专用密钥。不改变上游已有 workflow；未来向 fork 推送 PR 时，上游 workflow 可能仍被 GitHub 同时触发，需要按运行结果独立处理。
 
 源码包版本统一为 0.1.0-dev.0。当前来源、上游观察值和未验证升级候选保存在 `deployment/gallery/baseline.json`。源提交、构建产物、数据库迁移状态分开记录。
+
+## 阶段 C 视觉预览
+
+```sh
+sh deployment/gallery/scripts/pnpm.sh gallery:design
+```
+
+打开 http://127.0.0.1:3100/design。该脚本显式设置 `GALLERY_DESIGN_PREVIEW=1`；普通 public 开发／运行命令不开启该入口。切换模式需要停止占用 3100 端口的服务后重启。示例内容不连接数据库。设计取舍、八张关键画面和素材许可见[视觉方向对比](../design/directions.md)。
