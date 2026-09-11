@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { recovery } from './recovery.ts';
 import { workflow } from './workflow.ts';
+import { maintainAccount } from '../../src/account-maintenance.server.ts';
+import { login, sessionUser } from '../../src/auth.server.ts';
 import { httpWorkflow } from './http-workflow.ts';
 import pg from 'pg';
 import { sql } from 'kysely';
@@ -579,11 +582,37 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       );
       console.log(`Map fixture: 10,000 points, ${clusters.length} clusters, ${ms.toFixed(1)} ms; SQL plan recorded.`);
     });
-    await t.test('real Gallery workflow, publication isolation, conflicts, metadata stripping and authentication', async () => {
-      await workflow(adminDb, publicDb, owner, ids.user, assets[0]!, assets[2]!, mediaRoot);
+    await t.test(
+      'real Gallery workflow, publication isolation, conflicts, metadata stripping and authentication',
+      async () => {
+        await workflow(adminDb, publicDb, owner, ids.user, assets[0]!, assets[2]!, mediaRoot);
+      },
+    );
+    await t.test('maintenance roles, session revocation and last administrator protection', async () => {
+      await assert.rejects(maintainAccount(admin, 'disable', 'gallery@example.invalid'), /迁移账号/);
+      await assert.rejects(maintainAccount(migrator, 'disable', 'gallery@example.invalid'), /最后一个/);
+      const email = 'maintenance@example.invalid';
+      await maintainAccount(migrator, 'create', email, 'maintenance-initial-password', 'Maintenance');
+      const signed = await login(adminDb, email, 'maintenance-initial-password', 'maintenance-client');
+      await maintainAccount(migrator, 'reset-password', email, 'maintenance-replacement-password');
+      assert.equal(await sessionUser(adminDb, signed.token), null);
+      await assert.rejects(login(adminDb, email, 'maintenance-initial-password', 'maintenance-client'), /账号或密码/);
+      const next = await login(adminDb, email, 'maintenance-replacement-password', 'maintenance-client');
+      await maintainAccount(migrator, 'disable', email);
+      assert.equal(await sessionUser(adminDb, next.token), null);
+      await assert.rejects(
+        login(adminDb, email, 'maintenance-replacement-password', 'maintenance-client'),
+        /账号或密码/,
+      );
+      await maintainAccount(migrator, 'enable', email);
+      assert.ok((await login(adminDb, email, 'maintenance-replacement-password', 'maintenance-client')).token);
+      await maintainAccount(migrator, 'disable', email);
     });
     await t.test('production HTTP login, CSRF, publish, media revocation and restart persistence', async () => {
       await httpWorkflow(assets[0]!, mediaRoot);
+    });
+    await t.test('full database backup and isolated recovery', async () => {
+      await recovery(config, mediaRoot);
     });
   } finally {
     await Promise.allSettled([

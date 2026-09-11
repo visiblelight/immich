@@ -1,0 +1,11 @@
+# Host-side Caddy, with DNS pointing at this host. TLS managed by Caddy.
+# No proxy cache: publication revocation must reach the application every time.
+gallery.example.com {
+    reverse_proxy 127.0.0.1:3200
+}
+gallery-admin.example.com {
+    reverse_proxy 127.0.0.1:3201
+}
+immich.example.com {
+    reverse_proxy 127.0.0.1:2283
+}

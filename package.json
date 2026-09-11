@@ -21,7 +21,9 @@
     "gallery:db": "node packages/gallery-db/scripts/database.ts",
     "gallery:prepare:db-tests": "node deployment/gallery/scripts/prepare-database-check.mjs",
     "gallery:design:admin": "GALLERY_DESIGN_PREVIEW=1 pnpm --filter @gallery/admin dev",
-    "gallery:design": "GALLERY_DESIGN_PREVIEW=1 pnpm --filter @gallery/public dev"
+    "gallery:design": "GALLERY_DESIGN_PREVIEW=1 pnpm --filter @gallery/public dev",
+    "gallery:account": "node packages/gallery-db/scripts/account.ts",
+    "gallery:prepare:upgrade": "node deployment/gallery/scripts/prepare-upgrade-check.mjs"
   },
   "packageManager": "pnpm@11.22.0",
   "engines": {

@@ -30,7 +30,9 @@ export interface ManagedAlbum {
   visible: boolean;
   draft: AlbumContent;
 }
+export type ContactLink = { label: string; url: string };
 export interface GallerySite {
+  contactLinks: ContactLink[];
   name: string;
   tagline: string;
   version: string;
@@ -171,4 +173,27 @@ export function assertTree(parents: Map<string, string>): void {
       cursor = parents.get(cursor)!;
     }
   }
+}
+
+export function validateContactLinks(value: unknown): ContactLink[] {
+  ensure(Array.isArray(value) && value.length <= 10, '联系链接最多 10 条。');
+  return value.map((entry: unknown) => {
+    ensure(!!entry && typeof entry === 'object', '联系链接格式无效。');
+    const link = entry as Record<string, unknown>;
+    const label = text(link.label, 100, '链接名称').trim();
+    const url = text(link.url, 2000, '链接地址').trim();
+    ensure(label && !/[\u0000-\u0020]/.test(url), '请填写链接名称及完整地址。');
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new GalleryError(400, '链接地址无效。');
+    }
+    ensure(
+      ['https:', 'http:', 'mailto:'].includes(parsed.protocol) && !parsed.username && !parsed.password,
+      '联系链接只支持 HTTP、HTTPS 或 mailto。',
+    );
+    ensure(parsed.protocol === 'mailto:' ? !!parsed.pathname : !!parsed.hostname, '链接地址无效。');
+    return { label, url };
+  });
 }

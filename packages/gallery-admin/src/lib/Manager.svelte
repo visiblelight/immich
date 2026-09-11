@@ -47,6 +47,8 @@
   let action = $state('publish');
   let siteName = $state(untrack(() => initial.site.name));
   let tagline = $state(untrack(() => initial.site.tagline));
+  let contactLinks = $state(untrack(() => copy(initial.site.contactLinks ?? [])));
+  let displayName = $state(untrack(() => initial.user.displayName));
   let oldPassword = $state('');
   let newPassword = $state('');
   const media = (asset: string, variant = 'thumbnail') => `/media/source/${asset}?variant=${variant}`;
@@ -137,6 +139,8 @@
     }
     siteName = workspaceData.site.name;
     tagline = workspaceData.site.tagline;
+    contactLinks = copy(workspaceData.site.contactLinks);
+    displayName = workspaceData.user.displayName;
   }
   function abandon() {
     return !dirty || window.confirm('有尚未保存的修改。是否放弃这些修改？');
@@ -634,11 +638,25 @@
           disabled={busy}
           onclick={() =>
             run(async () => {
-              await api('site', { name: siteName, tagline, version: workspaceData.site.version });
+              await api('site', { name: siteName, tagline, contactLinks, version: workspaceData.site.version });
               await refresh();
               message = '站点设置已应用到前台。';
             })}>保存并应用</button
         >
+        <h2>联系链接</h2>
+        {#each contactLinks as contact, i}<div class="form-panel">
+            <label>链接名称 {i + 1}<input bind:value={contact.label} maxlength="100" /></label><label
+              >链接地址 {i + 1}<input
+                bind:value={contact.url}
+                placeholder="https:// 或 mailto:"
+                maxlength="2000"
+              /></label
+            ><button onclick={() => contactLinks.splice(i, 1)}>移除链接 {i + 1}</button>
+          </div>{/each}
+        <button disabled={contactLinks.length >= 10} onclick={() => contactLinks.push({ label: '', url: '' })}
+          >添加联系链接</button
+        >
+        <p class="muted">填写后使用上方“保存并应用”，前台关于页随之更新。</p>
         <hr />
         <h2>页面与域名</h2>
         <p class="muted">前台导航：相册 / 关于。关于页当前为静态文章，文章选篇后续加入。</p>
@@ -654,6 +672,18 @@
         </div>
       </header>
       <section class="panel content-panel form-panel settings-form">
+        <h2>昵称</h2>
+        <label>显示昵称<input bind:value={displayName} maxlength="100" /></label>
+        <button
+          class="primary"
+          disabled={busy}
+          onclick={() =>
+            void run(async () => {
+              await api('profile', { displayName });
+              await refresh();
+              message = '昵称已更新。';
+            })}>保存昵称</button
+        >
         <h2>修改密码</h2>
         <form
           onsubmit={(e) => {

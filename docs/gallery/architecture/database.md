@@ -98,7 +98,7 @@
 | `tagline` | text，必填，默认 '' | 简短标语 |
 | `intro` | text，必填，默认 '' | 首页介绍 |
 | `about_document` | jsonb，必填，默认空文档 | 既有关于正文结构；未来文章选篇不以此字段冒充关联，需另行设计新迁移 |
-| `contact_links` | jsonb，必填，默认 [] | 受限的 label/url 列表，最多 10 项 |
+| `contact_links` | jsonb，必填，默认 [] | 受限的 label/url 列表，最多 10 项；应用允许 HTTP／HTTPS／mailto，拒绝凭据型 URL 和脚本协议 |
 | `hero_album_id` | uuid，可空，FK → album.id | 首页主视觉使用所选相册当前有效封面；允许先无主视觉 |
 | `seo_description` | text，必填，默认 '' | 网站默认摘要 |
 | `version` | bigint，必填，默认 1 | 站点设置与精选编辑的并发版本 |

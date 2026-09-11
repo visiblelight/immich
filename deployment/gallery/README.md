@@ -1,12 +1,13 @@
 # Gallery engineering and deployment
 
-Current phase: A — foundation. See [local development](../../docs/gallery/development/getting-started.md).
+The local functional MVP and Gallery-only Compose packaging are implemented. See [operations](../../docs/gallery/development/operations.md), [local development](../../docs/gallery/development/mvp-local.md), and [delivery status](../../docs/gallery/delivery/mvp-completion.md).
 
-- `baseline.json`: exact Immich source and observed upgrade candidate; not a compatibility certification.
-- `tsconfig.base.json`: strict settings for Gallery source packages.
-- `scripts/pnpm.sh`: optional wrapper for the isolated local toolchain.
-- `scripts/doctor.mjs`: toolchain/package installation check; no database access.
-- `scripts/smoke.mjs`: starts built public/admin servers on loopback, checks their phase-A HTTP contract, then stops them.
-- `.env.example`: configuration contract with no production credentials.
+- `Dockerfile` and `Dockerfile.dockerignore`: locked Gallery build; excludes local media and secrets.
+- `compose/compose.yml`: public/admin on an existing Immich database network, read-only media and loopback ports.
+- `compose/.env.example`, `compose/Caddyfile.example`: configuration templates; DNS/TLS is an operator deployment step.
+- `baseline.json`: exact current Immich source and candidate validation scope; not a general production certification.
+- `scripts/pnpm.sh`: repository toolchain wrapper; use root `gallery:*` scripts.
+- `scripts/database-check.mjs`: disposable PostgreSQL role, publishing, HTTP, load and full dump/restore checks.
+- `scripts/prepare-upgrade-check.mjs`: prepares the recorded candidate's original migration/schema runtime without switching the working checkout.
 
-Compose, Docker images, migration/bootstrap commands, backup/restore and database readiness are scheduled for later phases. No placeholder Compose is supplied as if it could deploy the product.
+Runtime processes never receive owner or migrator credentials. Deployment does not initialize another repository or replace Immich Compose. No production domain or live database upgrade has been performed.

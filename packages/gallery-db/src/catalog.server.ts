@@ -20,7 +20,8 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         await sql<{
           name: string;
           tagline: string;
-        }>`SELECT name,tagline FROM gallery.published_site WHERE id=1`.execute(trx)
+          contactLinks: import('@gallery/core').ContactLink[];
+        }>`SELECT name,tagline,contact_links AS "contactLinks" FROM gallery.published_site WHERE id=1`.execute(trx)
       ).rows[0];
       ensure(site, 'Gallery 尚未初始化。', 503);
       const rows = (
@@ -78,7 +79,11 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
     .setIsolationLevel('repeatable read')
     .execute(async (trx) => {
       const site = (
-        await sql<{ name: string; tagline: string }>`SELECT name,tagline FROM gallery.site WHERE id=1`.execute(trx)
+        await sql<{
+          name: string;
+          tagline: string;
+          contactLinks: import('@gallery/core').ContactLink[];
+        }>`SELECT name,tagline,contact_links AS "contactLinks" FROM gallery.site WHERE id=1`.execute(trx)
       ).rows[0];
       ensure(site, 'Gallery 尚未初始化。', 503);
       const rows = (

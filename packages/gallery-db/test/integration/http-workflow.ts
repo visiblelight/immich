@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -148,6 +148,14 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
       415,
     );
     const current = () => api('state').then((r) => r.json());
+    await api('profile', { displayName: 'Updated administrator' });
+    assert.equal((await current()).user.displayName, 'Updated administrator');
+    const site = (await current()).site;
+    await api('site', { ...site, contactLinks: [{ label: 'Contact', url: 'mailto:photo@example.invalid' }] });
+    assert.equal((await current()).site.contactLinks[0].url, 'mailto:photo@example.invalid');
+    assert.match(await fetch(`${origins.public}/about`).then((r) => r.text()), /mailto:photo@example.invalid/);
+    await api('site', { ...site, contactLinks: [{ label: 'Bad', url: 'javascript:alert(1)' }] }, 400);
+
     const created = await api('create', {
       title: 'HTTP workflow',
       treeVersion: (await current()).site.treeVersion,
@@ -186,6 +194,11 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal(published.status, 200);
     assert.match(await published.text(), /Published summary/);
     assert.equal(published.headers.get('cache-control'), 'no-store');
+    const directUrl = `${url}/photos/${content.photos[0]!.id}`;
+    assert.equal((await fetch(directUrl)).status, 200);
+    assert.match(await fetch(directUrl).then((r) => r.text()), /HTTP published photo/);
+    assert.equal((await fetch(`${url}/photos/${randomUUID()}`)).status, 404);
+    assert.equal((await fetch(`${url}/photos/invalid`)).status, 404);
     const photoUrl = `${origins.public}/media/${created.id}/${content.photos[0]!.id}?variant=preview`;
     const image = await fetch(photoUrl);
     assert.equal(image.status, 200);
@@ -199,6 +212,7 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal((await fetch(`${origins.public}/media/${created.id}/${randomUUID()}`)).status, 404);
     await api('availability', { ...(await version()), action: 'offline' });
     assert.equal((await fetch(url)).status, 404);
+    assert.equal((await fetch(directUrl)).status, 404);
     assert.equal((await fetch(photoUrl)).status, 404);
     await api('availability', { ...(await version()), action: 'restore' });
     assert.match(await fetch(url).then((r) => r.text()), /Published summary/);
@@ -211,6 +225,56 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
       'Unpublished summary',
     );
     assert.equal((await fetch(url)).status, 200);
+    assert.equal((await fetch(directUrl)).status, 200);
+    assert.equal((await current()).user.displayName, 'Updated administrator');
+    // 240 distinct scoped assets, one generated derivative file. No personal photos.
+    await writeFile(
+      `${mediaRoot}/synthetic.jpg`,
+      await sharp({ create: { width: 1600, height: 1200, channels: 3, background: '#40674e' } })
+        .jpeg()
+        .toBuffer(),
+    );
+    const large = {
+      ...content,
+      photos: Array.from({ length: 240 }, (_, i) => ({
+        id: randomUUID(),
+        asset: `99999999-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+        title: `Load photo ${i + 1}`,
+        description: 'Synthetic performance fixture',
+        alt: 'Synthetic image',
+        location: 'inherit' as const,
+      })),
+    };
+    large.cover = large.photos[0]!.asset;
+    await api('save', { ...(await version()), content: large });
+    const publishStart = performance.now();
+    await api('publish', await version());
+    assert.equal((await fetch(directUrl)).status, 404); // Removed from the new release.
+    const pageStart = performance.now();
+    const pageHtml = await fetch(`${url}?page=2`).then((r) => r.text());
+    assert.match(pageHtml, /Load photo 49/);
+    assert.equal((pageHtml.match(/class="photo /g) ?? []).length, 48);
+    const pageMs = performance.now() - pageStart;
+    const mediaUrls = large.photos.slice(0, 24).map((p) => `${origins.public}/media/${created.id}/${p.id}`);
+    async function batch() {
+      const start = performance.now();
+      await Promise.all(
+        mediaUrls.map(async (u) => {
+          const r = await fetch(u);
+          assert.equal(r.status, 200);
+          assert.ok((await r.arrayBuffer()).byteLength > 0);
+        }),
+      );
+      return performance.now() - start;
+    }
+    const coldMs = await batch(),
+      warmMs = await batch();
+    console.log(
+      `240-photo fixture: publish ${(pageStart - publishStart).toFixed(0)} ms; page ${pageMs.toFixed(0)} ms; 24 concurrent thumbnails cold ${coldMs.toFixed(0)} ms / warm ${warmMs.toFixed(0)} ms.`,
+    );
+    await api('availability', { ...(await version()), action: 'offline' });
+    assert.equal((await fetch(mediaUrls[0]!)).status, 404); // Warm encoding cache cannot bypass authorization.
+    await api('availability', { ...(await version()), action: 'restore' });
     await api('logout', {});
     await api('state', undefined, 401);
   } finally {

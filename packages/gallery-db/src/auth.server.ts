@@ -114,3 +114,20 @@ export async function changePassword(
     );
   });
 }
+
+export async function updateProfile(db: Kysely<unknown>, user: GalleryUser, displayName: unknown) {
+  ensure(
+    typeof displayName === 'string' && displayName.trim().length > 0 && displayName.length <= 100,
+    '昵称需要 1–100 个字符。',
+  );
+  await db.transaction().execute(async (trx) => {
+    const result =
+      await sql`UPDATE gallery."user" SET display_name=${displayName.trim()},updated_at=now() WHERE id=${user.id}::uuid AND role='admin' AND status='active' RETURNING id`.execute(
+        trx,
+      );
+    ensure(result.rows.length, '登录已失效。', 401);
+    await sql`INSERT INTO gallery.audit_event(id,actor_user_id,action,target_type,target_id) VALUES(${randomUUID()}::uuid,${user.id}::uuid,'profile.update','user',${user.id})`.execute(
+      trx,
+    );
+  });
+}

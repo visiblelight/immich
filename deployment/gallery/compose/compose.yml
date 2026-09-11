@@ -1,0 +1,51 @@
+# Gallery-only stack. Attach to the existing Immich network; no Immich service is recreated.
+x-gallery: &gallery
+  image: ${GALLERY_IMAGE:-gallery:local}
+  build:
+    context: ../../..
+    dockerfile: deployment/gallery/Dockerfile
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [immich]
+  volumes:
+    - type: bind
+      source: ${GALLERY_THUMBS_PATH:?Set the host Immich thumbs directory}
+      target: /media/thumbs
+      read_only: true
+      bind:
+        create_host_path: false
+services:
+  public:
+    <<: *gallery
+    env_file: ${GALLERY_PUBLIC_ENV_FILE:?Set the absolute public runtime env file}
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3000'
+      ORIGIN: ${GALLERY_PUBLIC_ORIGIN:?Set canonical public origin}
+      GALLERY_PUBLIC_ORIGIN: ${GALLERY_PUBLIC_ORIGIN}
+      GALLERY_MEDIA_MOUNTED_ROOT: /media/thumbs
+      GALLERY_DESIGN_PREVIEW: '0'
+    ports: ['127.0.0.1:${GALLERY_PUBLIC_PORT:-3200}:3000']
+    command: [node, packages/gallery-public/build/index.js]
+  admin:
+    <<: *gallery
+    env_file: ${GALLERY_ADMIN_ENV_FILE:?Set the absolute admin runtime env file}
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3000'
+      ORIGIN: ${GALLERY_ADMIN_ORIGIN:?Set canonical admin origin}
+      GALLERY_ADMIN_ORIGIN: ${GALLERY_ADMIN_ORIGIN}
+      GALLERY_PUBLIC_ORIGIN: ${GALLERY_PUBLIC_ORIGIN}
+      GALLERY_MEDIA_MOUNTED_ROOT: /media/thumbs
+      GALLERY_DESIGN_PREVIEW: '0'
+    ports: ['127.0.0.1:${GALLERY_ADMIN_PORT:-3201}:3000']
+    command: [node, packages/gallery-admin/build/index.js]
+networks:
+  immich:
+    external: true
+    name: ${IMMICH_NETWORK:?Set existing Immich database network}

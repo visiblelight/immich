@@ -38,7 +38,12 @@ const repository = new DatabaseRepository(db, logger, {
 try {
   await repository.runMigrations();
   const drift = await repository.getSchemaDrift();
-  await writeFile('.gallery-local/phase-b/upstream-check.json', JSON.stringify({ messages, drift }, null, 2));
+  await writeFile(
+    process.env.GALLERY_UPGRADE_CHECK === '1'
+      ? '.gallery-local/phase-b/upstream-upgrade-check.json'
+      : '.gallery-local/phase-b/upstream-check.json',
+    JSON.stringify({ build, messages, drift }, null, 2),
+  );
   assert.deepEqual(drift.items, [], 'Immich source-to-database schema drift must be empty');
   console.log('Original Immich DatabaseRepository.runMigrations + getSchemaDrift passed: 0 drift items.');
 } finally {

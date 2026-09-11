@@ -64,7 +64,16 @@ try {
     env: { ...process.env, GALLERY_TEST_CONFIG: resolve('.gallery-local/phase-b/connection.json') },
   });
   await run(process.execPath, ['deployment/gallery/scripts/schema-drift.mjs', 'after']);
-  if (metadataFile) await run(process.execPath, ['deployment/gallery/scripts/upstream-check.mjs']);
+  if (metadataFile)
+    await run(process.execPath, ['deployment/gallery/scripts/upstream-check.mjs'], {
+      env: { ...process.env, GALLERY_UPGRADE_CHECK: '0' },
+    });
+  if (metadataFile && process.env.GALLERY_UPGRADE_CHECK === '1') {
+    await run(process.execPath, ['deployment/gallery/scripts/upstream-check.mjs'], {
+      env: { ...process.env, GALLERY_IMMICH_BUILD_DIR: resolve('.gallery-local/upgrade/runtime/dist') },
+    });
+    console.log('Recorded candidate original migration/schema check passed on the Gallery-bearing isolated database.');
+  }
   await writeFile(
     '.gallery-local/phase-b/validation.json',
     JSON.stringify(

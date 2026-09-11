@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "galleryVersion": "0.1.0-dev.0",
-  "phase": "D-E-functional-local-mvp",
+  "phase": "D-E-complete-F-local-validation",
   "immich": {
     "sourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056",
     "sourceVersion": "3.2.0-rc.0",
@@ -11,7 +11,9 @@
     "upgradeCandidate": {
       "tag": "v3.2.0",
       "commit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a",
-      "validated": false
+      "validated": false,
+      "databaseMigrationAndDriftValidated": true,
+      "validationScope": "original migration/schema runtime; full Immich application upgrade pending"
     }
   },
   "toolchain": {
@@ -31,10 +33,16 @@
       "0002",
       "0003"
     ],
-    "integrationTestsPassed": 18,
+    "integrationTestsPassed": 20,
     "syntheticMapPoints": 10000,
     "immichOriginalMigrationAndDriftChecksPassed": true,
     "testData": "isolated synthetic fixtures; real local integration uses explicit source scope"
   },
-  "databaseMigrationTarget": "local-development-only"
+  "databaseMigrationTarget": "local-development-only",
+  "operationsVerification": {
+    "composeLocal": true,
+    "syntheticDatabaseRestore": true,
+    "publicDomainsAndTls": false,
+    "physicalMobile": false
+  }
 }

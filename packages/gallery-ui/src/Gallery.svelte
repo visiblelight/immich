@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import type { DisplayAlbum, DisplayPhoto } from '../../gallery-core/src/content';
   let {
     site,
@@ -7,25 +7,49 @@
     active = null,
     preview = false,
     about = false,
+    initialPhotoId = null,
+    initialPage = 1,
+    navigatePhoto,
   }: {
-    site: { name: string; tagline: string };
+    site: { name: string; tagline: string; contactLinks?: import('../../gallery-core/src/content').ContactLink[] };
     albums: DisplayAlbum[];
     active?: DisplayAlbum | null;
     preview?: boolean;
     about?: boolean;
+    initialPhotoId?: string | null;
+    initialPage?: number;
+    navigatePhoto?: (photo: DisplayPhoto | null, replace?: boolean) => void;
   } = $props();
   let viewer: HTMLDialogElement;
   let photo = $state<DisplayPhoto | null>(null);
   let info = $state(true);
-  let page = $state(0);
+  let page = $state(
+    untrack(() => Math.max(0, Math.min(Math.ceil((active?.photos.length ?? 1) / 48) - 1, initialPage - 1))),
+  );
   let pageAlbum = $state<string | null>(null);
+  let albumPage = $state(0);
   $effect(() => {
     const current = active?.id ?? null;
     if (current !== pageAlbum) {
       pageAlbum = current;
-      page = 0;
+      albumPage = 0;
+      page = Math.max(0, Math.min(Math.ceil((active?.photos.length ?? 1) / 48) - 1, initialPage - 1));
       photo = null;
       viewer?.close();
+      if (initialPhotoId && active) {
+        const index = active.photos.findIndex((p) => p.id === initialPhotoId);
+        page = Math.max(0, Math.floor(index / 48));
+        const selected = active.photos[index];
+        if (selected)
+          void tick()
+            .then(() => {
+              photo = selected;
+              return tick();
+            })
+            .then(() => {
+              if (viewer?.isConnected && !viewer.open) viewer.showModal();
+            });
+      }
     }
   });
   const link = (a: DisplayAlbum) => (preview ? `/preview/${a.id}` : `/albums/${a.slug}`);
@@ -43,7 +67,16 @@
     }
     return result;
   });
+  const photoLink = (p: DisplayPhoto) => `/albums/${active?.slug}/photos/${p.id}`;
+  function closePhoto() {
+    photo = null;
+    if (initialPhotoId && navigatePhoto) navigatePhoto(null, true);
+  }
   async function show(p: DisplayPhoto) {
+    if (!preview && navigatePhoto) {
+      navigatePhoto(p);
+      return;
+    }
     photo = p;
     await tick();
     viewer.showModal();
@@ -51,7 +84,9 @@
   function shift(offset: number) {
     if (!photo || !active) return;
     const index = active.photos.findIndex((p) => p.id === photo!.id);
-    photo = active.photos[(index + offset + active.photos.length) % active.photos.length] ?? null;
+    const next = active.photos[(index + offset + active.photos.length) % active.photos.length] ?? null;
+    if (!preview && navigatePhoto && next) navigatePhoto(next, true);
+    else photo = next;
   }
   function keys(e: KeyboardEvent) {
     if (!viewer?.open) return;
@@ -83,6 +118,13 @@
       <a class:chosen={!about} href="/albums">相册</a>{#if !preview}<a class:chosen={about} href="/about">关于</a>{/if}
     </nav>
   </header>
+  {#snippet albumPagination()}
+    {#if children.length > 24}<div class="pagination">
+        <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页相册</button><span
+          >{albumPage + 1} / {Math.ceil(children.length / 24)}</span
+        ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}>下一页相册</button>
+      </div>{/if}
+  {/snippet}
   <main>
     {#if about}<article class="about">
         <p class="kicker">ABOUT</p>
@@ -91,6 +133,12 @@
         <h2>关于这个相册</h2>
         <p>有些地方值得再去一次，有些瞬间值得慢慢回看。把照片整理成相册，把走过的路写成文字，便有了这里。</p>
         <p>愿这些照片，也能让你停留片刻。</p>
+        {#if site.contactLinks?.length}<h2>联系我</h2>
+          <ul>
+            {#each site.contactLinks as contact}<li>
+                <a href={contact.url} rel="noreferrer">{contact.label}</a>
+              </li>{/each}
+          </ul>{/if}
       </article>
     {:else if !active}<div class="heading">
         <p class="kicker">COLLECTIONS</p>
@@ -98,7 +146,7 @@
         <p>{site.tagline}</p>
       </div>
       <div class="album-grid">
-        {#each children as album}<a class="album-card" href={link(album)}
+        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a class="album-card" href={link(album)}
             >{#if album.cover}<img
                 src={album.cover}
                 alt={album.title}
@@ -110,6 +158,7 @@
             <p>{album.count} 张照片{albums.some((a) => a.parent === album.id) ? ' · 含子相册' : ''}</p></a
           >{/each}
       </div>
+      {@render albumPagination()}
       {#if !children.length}<div class="empty">
           <h2>相册正在整理中</h2>
           <p>发布后的作品会在这里出现。</p>
@@ -122,7 +171,9 @@
         <div class="images">
           {#if children.length}<h2 class="section-title">子相册 <span>{children.length}</span></h2>
             <div class="children-grid">
-              {#each children as album}<a class="album-card" href={link(album)}
+              {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
+                  class="album-card"
+                  href={link(album)}
                   >{#if album.cover}<img
                       src={album.cover}
                       alt={album.title}
@@ -133,10 +184,14 @@
                   <h2>{album.title}</h2>
                   <p>{album.count} 张照片</p></a
                 >{/each}
-            </div>{/if}
+            </div>
+            {@render albumPagination()}{/if}
           <h2 class="section-title">照片 <span>{active.photos.length}</span></h2>
           <div class="photos-grid">
-            {#each active.photos.slice(page * 48, (page + 1) * 48) as p}<button class="photo" onclick={() => show(p)}
+            {#each active.photos.slice(page * 48, (page + 1) * 48) as p}<button
+                id={`photo-${p.id}`}
+                class="photo"
+                onclick={() => show(p)}
                 ><img
                   src={p.thumbnail}
                   alt={p.alt || p.title || '查看照片'}
@@ -162,10 +217,11 @@
   </main>
   <footer>© {new Date().getFullYear()} {site.name}</footer>
 </div>
-<dialog bind:this={viewer} aria-label="照片大图" onclose={() => (photo = null)}>
+<dialog bind:this={viewer} aria-label="照片大图" onclose={closePhoto}>
   {#if photo}<div class="viewer-toolbar">
       <span>{active ? active.photos.findIndex((p) => p.id === photo!.id) + 1 : 1} / {active?.photos.length}</span>
       <div>
+        {#if !preview}<a class="photo-permalink" href={photoLink(photo)}>照片直链</a>{/if}
         <button onclick={() => (info = !info)}>{info ? '隐藏信息' : '显示信息'}</button><button
           aria-label="关闭大图"
           onclick={() => viewer.close()}>×</button
@@ -216,6 +272,10 @@
     background: #fafbf9;
     color: #2f3731;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  }
+  .photo-permalink {
+    color: inherit;
+    margin-right: 1rem;
   }
   .gallery {
     max-width: 1680px;
@@ -573,6 +633,10 @@
     }
   }
   @media (max-width: 760px) {
+    .photo-permalink {
+      color: inherit;
+      margin-right: 1rem;
+    }
     .gallery {
       padding: 0 22px;
     }

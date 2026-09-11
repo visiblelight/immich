@@ -8,6 +8,7 @@ import {
   ensure,
   uuid,
   validateContent,
+  validateContactLinks,
   type AlbumContent,
   type DraftPhoto,
   type GallerySite,
@@ -42,12 +43,19 @@ async function siteRow(db: Db, lock = false): Promise<GallerySite> {
       tagline: string;
       version: string;
       tree_version: string;
-    }>`SELECT name,tagline,version,tree_version FROM gallery.site WHERE id=1 ${lock ? sql`FOR UPDATE` : sql``}`.execute(
+      contact_links: GallerySite['contactLinks'];
+    }>`SELECT name,tagline,version,tree_version,contact_links FROM gallery.site WHERE id=1 ${lock ? sql`FOR UPDATE` : sql``}`.execute(
       db,
     )
   ).rows[0];
   ensure(r, 'Gallery 尚未初始化。', 503);
-  return { name: r.name, tagline: r.tagline, version: r.version, treeVersion: r.tree_version };
+  return {
+    name: r.name,
+    tagline: r.tagline,
+    version: r.version,
+    treeVersion: r.tree_version,
+    contactLinks: r.contact_links,
+  };
 }
 export async function adminState(db: Db) {
   return db
@@ -365,6 +373,7 @@ export async function setAlbumAvailability(db: Db, user: GalleryUser, id: string
   });
 }
 export async function saveSite(db: Db, user: GalleryUser, input: Record<string, unknown>) {
+  const contacts = validateContactLinks(input.contactLinks ?? []);
   ensure(
     typeof input.name === 'string' &&
       input.name.trim().length > 0 &&
@@ -377,7 +386,10 @@ export async function saveSite(db: Db, user: GalleryUser, input: Record<string, 
     await actor(trx, user);
     const site = await siteRow(trx, true);
     ensure(input.version === site.version, '站点设置已更新，请刷新。', 409);
-    await sql`UPDATE gallery.site SET name=${String(input.name).trim()},tagline=${String(input.tagline)},version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE id=1`.execute(
+    await sql`UPDATE gallery.site SET name=${String(input.name).trim()},tagline=${String(input.tagline)},contact_links=${JSON.stringify(contacts)}::jsonb,version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE id=1`.execute(
+      trx,
+    );
+    await sql`INSERT INTO gallery.audit_event(id,actor_user_id,action,target_type,target_id) VALUES(${randomUUID()}::uuid,${user.id}::uuid,'site.save','site','1')`.execute(
       trx,
     );
   });

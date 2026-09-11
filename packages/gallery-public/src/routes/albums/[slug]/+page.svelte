@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Gallery } from '@gallery/ui';
+  import AlbumView from '$lib/AlbumView.svelte';
   let { data } = $props();
 </script>
 
@@ -9,4 +9,4 @@
     content={data.active?.summary ?? ''}
   /><link rel="canonical" href={`${data.origin}/albums/${data.active?.slug}`} /></svelte:head
 >
-{#key data.active?.id}<Gallery site={data.site} albums={data.albums} active={data.active} />{/key}
+<AlbumView {data} />

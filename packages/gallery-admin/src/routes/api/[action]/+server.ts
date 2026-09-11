@@ -3,6 +3,7 @@ import { GalleryError, ensure, uuid } from '@gallery/core';
 import {
   adminState,
   changePassword,
+  updateProfile,
   createAlbum,
   deleteDraftAlbum,
   login,
@@ -87,6 +88,9 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
         await logout(app.db, cookies.get('gallery_admin_session') ?? '');
         cookies.delete('gallery_admin_session', { path: '/' });
         return json({ ok: true });
+      case 'profile':
+        await updateProfile(app.db, user, input.displayName);
+        break;
       case 'password':
         await changePassword(app.db, user, input.oldPassword, input.newPassword);
         cookies.delete('gallery_admin_session', { path: '/' });

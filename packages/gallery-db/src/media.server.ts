@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 import path from 'node:path';
@@ -45,8 +46,66 @@ export async function readSourceDerivative(
     await file.close();
   }
 }
-/** Re-encode every output without EXIF/XMP/IPTC/GPS; originals are never served. */
+// Process-local sanitized output cache. Callers must authorize and read the source first.
+// Content hashing also invalidates a replaced derivative with unchanged DB metadata.
+const sanitized = new Map<string, Buffer>();
+const pending = new Map<string, Promise<Buffer>>();
+let cacheBytes = 0;
+let pendingBytes = 0;
+let encoding = 0;
+const queue: (() => void)[] = [];
+const MAX_CACHE = 64 * 1024 * 1024;
+async function encodingSlot() {
+  if (encoding >= 2) {
+    if (queue.length >= 32) throw new Error('Media busy');
+    await new Promise<void>((resolve) => queue.push(resolve));
+  } else encoding++;
+  return () => {
+    const next = queue.shift();
+    if (next) next();
+    else encoding--;
+  };
+}
+/** Bounded re-encoding without EXIF/XMP/IPTC/GPS; originals are never served. */
 export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promise<Buffer> {
+  const key = variant + ':' + createHash('sha256').update(bytes).digest('hex');
+  const cached = sanitized.get(key);
+  if (cached) {
+    sanitized.delete(key);
+    sanitized.set(key, cached);
+    return cached;
+  }
+  const running = pending.get(key);
+  if (running) return running;
+  if (pendingBytes + bytes.length > 64 * 1024 * 1024) throw new Error('Media busy');
+  pendingBytes += bytes.length;
+  const work = (async () => {
+    const release = await encodingSlot();
+    try {
+      const result = await encodeImage(bytes, variant);
+      if (result.length <= MAX_CACHE) {
+        sanitized.set(key, result);
+        cacheBytes += result.length;
+        while (cacheBytes > MAX_CACHE || sanitized.size > 256) {
+          const oldest = sanitized.keys().next().value!;
+          cacheBytes -= sanitized.get(oldest)!.length;
+          sanitized.delete(oldest);
+        }
+      }
+      return result;
+    } finally {
+      release();
+    }
+  })();
+  pending.set(key, work);
+  try {
+    return await work;
+  } finally {
+    pending.delete(key);
+    pendingBytes -= bytes.length;
+  }
+}
+async function encodeImage(bytes: Buffer, variant: MediaVariant): Promise<Buffer> {
   return sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' })
     .rotate()
     .resize({
