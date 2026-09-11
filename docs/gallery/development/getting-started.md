@@ -90,3 +90,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:design:admin
 ```
 
 打开 http://127.0.0.1:3101/design。普通后台开发命令默认不开启设计入口；如已有服务占用 3101，应先停该服务再切换。此模式只使用示例数据，保存和发布只在当前页面内存生效，刷新重置。页面范围与真实业务边界见[后台设计记录](../design/admin-workflow.md)。无需安装新依赖或改动 Immich 容器。
+
+## 依赖失配时的处理
+
+Gallery 包装脚本遇到依赖失配会报错并停止，不再隐式重装整个 Immich 工作区。按冻结锁文件显式执行 `sh deployment/gallery/scripts/pnpm.sh install --frozen-lockfile`。本机开发安装不临时设置 CI，避免虚拟存储配置与后续运行不同；所有供应链策略继续生效。若需要重建宿主 node_modules，先停止相关 Immich 开发容器并在安装后重新创建挂载，具体步骤见[稳定版集成记录](../delivery/immich-v3.2.0.md)。

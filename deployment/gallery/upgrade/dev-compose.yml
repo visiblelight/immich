@@ -5,8 +5,11 @@ services:
   immich-server:
     image: immich-server-dev:gallery-v3.2.0
     environment:
+      pnpm_config_verify_deps_before_run: error
       IMMICH_SOURCE_REF: v3.2.0
       IMMICH_SOURCE_COMMIT: 1b6098c9dbfffe978bec2d414606ed7a4c8e019a
       IMMICH_SOURCE_URL: https://github.com/immich-app/immich/commit/1b6098c9dbfffe978bec2d414606ed7a4c8e019a
   immich-web:
     image: immich-server-dev:gallery-v3.2.0
+    environment:
+      pnpm_config_verify_deps_before_run: error

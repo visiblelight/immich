@@ -29,7 +29,11 @@
     "businessTables": 13,
     "migrationTables": 1,
     "controlledViews": 11,
-    "migrations": ["0001", "0002", "0003"],
+    "migrations": [
+      "0001",
+      "0002",
+      "0003"
+    ],
     "integrationTestsPassed": 20,
     "syntheticMapPoints": 10000,
     "immichOriginalMigrationAndDriftChecksPassed": true,
@@ -42,6 +46,7 @@
     "publicDomainsAndTls": false,
     "physicalMobile": false,
     "fullImmichPhotoUpgrade": true,
-    "realBackupCopyRestore": true
+    "realBackupCopyRestore": true,
+    "stableWorkingDevelopment": true
   }
 }

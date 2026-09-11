@@ -25,7 +25,8 @@
 - Gallery：独立登录、按来源相册筛选、跨两个来源相册选片、父子相册、独立标题／游记、预览、发布、照片直链通过。
 - 修改 Immich GPS 后 Gallery 实时坐标更新，Gallery 文案不变；未发布草稿不影响公开正文。
 - 父级下线阻止子级页面与媒体，恢复后重新可用；源照片进入回收站后页面及媒体拒绝访问；公开图片去除 EXIF，退出后旧会话失效。
-- 合并后的 Gallery 构建、类型检查（0 错误／0 警告）、5 项单元测试通过。
+- 合并后的 Gallery 构建、类型检查（0 错误／0 警告）、5 项单元测试通过；采用稳定基线重新编译后，20 项数据库／HTTP／权限／恢复回归全部通过，原始 Immich 迁移与结构检查 0 漂移。
+- 合成 240 张照片用例：发布 636 ms，页面 58 ms，24 并发缩略图冷缓存 115 ms／热缓存 90 ms；这是本机合成用例，不代表真实网络或真机性能。
 
 ## 旧版恢复
 
@@ -56,11 +57,23 @@
 
 ```sh
 docker compose -f docker/docker-compose.dev.yml -f deployment/gallery/upgrade/dev-compose.yml up -d --no-build --no-deps --force-recreate immich-init
-# 等 init 健康后，再启动 server/web；数据库、Redis、ML 保持原服务。
+# 等 init 健康后，先在一个容器内串行同步服务端与 Web 的冻结依赖。
+docker exec immich_init pnpm --filter immich-monorepo --filter 'immich...' --filter 'immich-web...' install --frozen-lockfile
+# 再启动 server/web；数据库、Redis、ML 保持原服务。
 docker compose -f docker/docker-compose.dev.yml -f deployment/gallery/upgrade/dev-compose.yml up -d --no-build --no-deps --force-recreate immich-server immich-web
 ```
 
+Gallery 包装脚本及本次开发 Compose 将 `verifyDepsBeforeRun` 设为 `error`：发现失配即报错，防止 pnpm 隐式安装丢失过滤条件而触发全仓重装。没有关闭冻结锁、最低发布时间或供应链策略。需要同步时显式运行过滤后的 install，宿主使用正常开发环境设置，不临时设置 CI（否则 pnpm 虚拟存储模式会与运行时不一致）。
+
 不要在 Immich 开发服务仍挂载宿主工作区时重装／重建根 node_modules。升级前停止 init/server/web，保留旧镜像标签及备份。Gallery 仍使用 3100 / 3101，Immich 开发 Web 3000、API 2283。
+
+## 当前开发环境复核
+
+产品分支已采用稳定版，API 返回 3.2.0 且 prerelease 为 null；现有 Chrome 中 Immich Web 显示 v3.2.0 并正常加载相册。Gallery 两个 readiness 均为 ready，现有初始凭据重新登录成功，公开相册和图片可读，测试登录会话已退出。
+
+本次备份时公开相册含 2 张照片；工作环境运行期间用户又发布了 3 张照片的新版本，当前 1 个相册、2 个历史快照共 5 条快照照片记录保持不动。没有用旧备份覆盖当前库。5 个来源资产与媒体文件字节保持不变；重启仅更新六个 `.immich` 挂载检查标记。备份代表创建时间点，之后新增内容不包含在该旧备份中。
+
+原 `mise.lock` 修改的 SHA-256 与升级前一致。开发服务和 Gallery 继续运行，隔离验收项目清理后释放 40283／4100／4101／45432，备份和本地验收结果保留。
 
 ## 尚未完成
 
