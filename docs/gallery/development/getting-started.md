@@ -10,6 +10,8 @@
 
 ## 工具链
 
+宿主机安装／更新依赖前，先阅读 [Immich 开发依赖挂载注意事项](immich-dependency-mounts.md)。本机曾出现宿主机重建 node_modules 后，运行中的 Immich 容器读到 macOS 依赖而退出的情况；安装前停止相应开发容器，安装后重新启动并检查实际 API 响应。
+
 - Node：24.15.0，与根 mise.toml 一致。
 - pnpm：11.22.0，与根 packageManager 一致。
 - TypeScript 使用与 Immich Web 相同的 `@typescript/typescript6` 6.0.2 别名包；这个包的命令名是 `tsc6`，不要假定安装后会提供 `tsc`。
