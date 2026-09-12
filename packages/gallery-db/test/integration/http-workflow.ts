@@ -30,23 +30,27 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     url.username = `gallery_${service}`;
     url.password = config.passwords[service]!;
     const cwd = fileURLToPath(new URL(`../../../gallery-${service}/`, import.meta.url));
-    const child = spawn(process.execPath, ['build/index.js'], {
-      cwd,
-      env: {
-        PATH: process.env.PATH,
-        NODE_ENV: 'production',
-        GALLERY_DATABASE_URL: url.toString(),
-        GALLERY_ADMIN_ORIGIN: origins.admin,
-        GALLERY_PUBLIC_ORIGIN: origins.public,
-        GALLERY_MEDIA_SOURCE_ROOT: '/data/thumbs',
-        GALLERY_MEDIA_MOUNTED_ROOT: mediaRoot,
-        GALLERY_DESIGN_PREVIEW: '0',
-        HOST: '127.0.0.1',
-        PORT: String(ports[service]),
-        ORIGIN: origins[service],
+    const child = spawn(
+      process.execPath,
+      [process.env.GALLERY_BUILD_SUBDIR ? `build/${process.env.GALLERY_BUILD_SUBDIR}/index.js` : 'build/index.js'],
+      {
+        cwd,
+        env: {
+          PATH: process.env.PATH,
+          NODE_ENV: 'production',
+          GALLERY_DATABASE_URL: url.toString(),
+          GALLERY_ADMIN_ORIGIN: origins.admin,
+          GALLERY_PUBLIC_ORIGIN: origins.public,
+          GALLERY_MEDIA_SOURCE_ROOT: '/data/thumbs',
+          GALLERY_MEDIA_MOUNTED_ROOT: mediaRoot,
+          GALLERY_DESIGN_PREVIEW: '0',
+          HOST: '127.0.0.1',
+          PORT: String(ports[service]),
+          ORIGIN: origins[service],
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    );
     children.push(child);
     let log = '';
     for (const stream of [child.stdout, child.stderr])
@@ -180,6 +184,8 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
         {
           id: randomUUID(),
           asset,
+          photoVersion: (await (await api('source')).json()).assets.find((p: { id: string }) => p.id === asset)
+            ?.galleryPhoto?.photoVersion,
           title: 'HTTP published photo',
           description: 'Own description',
           alt: 'Synthetic image',
@@ -207,6 +213,7 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal(metadata.format, 'jpeg');
     assert.equal(image.headers.get('content-type'), 'image/jpeg');
     assert.equal(image.headers.get('cache-control'), 'no-store');
+    content.photos = (await version()).content.photos;
     await api('save', { ...(await version()), content: { ...content, summary: 'Unpublished summary' } });
     assert.doesNotMatch(await fetch(url).then((r) => r.text()), /Unpublished summary/);
     assert.equal((await fetch(`${origins.admin}/preview/${created.id}`, { headers: { cookie } })).status, 200);
@@ -228,6 +235,17 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal((await fetch(url)).status, 200);
     assert.equal((await fetch(directUrl)).status, 200);
     assert.equal((await current()).user.displayName, 'Updated administrator');
+    const tagResult = await api('tag-save', { name: 'HTTP topic', active: true }).then((r) => r.json());
+    const tagged = await version();
+    tagged.content.photos[0]!.tags = [tagResult.id];
+    await api('item', { ...tagged, target: tagged.content.photos[0]!.id, publish: false });
+    assert.doesNotMatch(await fetch(`${origins.public}/photos`).then((r) => r.text()), /HTTP topic/);
+    await api('item', { ...(await version()), target: tagged.content.photos[0]!.id, publish: true });
+    const filtered = await fetch(`${origins.public}/photos?tag=${tagResult.id}`).then((r) => r.text());
+    assert.match(filtered, /HTTP topic/);
+    assert.match(filtered, /1 张/);
+    assert.match(await fetch(directUrl).then((r) => r.text()), /HTTP topic/);
+    assert.equal((await fetch(`${origins.admin}/tags`, { headers: { cookie } })).status, 200);
     // 240 distinct scoped assets, one generated derivative file. No personal photos.
     await writeFile(
       `${mediaRoot}/synthetic.jpg`,

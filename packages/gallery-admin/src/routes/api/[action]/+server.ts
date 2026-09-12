@@ -2,6 +2,8 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { GalleryError, ensure, uuid } from '@gallery/core';
 import {
   adminState,
+  adminTags,
+  saveTag,
   adminMapSettings,
   saveMapSettings,
   adminVisited,
@@ -69,6 +71,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
     if (params.action === 'map-settings') return json(await adminMapSettings(app.db, app.mapSecretKey));
     if (params.action === 'visits')
       return json(await adminVisited(app.db, url.searchParams.get('country') ?? undefined));
+    if (params.action === 'tags') return json(await adminTags(app.db));
     if (params.action === 'source') return json(await picker(app.db, url.searchParams));
     throw new GalleryError(404, '接口不存在。');
   } catch (e) {
@@ -129,6 +132,8 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
       case 'visit-delete':
         await deleteVisit(app.db, user, input);
         break;
+      case 'tag-save':
+        return json({id: await saveTag(app.db, user, input)});
       case 'site':
         await saveSite(app.db, user, input);
         break;

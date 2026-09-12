@@ -1,11 +1,12 @@
 import { sql, type Kysely } from 'kysely';
-import { literalMarkdown, type DisplayPhoto, type PhotoGroup, ensure } from '@gallery/core';
+import { literalMarkdown, type DisplayPhoto, type PhotoGroup, ensure, validateTagIds } from '@gallery/core';
 
 export async function publicPhotoFeed(
   db: Kysely<unknown>,
-  options: { sort?: string; month?: string; page?: number } = {},
+  options: { sort?: string; month?: string; page?: number; tags?: string[] } = {},
 ) {
   const sort = options.sort === 'added' ? 'added' : 'taken';
+  const tagIds = validateTagIds(options.tags ?? []);
   const month = options.month ?? '';
   const page = options.page ?? 1;
   ensure(!month || month === 'unknown' || /^\d{4}-(0[1-9]|1[0-2])$/.test(month), '月份无效。');
@@ -20,6 +21,8 @@ export async function publicPhotoFeed(
       SELECT p.*,a.title AS album_title,a.description_document,
         row_number() OVER (PARTITION BY p.asset_id ORDER BY a.first_published_at,a.album_id,p.photo_id) AS choice
       FROM gallery.published_photo p JOIN gallery.published_album a ON a.album_id=p.album_id
+      WHERE NOT EXISTS(SELECT 1 FROM unnest(${tagIds}::uuid[]) wanted(id) WHERE NOT EXISTS(
+        SELECT 1 FROM jsonb_array_elements(p.tags) t WHERE t->>'id'=wanted.id::text))
     ), photos AS (
       SELECT *,${sort === 'added' ? sql`first_added_at` : sql`taken_at`} AS sort_date,
       coalesce(to_char(${sort === 'added' ? sql`first_added_at` : sql`local_taken_at`} AT TIME ZONE 'UTC','YYYY-MM'),'unknown') AS month
@@ -35,6 +38,7 @@ export async function publicPhotoFeed(
       ).rows;
       const total = months.filter((m) => !month || m.month === month).reduce((n, m) => n + Number(m.count), 0);
       type Row = {
+        tags: DisplayPhoto['tags'];
         album_id: string;
         album_slug: string;
         album_title: string;
@@ -64,6 +68,7 @@ export async function publicPhotoFeed(
       ).rows;
       const photos: DisplayPhoto[] = rows.map((p) => ({
         id: p.photo_id,
+        tags: p.tags,
         title: p.title,
         description: p.description_format === 'plain' ? literalMarkdown(p.description) : p.description,
         alt: p.alt_text,
@@ -83,6 +88,22 @@ export async function publicPhotoFeed(
         thumbnail: `/media/${p.album_id}/${p.photo_id}?variant=thumbnail`,
         src: `/media/${p.album_id}/${p.photo_id}?variant=preview`,
       }));
-      return { photos, months: months.map((m) => ({ ...m, count: Number(m.count) })), sort, month, page, total };
+      const availableTags = (
+        await sql<{
+          id: string;
+          name: string;
+          count: number;
+        }>`SELECT id,name,photo_count::int AS count FROM gallery.published_tag ORDER BY name,id`.execute(trx)
+      ).rows;
+      return {
+        tags: tagIds,
+        availableTags,
+        photos,
+        months: months.map((m) => ({ ...m, count: Number(m.count) })),
+        sort,
+        month,
+        page,
+        total,
+      };
     });
 }

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { sharedPhotosAndTags } from './shared-photos.ts';
 import { itemPublication } from './item-publication.ts';
 import { photoGroups } from './photo-groups.ts';
 import { recovery } from './recovery.ts';
@@ -141,7 +142,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
     await admin.connect();
     await pub.connect();
     await t.test('transactional migration, repeat execution, role identity', async () => {
-      assert.deepEqual(await migrate(migrator), ['0001', '0002', '0003', '0004', '0005', '0006']);
+      assert.deepEqual(await migrate(migrator), ['0001', '0002', '0003', '0004', '0005', '0006', '0007']);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
       assert.equal(
@@ -150,7 +151,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
           )
         ).rows[0].count,
-        '19',
+        '24',
       );
     });
     await t.test('runtime compatibility checks validate service roles and view contracts', async () => {
@@ -168,7 +169,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         await assert.rejects(migrate(migrator, dirUrl), /history mismatch/);
         await copyFile(new URL('0001_foundation.sql', migrationDirectory), path.join(directory, '0001_foundation.sql'));
         await writeFile(
-          path.join(directory, '0007_failure.sql'),
+          path.join(directory, '0008_failure.sql'),
           'CREATE TABLE gallery.rollback_probe(id integer); SELECT 1/0;',
         );
         await assert.rejects(migrate(migrator, dirUrl), (e: { code: string }) => e.code === '22012');
@@ -177,7 +178,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           null,
         );
         assert.equal(
-          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='0007'")).rows[0].count,
+          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='0008'")).rows[0].count,
           '0',
         );
       } finally {
@@ -706,6 +707,11 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       await admin.query(`UPDATE gallery.album SET status='offline',offline_at=now() WHERE id=ANY($1::uuid[])`, [
         [a.id, duplicate.id],
       ]);
+    });
+    await t.test('shared photo publication, tag intersection, concurrency and public scope', async()=>{
+      const tagAssets=[randomUUID(),randomUUID()];
+      for(const asset of tagAssets) await sourceAsset(asset,ids.owner);
+      await sharedPhotosAndTags(adminDb,publicDb,owner,ids.user,tagAssets,mediaRoot);
     });
     await t.test('full database backup and isolated recovery', async () => {
       await recovery(config, mediaRoot);

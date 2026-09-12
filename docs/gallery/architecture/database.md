@@ -400,3 +400,19 @@ erDiagram
 
 
 2026-09-12 ADR 0007：新相册在 Gallery 创建服务中显式写入 `location_mode=exact`；数据库列仍保留 `hidden` 默认作为直接写入的防御性默认，不迁移或重写已有相册和发布版本。
+
+## 0007：统一照片资料与标签（已确认方案，迁移待验收）
+
+替代相册分别维护照片文字的旧规则；相册旧字段保留用于历史追溯，运行时优先读取统一资料。
+
+| 表 | 字段及约束 |
+|---|---|
+| photo | immich_asset_id uuid PK（无 Immich FK）；title≤200、description≤50000、description_format plain/markdown、alt_text≤500；version bigint；current_release_id 与 asset 组成 FK 到 photo_release；created_at/updated_at |
+| photo_release | id uuid PK；immich_asset_id FK photo；统一文字字段及 public_exif 白名单快照；source_version；published_at/published_by；UNIQUE(asset,id)，只追加 |
+| tag | id uuid PK；name 1–60 字符；lower(btrim(name)) 唯一索引；active、version、created_at/updated_at；名称重命名统一生效 |
+| photo_tag | PK(immich_asset_id,tag_id)，分别 FK photo/tag；草稿关联，反向标签索引 |
+| photo_release_tag | PK(release_id,tag_id)，分别 FK photo_release/tag；发布关联，只追加；反向标签索引 |
+
+published_photo 保持原有资格、层级、隐私检查，统一文字和 EXIF 从 photo.current_release_id 获取，新增 tags JSON 数组（id/name）；旧的无统一记录快照兼容回退只用于升级历史。published_tag 仅汇总当前可公开照片并按 Asset 去重，public 只可读视图，不可直读词库、草稿或全局发布表。
+
+保存校验统一照片版本，现有 site 锁串行化写事务；更新受影响的相册版本避免陈旧窗口覆盖。照片发布只切换统一版本指针，不修改其它相册草稿/公开结构；当前相册的单项发布照旧处理所选项目的必要成员闭包。迁移不拷贝 GPS，不重置首次加入时间，保留历史 release，不改变来源范围。存在不同非空文字时迁移拒绝；真实数据任何跨相册差异先由用户确认。

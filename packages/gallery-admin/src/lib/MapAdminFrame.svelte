@@ -8,14 +8,14 @@
     active,
     user,
     publicOrigin,
-  }: { children: Snippet; active: 'maps' | 'visits'; user: GalleryUser; publicOrigin: string } = $props();
+  }: { children: Snippet; active: 'maps' | 'visits' | 'tags'; user: GalleryUser; publicOrigin: string } = $props();
 </script>
 
 <div class="workspace live-workspace">
   <AdminSidebar {active} {user} {publicOrigin} />
   <main class="main">
     <div class="topline">
-      <span>工作台 / {active === 'maps' ? '地图设置' : '到访记录'}</span><a
+      <span>工作台 / {active === 'maps' ? '地图设置' : active === 'tags' ? '标签管理' : '到访记录'}</span><a
         href="/login"
         target="_blank"
         rel="noreferrer">登录页</a

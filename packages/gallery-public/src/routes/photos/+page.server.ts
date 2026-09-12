@@ -7,6 +7,7 @@ export async function load({ url }: { url: URL }) {
     const app = getRuntime();
     const catalog = await publicCatalog(app.db);
     const feed = await publicPhotoFeed(app.db, {
+      tags: url.searchParams.getAll('tag'),
       sort: url.searchParams.get('sort') ?? 'taken',
       month: url.searchParams.get('month') ?? '',
       page: Number(url.searchParams.get('page') ?? 1),

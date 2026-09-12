@@ -17,7 +17,7 @@ async function availablePort() {
 async function verify(name, designPreview = false) {
   const port = await availablePort();
   const origin = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, ['build/index.js'], {
+  const child = spawn(process.execPath, [process.env.GALLERY_BUILD_SUBDIR ? `build/${process.env.GALLERY_BUILD_SUBDIR}/index.js` : 'build/index.js'], {
     cwd: fileURLToPath(new URL(`../../../packages/gallery-${name}/`, import.meta.url)),
     env: { PATH: process.env.PATH, HOST: '127.0.0.1', PORT: String(port), ORIGIN: origin, NODE_ENV: 'production', GALLERY_DESIGN_PREVIEW: designPreview ? '1' : '0' },
     stdio: ['ignore', 'pipe', 'pipe'],

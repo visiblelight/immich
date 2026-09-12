@@ -71,6 +71,7 @@ export function sameAlbumContent(a: AlbumContent, b: AlbumContent) {
     return JSON.stringify({
       ...value,
       blocks: [],
+      photos: value.photos.map(({ photoVersion, ...p }) => p),
       groups: [...(value.groups ?? [])].sort((x, y) => x.id.localeCompare(y.id)),
     });
   };

@@ -6,13 +6,20 @@
   import type { AlbumContent, DraftPhoto, GallerySite, GalleryUser, ManagedAlbum, SourcePhoto } from '@gallery/core';
   import './design/admin.css';
   import { MarkdownEditor } from '@gallery/ui';
+  import TagPicker from './TagPicker.svelte';
   import AlbumPhotosEditor from './AlbumPhotosEditor.svelte';
   let {
     initial,
     initialPage = 'albums',
   }: {
     initialPage?: string;
-    initial: { site: GallerySite; albums: ManagedAlbum[]; user: GalleryUser; publicOrigin: string };
+    initial: {
+      tags?: { id: string; name: string; active: boolean }[];
+      site: GallerySite;
+      albums: ManagedAlbum[];
+      user: GalleryUser;
+      publicOrigin: string;
+    };
   } = $props();
   const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
   let workspaceData = $state(untrack(() => copy(initial)));
@@ -292,6 +299,8 @@
           description: '',
           alt: '',
           location: 'inherit',
+          tags: [],
+          ...(a.galleryPhoto ?? {}),
         });
     }
     if (!content.cover) content.cover = content.photos[0]?.asset ?? '';
@@ -310,9 +319,18 @@
     // Keep the complete local draft: refreshing versions must not discard other unsaved edits.
     await api('item', { ...versions(), target, publish, content: candidate });
     await refresh();
+    for (const p of candidate.photos) {
+      const saved = workspaceData.albums.find((a) => a.id === id)?.draft.photos.find((x) => x.id === p.id);
+      if (saved) p.photoVersion = saved.photoVersion;
+    }
     content = candidate;
     message = publish ? '所选照片／照片组已发布，其他草稿修改仍保留。' : '所选照片／照片组草稿已保存。';
     failed = false;
+  }
+  async function createTag(name: string) {
+    const result = await api('tag-save', { name, active: true });
+    workspaceData.tags = await api('tags');
+    return result.id as string;
   }
   async function savePhoto(publish: boolean) {
     if (!edited || !content) return;
@@ -351,7 +369,8 @@
 
 <svelte:window onbeforeunload={unload} />
 <svelte:head>
-  <title>{page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'} · {workspaceData.site.name}</title>
+  <title>{page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'} · {workspaceData.site.name}</title
+  >
 </svelte:head>
 <div class="workspace live-workspace">
   <AdminSidebar active={page} user={workspaceData.user} publicOrigin={workspaceData.publicOrigin} onNavigate={nav} />
@@ -498,6 +517,8 @@
                   {editPhoto}
                   {pick}
                   {saveItem}
+                  tags={workspaceData.tags ?? []}
+                  {createTag}
                   canPublish={!!active.visible}
                 />{/key}
             </section>
@@ -863,6 +884,7 @@
             maxLength={50000}
             filename="photo.md"
           />
+          <TagPicker bind:value={edited.tags} tags={workspaceData.tags ?? []} {createTag} />
           <details>
             <summary>高级设置</summary><label
               >画面描述（无障碍，选填）<input maxlength="500" bind:value={edited.alt} /></label
@@ -877,7 +899,7 @@
             >
             <p class="footnote">近似位置会模糊坐标，不等同于城市中心；不会修改 Immich 的 GPS。</p>
           </details>
-          <p class="footnote">文案只属于当前 Gallery 相册，不回写 Immich。</p>
+          <p class="footnote">照片资料在所有相册中共用，不回写 Immich；发布后同步更新所有公开引用。</p>
         </div>
       </div>
       <div class="dialog-actions">

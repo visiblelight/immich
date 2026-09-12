@@ -9,6 +9,7 @@
   }: { active: string; user: GalleryUser; publicOrigin: string; onNavigate?: (target: string) => void } = $props();
   const entries = [
     ['albums', '▦', '相册'],
+    ['tags', '#', '标签'],
     ['visits', '◎', '到访记录'],
     ['maps', '⌘', '地图设置'],
     ['settings', '⚙', '站点设置'],
@@ -69,7 +70,7 @@
       grid-row: 2;
       grid-column: 1/-1;
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 4px;
     }
     .admin-sidebar nav button {

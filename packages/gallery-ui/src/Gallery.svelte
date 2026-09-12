@@ -27,7 +27,15 @@
     navigatePhoto?: (photo: DisplayPhoto | null, replace?: boolean) => void;
     navigateBoundary?: (offset: number) => void;
     immersive?: boolean;
-    feed?: { months: { month: string; count: number }[]; sort: string; month: string; page: number; total: number };
+    feed?: {
+      tags?: string[];
+      availableTags?: { id: string; name: string; count: number }[];
+      months: { month: string; count: number }[];
+      sort: string;
+      month: string;
+      page: number;
+      total: number;
+    };
   } = $props();
   let photo = $state<DisplayPhoto | null>(null);
   let viewer: HTMLDialogElement;
@@ -75,8 +83,19 @@
           new Date(value),
         )
       : '日期未知';
-  const feedLink = (page: number, month = feed?.month ?? '', sort = feed?.sort ?? 'taken') =>
-    `/photos?${new URLSearchParams({ sort, month, page: String(page) })}`;
+  let tagSearch = $state('');
+  const feedLink = (page: number, month = feed?.month ?? '', sort = feed?.sort ?? 'taken', tags = feed?.tags ?? []) => {
+    const q = new URLSearchParams({ sort, month, page: String(page) });
+    for (const tag of tags) q.append('tag', tag);
+    return `/photos?${q}`;
+  };
+  const toggleTag = (id: string) =>
+    feedLink(
+      1,
+      feed?.month,
+      feed?.sort,
+      (feed?.tags ?? []).includes(id) ? (feed?.tags ?? []).filter((t) => t !== id) : [...(feed?.tags ?? []), id],
+    );
 
   let info = $state(true);
   let page = $state(untrack(() => Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1))));
@@ -217,6 +236,28 @@
             }}><option value="taken">拍摄时间 · 从新到旧</option><option value="added">最近加入 Gallery</option></select
           ></label
         >
+      </div>
+      <div class="photo-tag-filter">
+        <details>
+          <summary>按标签筛选{feed.tags?.length ? ` · 已选 ${feed.tags.length}` : ''}</summary>
+          <input aria-label="搜索照片标签" placeholder="搜索标签" bind:value={tagSearch} />
+          <div class="tag-options">
+            {#each (feed.availableTags ?? [])
+              .filter((t) => t.name.toLocaleLowerCase().includes(tagSearch.trim().toLocaleLowerCase()))
+              .slice(0, 50) as tag}<a class:selected={feed.tags?.includes(tag.id)} href={toggleTag(tag.id)}
+                >{tag.name}<small>{tag.count}</small></a
+              >{/each}
+          </div>
+          {#if !feed.availableTags?.length}<p>暂无公开标签。</p>{/if}
+          <p>选择多个标签时，显示同时包含这些标签的照片。</p>
+        </details>
+        {#if feed.tags?.length}<div class="selected-tags">
+            {#each feed.tags as id}<a
+                href={toggleTag(id)}
+                aria-label={`移除筛选 ${feed.availableTags?.find((t) => t.id === id)?.name ?? '已失效标签'}`}
+                >{feed.availableTags?.find((t) => t.id === id)?.name ?? '已失效标签'} ×</a
+              >{/each}<a class="clear-tags" href={feedLink(1, feed.month, feed.sort, [])}>清空标签</a>
+          </div>{/if}
       </div>
       <div class="timeline-layout">
         <div class="timeline-photos">
@@ -429,6 +470,10 @@
       {#if info}<aside class="photo-information">
           <section class="work-description">
             <h2>{photoTitle(photo)}</h2>
+            {#if photo.tags?.length}<nav class="photo-tags" aria-label="照片标签">
+                {#each photo.tags as tag}<a href={`/photos?${new URLSearchParams({ tag: tag.id })}`}>{tag.name}</a
+                  >{/each}
+              </nav>{/if}
             {#if photo.group}<Markdown text={photo.group.description} />{:else if photo.description}<Markdown
                 text={photo.description}
               />{/if}
@@ -1409,5 +1454,69 @@
   }
   .immersive-exit:focus-visible {
     outline-offset: -4px;
+  }
+  .photo-tag-filter {
+    margin: 0 0 28px;
+    font-size: 13px;
+  }
+  .photo-tag-filter details {
+    border: 1px solid #dce3d7;
+    padding: 14px 18px;
+    border-radius: 6px;
+    background: #f0f3ed;
+    max-width: 650px;
+  }
+  .photo-tag-filter summary {
+    cursor: pointer;
+  }
+  .photo-tag-filter input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 14px;
+    padding: 10px;
+    border: 1px solid #cad7c3;
+    background: #fff;
+    border-radius: 4px;
+  }
+  .tag-options,
+  .selected-tags,
+  .photo-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .tag-options a,
+  .selected-tags a,
+  .photo-tags a {
+    padding: 6px 10px;
+    border: 1px solid #cedac7;
+    border-radius: 4px;
+    text-decoration: none;
+    color: inherit;
+    overflow-wrap: anywhere;
+  }
+  .tag-options small {
+    margin-left: 8px;
+    opacity: 0.6;
+  }
+  .tag-options a.selected {
+    background: #36543c;
+    color: white;
+  }
+  .photo-tag-filter p {
+    font-size: 12px;
+    color: #677861;
+  }
+  .selected-tags .clear-tags {
+    border: 0;
+  }
+  .photo-tags {
+    margin: 12px 0 22px;
+  }
+  .photo-tags a {
+    border-color: #4b604c;
+    color: #dcebd5;
+    font-size: 12px;
   }
 </style>

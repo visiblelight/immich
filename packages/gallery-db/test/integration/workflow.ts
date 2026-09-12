@@ -16,7 +16,7 @@ import {
   picker,
   publicCatalog,
   publishAlbum,
-  saveAlbum,
+  saveAlbum as rawSaveAlbum,
   sessionUser,
   setAlbumAvailability,
   sanitizeImage,
@@ -186,4 +186,12 @@ export async function workflow(
   await owner.query('UPDATE gallery."user" SET status=\'disabled\' WHERE id=$1', [actorId]);
   assert.equal(await sessionUser(db, third.token), null);
   await owner.query('UPDATE gallery."user" SET status=\'active\' WHERE id=$1', [actorId]);
+}
+
+// Test client follows the UI: retain edited content, refresh shared optimistic versions after save.
+async function saveAlbum(...args: Parameters<typeof rawSaveAlbum>) {
+  await rawSaveAlbum(...args);
+  const current = (await adminState(args[0])).albums.find((a) => a.id === args[2])!;
+  const input = args[3].content as import('@gallery/core').AlbumContent;
+  for (const p of input.photos) p.photoVersion = current.draft.photos.find((x) => x.id === p.id)?.photoVersion;
 }

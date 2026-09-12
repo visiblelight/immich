@@ -1,3 +1,10 @@
+import {
+  hydratePhotoProfiles,
+  photoProfiles,
+  savePhotoProfiles,
+  publishPhotoProfiles,
+} from './shared-photos.server.ts';
+import { adminTags } from './tags.server.ts';
 import { randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 import sharp from 'sharp';
@@ -84,6 +91,7 @@ export async function adminState(db: Db) {
           trx,
         )
       ).rows;
+      const sharedPhotos = await hydratePhotoProfiles(trx, photos);
       const albums: ManagedAlbum[] = rows.map((r) => ({
         id: r.id,
         version: r.version,
@@ -105,7 +113,7 @@ export async function adminState(db: Db) {
           cover: r.cover_asset_id ?? '',
           location: r.location_mode,
           showExif: r.show_exif,
-          photos: photos
+          photos: sharedPhotos
             .filter((p) => p.album_id === r.id)
             .map(({ album_id, description_format, ...p }) => ({
               ...p,
@@ -114,7 +122,7 @@ export async function adminState(db: Db) {
             })),
         },
       }));
-      return { site, albums };
+      return { site, albums, tags: await adminTags(trx) };
     });
 }
 async function actor(db: Db, user: GalleryUser) {
@@ -246,7 +254,14 @@ export async function createAlbum(db: Db, user: GalleryUser, input: Record<strin
 }
 export async function saveAlbum(db: Db, user: GalleryUser, id: string, input: Record<string, unknown>) {
   const c = validateContent(input.content);
-  await db.transaction().execute((trx) => saveAlbumInTransaction(trx, user, id, input, c));
+  await db.transaction().execute(async (trx) => {
+    await saveAlbumInTransaction(trx, user, id, input, c);
+    await refreshSharedFlags(
+      trx,
+      c.photos.map((p) => p.asset),
+      id,
+    );
+  });
 }
 async function saveAlbumInTransaction(
   trx: Db,
@@ -290,6 +305,7 @@ async function saveAlbumInTransaction(
   await sql`INSERT INTO gallery.asset_entry(immich_asset_id) SELECT x.asset FROM jsonb_to_recordset(${JSON.stringify(c.photos)}::jsonb) AS x(asset uuid) ON CONFLICT DO NOTHING`.execute(
     trx,
   );
+  await savePhotoProfiles(trx, c.photos, id);
   await sql`DELETE FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx);
   if (c.photos.length)
     await sql`INSERT INTO gallery.album_photo(id,album_id,immich_asset_id,position,title,description,alt_text,location_mode,group_id,description_format,created_at)
@@ -327,11 +343,15 @@ async function storedContent(db: Db, id: string, release?: string): Promise<Albu
     cover: row.cover_asset_id ?? '',
     location: row.location_mode,
     showExif: row.show_exif,
-    photos: photos.map(({ description_format, ...p }) => ({
-      ...p,
-      group: p.group ?? '',
-      description: description_format === 'plain' ? literalMarkdown(p.description) : p.description,
-    })),
+    photos: await hydratePhotoProfiles(
+      db,
+      photos.map(({ description_format, ...p }) => ({
+        ...p,
+        group: p.group ?? '',
+        description: description_format === 'plain' ? literalMarkdown(p.description) : p.description,
+      })),
+      !!release,
+    ),
   });
 }
 
@@ -365,6 +385,11 @@ export async function saveAlbumItem(
         await sql`UPDATE gallery.album SET has_unpublished_changes=${!sameAlbumContent(saved.content, published)} WHERE id=${id}::uuid`.execute(
           trx,
         );
+      await refreshSharedFlags(
+        trx,
+        saved.content.photos.filter((p) => saved.ids.has(p.id)).map((p) => p.asset),
+        id,
+      );
       return;
     }
     const next = mergeAlbumItem(published, incoming, target, draft);
@@ -389,6 +414,11 @@ export async function saveAlbumItem(
       SELECT ${release}::uuid,r.album_id,(SELECT max(release_number)+1 FROM gallery.album_release WHERE album_id=${id}::uuid),(SELECT version FROM gallery.album_draft WHERE album_id=${id}::uuid),${user.id}::uuid,r.parent_album_id,r.position,r.title,r.summary,
       jsonb_set(r.description_document,'{groups}',${JSON.stringify(next.content.groups)}::jsonb),${next.content.cover || null}::uuid,r.cover_focal_point,r.location_mode,r.show_exif,r.seo_title,r.seo_description
       FROM gallery.album_release r WHERE r.id=${album.current_release_id}::uuid`.execute(trx);
+    await publishPhotoProfiles(
+      trx,
+      user,
+      members.map((p) => p.asset),
+    );
     const values = next.content.photos.map((p, position) => {
       const s = qualified.find((s) => s.asset_id === p.asset);
       return {
@@ -420,6 +450,11 @@ export async function saveAlbumItem(
       trx,
     );
     await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);
+    await refreshSharedFlags(
+      trx,
+      members.map((p) => p.asset),
+      id,
+    );
     await audit(trx, user, 'album.publish-item', id);
   });
 }
@@ -487,6 +522,11 @@ export async function publishAlbum(
     await sql`INSERT INTO gallery.album_release(id,album_id,release_number,source_draft_version,published_by,parent_album_id,position,title,summary,description_document,cover_asset_id,cover_focal_point,location_mode,show_exif,seo_title,seo_description) SELECT ${release}::uuid,d.album_id,(SELECT coalesce(max(release_number),0)+1 FROM gallery.album_release WHERE album_id=${id}::uuid),d.version,${user.id}::uuid,d.parent_album_id,d.position,d.title,d.summary,d.description_document,d.cover_asset_id,d.cover_focal_point,d.location_mode,d.show_exif,d.seo_title,d.seo_description FROM gallery.album_draft d WHERE d.album_id=${id}::uuid`.execute(
       trx,
     );
+    await publishPhotoProfiles(
+      trx,
+      user,
+      members.map((p) => p.asset),
+    );
     const exifs = qualified.map((s) => ({
       asset: s.asset_id,
       exif: draft.show_exif
@@ -501,13 +541,18 @@ export async function publishAlbum(
           }
         : null,
     }));
-    await sql`INSERT INTO gallery.album_release_photo(release_id,photo_id,immich_asset_id,position,title,description,alt_text,location_mode,public_exif,group_id,description_format) SELECT ${release}::uuid,p.id,p.immich_asset_id,p.position,p.title,p.description,p.alt_text,p.location_mode,x.exif,p.group_id,p.description_format FROM gallery.album_photo p LEFT JOIN jsonb_to_recordset(${JSON.stringify(exifs)}::jsonb) AS x(asset uuid,exif jsonb) ON x.asset=p.immich_asset_id WHERE p.album_id=${id}::uuid`.execute(
+    await sql`INSERT INTO gallery.album_release_photo(release_id,photo_id,immich_asset_id,position,title,description,alt_text,location_mode,public_exif,group_id,description_format) SELECT ${release}::uuid,p.id,p.immich_asset_id,p.position,shared.title,shared.description,shared.alt_text,p.location_mode,x.exif,p.group_id,shared.description_format FROM gallery.album_photo p JOIN gallery.photo shared ON shared.immich_asset_id=p.immich_asset_id LEFT JOIN jsonb_to_recordset(${JSON.stringify(exifs)}::jsonb) AS x(asset uuid,exif jsonb) ON x.asset=p.immich_asset_id WHERE p.album_id=${id}::uuid`.execute(
       trx,
     );
     await sql`UPDATE gallery.album SET has_unpublished_changes=false,status='published',current_release_id=${release}::uuid,version=version+1,first_published_at=coalesce(first_published_at,now()),last_published_at=now(),offline_at=NULL,updated_at=now() WHERE id=${id}::uuid`.execute(
       trx,
     );
     await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);
+    await refreshSharedFlags(
+      trx,
+      members.map((p) => p.asset),
+      id,
+    );
     await audit(trx, user, 'album.publish', id);
   });
 }
@@ -627,5 +672,38 @@ export async function picker(db: Db, filters: URLSearchParams) {
       name: string;
     }>`SELECT tag_id AS id,value AS name FROM gallery.admin_source_tag ORDER BY value,tag_id`.execute(db)
   ).rows;
+  const profiles = await photoProfiles(
+    db,
+    assets.map((a) => a.id),
+  );
+  for (const a of assets) {
+    const p = profiles.get(a.id);
+    if (p)
+      a.galleryPhoto = {
+        title: p.title,
+        description: p.description_format === 'plain' ? literalMarkdown(p.description) : p.description,
+        alt: p.alt_text,
+        tags: p.tags,
+        photoVersion: p.version,
+      };
+  }
   return { assets, albums, tags, next: rows.length > 60 ? assets.at(-1)!.id : null };
+}
+
+async function refreshSharedFlags(db: Db, assets: string[], albumId: string) {
+  const rows = (
+    await sql<{
+      id: string;
+      current_release_id: string;
+    }>`SELECT id,current_release_id FROM gallery.album WHERE current_release_id IS NOT NULL AND (id=${albumId}::uuid OR id IN (SELECT album_id FROM gallery.album_photo WHERE immich_asset_id=ANY(${assets}::uuid[])))`.execute(
+      db,
+    )
+  ).rows;
+  for (const a of rows) {
+    const draft = await storedContent(db, a.id),
+      published = await storedContent(db, a.id, a.current_release_id);
+    await sql`UPDATE gallery.album SET has_unpublished_changes=${!sameAlbumContent(draft, published)} WHERE id=${a.id}::uuid`.execute(
+      db,
+    );
+  }
 }

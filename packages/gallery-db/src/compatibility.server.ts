@@ -26,11 +26,12 @@ export async function assertDatabaseCompatibility(db: Kysely<unknown>, service: 
   await sql`SELECT album_id, release_id, ancestor_ids, description_document FROM gallery.published_album LIMIT 0`.execute(
     db,
   );
-  await sql`SELECT album_id, photo_id, asset_id, location_mode, latitude, longitude, group_id, description_format, taken_at, local_taken_at, time_zone, first_added_at FROM gallery.published_photo LIMIT 0`.execute(
+  await sql`SELECT album_id, photo_id, asset_id, location_mode, latitude, longitude, group_id, description_format, tags, taken_at, local_taken_at, time_zone, first_added_at FROM gallery.published_photo LIMIT 0`.execute(
     db,
   );
   await sql`SELECT preview_id, preview_path, preview_update_id, thumbnail_id, thumbnail_path,
     thumbnail_update_id FROM gallery.published_media LIMIT 0`.execute(db);
+  await sql`SELECT id,name,photo_count FROM gallery.published_tag LIMIT 0`.execute(db);
   if (service === 'gallery-admin') {
     await sql`SELECT asset_id, is_edited, latitude, longitude, city, source_description FROM gallery.admin_source_asset LIMIT 0`.execute(
       db,

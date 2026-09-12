@@ -26,6 +26,11 @@ export async function recovery(
     (SELECT count(*) FROM gallery.album_release) releases,
     (SELECT count(*) FROM gallery.album_release_photo) photos,
     (SELECT count(*) FROM gallery."user") users,
+    (SELECT count(*) FROM gallery.photo) shared_photos,
+    (SELECT count(*) FROM gallery.photo_release) photo_releases,
+    (SELECT count(*) FROM gallery.photo_tag) draft_tags,
+    (SELECT count(*) FROM gallery.photo_release_tag) published_tags,
+    (SELECT md5(string_agg(id::text||name,',' ORDER BY id)) FROM gallery.tag) tag_names,
     (SELECT md5(string_agg(id::text||':'||description_document::text,',' ORDER BY id)) FROM gallery.album_release) content`)
     ).rows[0];
   const expected = await snapshot(source);

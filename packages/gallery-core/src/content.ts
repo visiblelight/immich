@@ -7,7 +7,10 @@ export interface PhotoGroup {
   description: string;
   cover: string;
 }
+export type PhotoTag = { id: string; name: string };
 export interface DraftPhoto {
+  photoVersion?: string;
+  tags?: string[];
   group?: string;
   id: string;
   asset: string;
@@ -55,6 +58,7 @@ export interface GalleryUser {
   displayName: string;
 }
 export interface SourcePhoto {
+  galleryPhoto?: Pick<DraftPhoto, 'title' | 'description' | 'alt' | 'tags' | 'photoVersion'>;
   id: string;
   filename: string;
   width: number | null;
@@ -64,6 +68,7 @@ export interface SourcePhoto {
   exif: Record<string, string | number | null>;
 }
 export interface DisplayPhoto {
+  tags?: PhotoTag[];
   group?: PhotoGroup;
   takenAt?: string | null;
   localTakenAt?: string | null;
@@ -145,6 +150,8 @@ export function validateContent(input: unknown): AlbumContent {
     const photo = p as Record<string, unknown>;
     ensure(['inherit', 'hidden', 'approximate', 'exact'].includes(String(photo.location)), '照片位置策略无效。');
     return {
+      photoVersion: photo.photoVersion === undefined ? undefined : text(photo.photoVersion, 30, '照片版本'),
+      tags: validateTagIds(photo.tags ?? []),
       group: photo.group ? uuid(photo.group) : '',
       id: uuid(photo.id),
       asset: uuid(photo.asset),
@@ -257,4 +264,9 @@ export function validateContactLinks(value: unknown): ContactLink[] {
     ensure(parsed.protocol === 'mailto:' ? !!parsed.pathname : !!parsed.hostname, '链接地址无效。');
     return { label, url };
   });
+}
+
+export function validateTagIds(value: unknown): string[] {
+  ensure(Array.isArray(value) && value.length <= 30, '每张照片最多关联 30 个标签。');
+  return [...new Set(value.map(uuid))].sort();
 }

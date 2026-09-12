@@ -8,8 +8,8 @@ import type { Kysely } from 'kysely';
 import {
   adminState,
   createAlbum,
-  saveAlbum,
-  saveAlbumItem,
+  saveAlbum as rawSaveAlbum,
+  saveAlbumItem as rawSaveAlbumItem,
   publishAlbum,
   publicCatalog,
   publicPhotoFeed,
@@ -202,4 +202,19 @@ export async function itemPublication(
   assert.equal((await state(id)).a.visible, false);
   assert.equal((await state(id)).a.draft.photos[0]!.description, child.photos[0]!.description);
   await setAlbumAvailability(db, user, parent, { ...(await state(parent)).versions, action: 'restore' });
+}
+
+// Test client follows the UI: retain edited content, refresh shared optimistic versions after save.
+async function saveAlbum(...args: Parameters<typeof rawSaveAlbum>) {
+  await rawSaveAlbum(...args);
+  const current = (await adminState(args[0])).albums.find((a) => a.id === args[2])!;
+  const input = args[3].content as import('@gallery/core').AlbumContent;
+  for (const p of input.photos) p.photoVersion = current.draft.photos.find((x) => x.id === p.id)?.photoVersion;
+}
+
+async function saveAlbumItem(...args: Parameters<typeof rawSaveAlbumItem>) {
+  await rawSaveAlbumItem(...args);
+  const current = (await adminState(args[0])).albums.find((a) => a.id === args[2])!;
+  const input = args[3].content as import('@gallery/core').AlbumContent;
+  for (const p of input.photos) p.photoVersion = current.draft.photos.find((x) => x.id === p.id)?.photoVersion;
 }

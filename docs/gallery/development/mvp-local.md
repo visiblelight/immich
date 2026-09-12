@@ -65,3 +65,9 @@ sh deployment/gallery/scripts/pnpm.sh gallery:test:db /absolute/path/immich-sche
 初始化前完整数据库备份在 `.gallery-local/backups/before-gallery-*.dump`；运行配置和初始凭据在 runtime，均只在本机。该备份不是媒体备份，也不能替代完整恢复演练。恢复时先在新隔离库验证，停止应用写入，再制定现有库的切换步骤；本轮没有对现有数据库执行覆盖恢复。
 
 新依赖安装前必须遵守 [Immich 依赖挂载说明](immich-dependency-mounts.md)：先停止绑定宿主机 node_modules 的 Immich server/web/init，安装后启动并以 API ping 检查。pnpm 包装器限定 Gallery 安装和校验范围，不关闭仓库供应链审核规则。
+
+## 并行验证候选构建
+
+当数据库迁移尚未批准应用到开发图库时，可以用 `GALLERY_BUILD_SUBDIR=shared-candidate` 运行 `gallery:build`，产物写入两个应用的 `build/shared-candidate`，不会覆盖正在运行的 `build`。同一环境变量用于 `gallery:smoke` 和 `gallery:test:db` 的生产 HTTP 验证。子目录仅允许小写字母、数字、连字符；默认未设置时沿用原有构建路径。
+
+运行中的 Node 进程仍持有旧服务端模块；不要在未迁移的开发数据库上重启新源码版本。候选验证通过且迁移选择确认后，先备份，暂停前后台写入，执行新增迁移，再按默认路径构建和重启前后台。

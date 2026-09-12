@@ -1,3 +1,5 @@
+import { photoProfiles } from './shared-photos.server.ts';
+import { adminTags } from './tags.server.ts';
 import { sql, type Kysely } from 'kysely';
 import {
   ensure,
@@ -57,6 +59,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
       if (active) {
         const photos = (
           await sql<{
+            tags: DisplayPhoto['tags'];
             photo_id: string;
             group_id: string | null;
             description_format: string;
@@ -71,12 +74,13 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
             public_exif: DisplayPhoto['exif'];
             latitude: number | null;
             longitude: number | null;
-          }>`SELECT photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(
+          }>`SELECT tags,photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(
             trx,
           )
         ).rows;
         active.photos = photos.map((p) => ({
           id: p.photo_id,
+          tags: p.tags,
           group: active.groups?.find((g) => g.id === p.group_id),
           takenAt: p.taken_at?.toISOString() ?? null,
           localTakenAt: p.local_taken_at?.toISOString() ?? null,
@@ -167,31 +171,41 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
           trx,
         )
       ).rows;
-      active.photos = photos.map((p) => ({
-        id: p.id,
-        group: active.groups?.find((g) => g.id === p.group_id),
-        takenAt: p.taken_at?.toISOString() ?? null,
-        localTakenAt: p.local_taken_at?.toISOString() ?? null,
-        timeZone: p.time_zone,
-        title: p.title,
-        description: p.description_format === 'plain' ? literalMarkdown(p.description) : p.description,
-        alt: p.alt_text,
-        exif: rows.find((a) => a.id === albumId)?.show_exif
-          ? {
-              make: p.make,
-              model: p.model,
-              lensModel: p.lens_model,
-              fNumber: p.f_number,
-              focalLength: p.focal_length,
-              iso: p.iso,
-              exposureTime: p.exposure_time,
-            }
-          : null,
-        latitude: null,
-        longitude: null,
-        src: `/media/source/${p.asset}?variant=preview`,
-        thumbnail: `/media/source/${p.asset}?variant=thumbnail`,
-      }));
+      const profiles = await photoProfiles(
+        trx,
+        photos.map((p) => p.asset),
+      );
+      const tags = await adminTags(trx);
+      active.photos = photos.map((original) => {
+        const shared = profiles.get(original.asset);
+        const p = shared ? { ...original, ...shared } : original;
+        return {
+          id: original.id,
+          tags: tags.filter((t) => shared?.tags.includes(t.id)).map((t) => ({ id: t.id, name: t.name })),
+          group: active.groups?.find((g) => g.id === p.group_id),
+          takenAt: p.taken_at?.toISOString() ?? null,
+          localTakenAt: p.local_taken_at?.toISOString() ?? null,
+          timeZone: p.time_zone,
+          title: p.title,
+          description: p.description_format === 'plain' ? literalMarkdown(p.description) : p.description,
+          alt: p.alt_text,
+          exif: rows.find((a) => a.id === albumId)?.show_exif
+            ? {
+                make: p.make,
+                model: p.model,
+                lensModel: p.lens_model,
+                fNumber: p.f_number,
+                focalLength: p.focal_length,
+                iso: p.iso,
+                exposureTime: p.exposure_time,
+              }
+            : null,
+          latitude: null,
+          longitude: null,
+          src: `/media/source/${p.asset}?variant=preview`,
+          thumbnail: `/media/source/${p.asset}?variant=thumbnail`,
+        };
+      });
       return { site, albums, active };
     });
 }

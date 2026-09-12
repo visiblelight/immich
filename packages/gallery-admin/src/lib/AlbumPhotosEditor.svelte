@@ -9,6 +9,7 @@
     type DraftPhoto,
     type PhotoGroup,
   } from '@gallery/core';
+  import TagPicker from './TagPicker.svelte';
   import { flip } from 'svelte/animate';
   import { onDestroy, tick } from 'svelte';
   import { MarkdownEditor } from '@gallery/ui';
@@ -18,12 +19,16 @@
     pick,
     saveItem,
     canPublish,
+    tags = [],
+    createTag,
   }: {
     content: AlbumContent;
     editPhoto: (p: DraftPhoto) => void;
     pick: () => void;
     saveItem: (candidate: AlbumContent, target: string, publish: boolean) => Promise<void>;
     canPublish: boolean;
+    tags?: { id: string; name: string; active: boolean }[];
+    createTag: (name: string) => Promise<string>;
   } = $props();
   const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
   let groupDraft = $state<AlbumContent | null>(null);
@@ -33,6 +38,14 @@
   let fallbackTarget = '';
   let saving = $state(false);
   let groupError = $state('');
+  let bulkTags = $state<string[]>([]);
+  function applyTags(remove = false) {
+    for (const p of members(editing))
+      p.tags = remove
+        ? (p.tags ?? []).filter((id) => !bulkTags.includes(id))
+        : [...new Set([...(p.tags ?? []), ...bulkTags])].sort();
+    bulkTags = [];
+  }
   let discardGroup = $state(false);
   let memberEditing = $state('');
   const working = () => groupDraft ?? content;
@@ -458,6 +471,7 @@
                     >
                   </div>
                   {#if memberEditing === p.id}<div class="member-settings">
+                      <TagPicker bind:value={p.tags} {tags} {createTag} />
                       <label>画面描述（无障碍）<input maxlength="500" bind:value={p.alt} /></label>
                       <label
                         >位置公开方式<select bind:value={p.location}
@@ -487,6 +501,13 @@
                   >{/each}</select
               ></label
             >
+            <details class="bulk-tags">
+              <summary>批量设置组内照片标签</summary>
+              <TagPicker bind:value={bulkTags} {tags} {createTag} label="全组标签" />
+              <button disabled={!bulkTags.length} onclick={() => applyTags()}>为全组添加</button>
+              <button disabled={!bulkTags.length} onclick={() => applyTags(true)}>从全组移除</button>
+              <p class="muted">应用到各成员的统一照片资料，随本次保存或发布生效。</p>
+            </details>
             <label>组标题<input maxlength="200" bind:value={g.title} /></label><MarkdownEditor
               label="共用说明"
               bind:value={g.description}

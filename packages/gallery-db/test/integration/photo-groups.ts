@@ -8,7 +8,7 @@ import type { Kysely } from 'kysely';
 import {
   adminState,
   createAlbum,
-  saveAlbum,
+  saveAlbum as rawSaveAlbum,
   publishAlbum,
   publicCatalog,
   publicPhotoFeed,
@@ -99,7 +99,7 @@ export async function photoGroups(
     treeVersion: (await adminState(db)).site.treeVersion,
   });
   const other = (await adminState(db)).albums.find((a) => a.id === duplicate)!.draft;
-  other.photos = [{ ...content.photos[0]!, id: randomUUID(), group: '', description: 'Other context' }];
+  other.photos = [{ ...content.photos[0]!, id: randomUUID(), group: '', description: 'Individual words' }];
   other.location = 'exact';
   await saveAlbum(db, user, duplicate, { ...(await versions(duplicate)), content: other });
   await publishAlbum(db, user, duplicate, await versions(duplicate), root);
@@ -112,7 +112,7 @@ export async function photoGroups(
   await setAlbumAvailability(db, user, id, { ...(await versions(id)), action: 'offline' });
   const fallback = await publicPhotoFeed(pub, { month: '2030-04' });
   assert.equal(fallback.total, 1);
-  assert.equal(fallback.photos[0]?.description, 'Other context');
+  assert.equal(fallback.photos[0]?.description, 'Individual words');
   assert.equal(fallback.photos[0]?.occurrences?.length, 1);
   assert.equal(fallback.photos[0]?.group, undefined);
   await owner.query('UPDATE public.asset SET "deletedAt"=now() WHERE id=$1', [assets[0]]);
@@ -130,4 +130,12 @@ export async function photoGroups(
     ).rows[0].first_added_at.toISOString(),
     added,
   );
+}
+
+// Test client follows the UI: retain edited content, refresh shared optimistic versions after save.
+async function saveAlbum(...args: Parameters<typeof rawSaveAlbum>) {
+  await rawSaveAlbum(...args);
+  const current = (await adminState(args[0])).albums.find((a) => a.id === args[2])!;
+  const input = args[3].content as import('@gallery/core').AlbumContent;
+  for (const p of input.photos) p.photoVersion = current.draft.photos.find((x) => x.id === p.id)?.photoVersion;
 }

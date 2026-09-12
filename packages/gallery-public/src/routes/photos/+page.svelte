@@ -16,7 +16,9 @@
     photos: data.feed.photos,
   });
   function query(page = data.feed.page) {
-    return new URLSearchParams({ sort: data.feed.sort, month: data.feed.month, page: String(page) });
+    const q = new URLSearchParams({ sort: data.feed.sort, month: data.feed.month, page: String(page) });
+    for (const tag of data.feed.tags) q.append('tag', tag);
+    return q;
   }
   function navigatePhoto(p: DisplayPhoto | null, replace = false) {
     const q = query();
@@ -41,7 +43,7 @@
     href={`${data.origin}/photos`}
   /></svelte:head
 >
-{#key `${data.feed.sort}:${data.feed.month}:${data.feed.page}:${data.photoId}`}<Gallery
+{#key `${data.feed.tags.join(',')}:${data.feed.sort}:${data.feed.month}:${data.feed.page}:${data.photoId}`}<Gallery
     site={data.site}
     albums={data.albums}
     {active}
