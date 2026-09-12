@@ -219,7 +219,7 @@ export function emptyAlbum(title: string, slug: string, parent = ''): AlbumConte
     groups: [],
     photos: [],
     cover: '',
-    location: 'hidden',
+    location: 'exact',
     showExif: false,
   };
 }

@@ -55,6 +55,7 @@ export async function workflow(
     const a = current.albums.find((a) => a.id === id)!;
     return { id, version: a.version, draftVersion: a.draftVersion, treeVersion: current.site.treeVersion };
   };
+  assert.equal((await adminState(db)).albums.find((a) => a.id === parent)!.draft.location, 'exact');
   const child = await createAlbum(db, user, {
     title: 'Workflow child',
     parent,

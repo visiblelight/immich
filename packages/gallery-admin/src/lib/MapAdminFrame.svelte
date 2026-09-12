@@ -1,51 +1,31 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  let { children }: { children: Snippet } = $props();
+  import type { GalleryUser } from '@gallery/core';
+  import AdminSidebar from './AdminSidebar.svelte';
+  import './design/admin.css';
+  let {
+    children,
+    active,
+    user,
+    publicOrigin,
+  }: { children: Snippet; active: 'maps' | 'visits'; user: GalleryUser; publicOrigin: string } = $props();
 </script>
 
-<div class="workspace">
-  <aside>
-    <a class="brand" href="/albums">Gallery / 管理</a>
-    <nav><a href="/albums">相册工作台</a><a href="/visits">到访记录</a><a href="/maps">地图设置</a></nav>
-  </aside>
-  <main>{@render children()}</main>
+<div class="workspace live-workspace">
+  <AdminSidebar {active} {user} {publicOrigin} />
+  <main class="main">
+    <div class="topline">
+      <span>工作台 / {active === 'maps' ? '地图设置' : '到访记录'}</span><a
+        href="/login"
+        target="_blank"
+        rel="noreferrer">登录页</a
+      >
+    </div>
+    {@render children()}
+  </main>
 </div>
 
 <style>
-  :global(body) {
-    margin: 0;
-    background: #f5f6f3;
-    color: #263429;
-    font-family: system-ui, sans-serif;
-  }
-  .workspace {
-    display: grid;
-    grid-template-columns: 210px 1fr;
-    min-height: 100dvh;
-  }
-  aside {
-    padding: 30px 24px;
-    background: #fff;
-    border-right: 1px solid #e0e4dc;
-  }
-  .brand {
-    font-weight: 600;
-  }
-  a {
-    color: inherit;
-    text-decoration: none;
-  }
-  nav {
-    display: grid;
-    gap: 24px;
-    margin-top: 40px;
-    font-size: 13px;
-  }
-  main {
-    padding: 40px;
-    max-width: 1100px;
-    min-width: 0;
-  }
   :global(.map-admin h1) {
     font-size: 27px;
     font-weight: 550;
@@ -89,20 +69,8 @@
     background: #fff0e8;
     color: #903c26;
   }
-  @media (max-width: 700px) {
-    .workspace {
-      display: block;
-    }
-    aside {
-      padding: 18px;
-    }
-    nav {
-      display: flex;
-      margin-top: 15px;
-      gap: 20px;
-    }
-    main {
-      padding: 20px;
-    }
+  :global(.map-admin input[type='checkbox']),
+  :global(.map-admin input[type='radio']) {
+    width: auto;
   }
 </style>

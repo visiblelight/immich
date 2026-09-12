@@ -1,18 +1,27 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { sameAlbumContent } from '@gallery/core';
+  import { goto, beforeNavigate } from '$app/navigation';
+  import AdminSidebar from './AdminSidebar.svelte';
+  import { sameAlbumContent, galleryInventory, albumPhotoCounts, albumTreeRows } from '@gallery/core';
   import type { AlbumContent, DraftPhoto, GallerySite, GalleryUser, ManagedAlbum, SourcePhoto } from '@gallery/core';
   import './design/admin.css';
   import { MarkdownEditor } from '@gallery/ui';
   import AlbumPhotosEditor from './AlbumPhotosEditor.svelte';
-  let { initial }: { initial: { site: GallerySite; albums: ManagedAlbum[]; user: GalleryUser; publicOrigin: string } } =
-    $props();
+  let {
+    initial,
+    initialPage = 'albums',
+  }: {
+    initialPage?: string;
+    initial: { site: GallerySite; albums: ManagedAlbum[]; user: GalleryUser; publicOrigin: string };
+  } = $props();
   const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
   let workspaceData = $state(untrack(() => copy(initial)));
   let id = $state('');
   let content = $state<AlbumContent | null>(null);
   let tab = $state('photos');
-  let page = $state('albums');
+  let page = $state(untrack(() => initialPage));
+  let collapsed = $state(new Set<string>());
+  let inventory = $derived(galleryInventory(workspaceData.albums));
   let message = $state('');
   let failed = $state(false);
   let busy = $state(false);
@@ -77,14 +86,12 @@
     }
     return false;
   };
-  let rows = $derived(
-    workspaceData.albums.filter(
-      (a) =>
-        a.draft.title.toLowerCase().includes(search.toLowerCase()) &&
-        (filter === 'all' ||
-          (filter === 'draft' ? a.status === 'draft' : filter === 'online' ? a.visible : !a.visible)),
-    ),
-  );
+  let rows = $derived(albumTreeRows(workspaceData.albums, search, filter, collapsed));
+  function toggleAlbum(id: string) {
+    const next = new Set(collapsed);
+    next.has(id) ? next.delete(id) : next.add(id);
+    collapsed = next;
+  }
   let affected = $derived(
     active
       ? workspaceData.albums.filter(
@@ -146,9 +153,20 @@
     contactLinks = copy(workspaceData.site.contactLinks);
     displayName = workspaceData.user.displayName;
   }
+  let unsaved = $derived(
+    dirty ||
+      (page === 'settings' &&
+        (siteName !== workspaceData.site.name ||
+          tagline !== workspaceData.site.tagline ||
+          JSON.stringify(contactLinks) !== JSON.stringify(workspaceData.site.contactLinks ?? []))) ||
+      (page === 'account' && (displayName !== workspaceData.user.displayName || !!oldPassword || !!newPassword)),
+  );
   function abandon() {
-    return !dirty || window.confirm('有尚未保存的修改。是否放弃这些修改？');
+    return !unsaved || window.confirm('有尚未保存的修改。是否放弃这些修改？');
   }
+  beforeNavigate(({ cancel }) => {
+    if (!abandon()) cancel();
+  });
   function select(a: ManagedAlbum) {
     if (!abandon()) return;
     id = a.id;
@@ -158,6 +176,10 @@
     message = '';
   }
   function nav(target: string) {
+    if (target !== page) {
+      void goto('/' + target);
+      return;
+    }
     if (!abandon()) return;
     page = target;
     id = '';
@@ -165,7 +187,7 @@
     message = '';
   }
   function unload(e: BeforeUnloadEvent) {
-    if (dirty || (modal === 'photo' && JSON.stringify(edited) !== photoBaseline)) {
+    if (unsaved || (modal === 'photo' && JSON.stringify(edited) !== photoBaseline)) {
       e.preventDefault();
       e.returnValue = '';
     }
@@ -328,43 +350,11 @@
 </script>
 
 <svelte:window onbeforeunload={unload} />
-<svelte:head><title>相册工作台 · {workspaceData.site.name}</title></svelte:head>
+<svelte:head>
+  <title>{page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'} · {workspaceData.site.name}</title>
+</svelte:head>
 <div class="workspace live-workspace">
-  <aside class="sidebar">
-    <a class="brand" href="/albums"><span class="brand-mark">G</span><span>Gallery<small>创作工作台</small></span></a>
-    <p class="nav-label">内容管理</p>
-    <nav aria-label="后台导航">
-      <button
-        onclick={() => {
-          if (abandon()) location.href = '/visits';
-        }}>◎ <span>到访记录</span></button
-      ><button
-        onclick={() => {
-          if (abandon()) location.href = '/maps';
-        }}>⌘ <span>地图设置</span></button
-      >
-      <button class:active={page === 'albums'} onclick={() => nav('albums')}
-        >▦ <span>相册</span><small>{workspaceData.albums.length}</small></button
-      ><button class:active={page === 'settings'} onclick={() => nav('settings')}>⚙ <span>站点设置</span></button>
-    </nav>
-    <div class="album-tree">
-      <div class="tree-heading">
-        <span>最近的相册</span><button aria-label="新建相册" onclick={() => create()}>＋</button>
-      </div>
-      {#each workspaceData.albums as a}<button class:chosen={id === a.id} onclick={() => select(a)}
-          ><span class="tree-dot" class:online={a.visible}></span><span>{a.draft.title}</span></button
-        >{/each}
-    </div>
-    <div class="sidebar-bottom">
-      <a class="connection" href={workspaceData.publicOrigin + '/albums'} target="_blank" rel="noreferrer"
-        >↗ 打开 Gallery 前台</a
-      ><button class="account" onclick={() => nav('account')}
-        ><span class="avatar">{workspaceData.user.displayName.slice(0, 1)}</span><span
-          >{workspaceData.user.displayName}<small>Gallery 管理员</small></span
-        ></button
-      >
-    </div>
-  </aside>
+  <AdminSidebar active={page} user={workspaceData.user} publicOrigin={workspaceData.publicOrigin} onNavigate={nav} />
   <main class="main">
     <div class="topline">
       <span>工作台 / {page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'}</span><a
@@ -385,15 +375,16 @@
         <button class="primary" onclick={() => create()}>＋ 新建相册</button>
       </header>
       <div class="stats">
-        <div><span>全部相册</span><strong>{workspaceData.albums.length}</strong></div>
-        <div><span>前台可见</span><strong>{workspaceData.albums.filter((a) => a.visible).length}</strong></div>
-        <div>
-          <span>待发布草稿 / 修改</span><strong
-            >{workspaceData.albums.filter((a) => a.hasUnpublishedChanges ?? a.draftVersion !== a.releaseVersion)
-              .length}</strong
-          >
-        </div>
+        <div><span>全部相册</span><strong>{inventory.albums}</strong></div>
+        <div><span>照片总数</span><strong>{inventory.photos}</strong></div>
+        <div><span>照片组</span><strong>{inventory.groups}</strong></div>
       </div>
+      <p class="inventory-note">
+        按当前草稿统计，照片跨相册去重，包含组内照片。前台可见 {workspaceData.albums.filter((a) => a.visible).length} 个相册
+        · 待发布草稿 / 修改 {workspaceData.albums.filter(
+          (a) => a.hasUnpublishedChanges ?? a.draftVersion !== a.releaseVersion,
+        ).length} 个
+      </p>
       <section class="panel">
         <div class="list-tools">
           <div class="filter-tabs">
@@ -406,16 +397,27 @@
         </div>
         <div class="album-table">
           <div class="table-head"><span>相册名称</span><span>内容</span><span>发布状态</span><span>操作</span></div>
-          {#each rows as a}<div class="album-row">
-              <button class="album-name" onclick={() => select(a)}
-                >{#if a.draft.cover}<img src={media(a.draft.cover)} alt="" />{:else}<span class="cover-empty">▦</span
-                  >{/if}<span
-                  ><strong>{a.draft.title || '未命名相册'}</strong><small
-                    >{workspaceData.albums.find((p) => p.id === a.draft.parent)?.draft.title ?? '顶级相册'}</small
-                  ></span
-                ></button
-              ><span class="row-count"
-                >{a.draft.photos.length} 张照片<small
+          {#each rows as row}{@const a = row.album}
+            <div class="album-row" class:ancestor-context={row.context}>
+              <div class="album-tree-name" style:--album-depth={Math.min(row.depth, 5)}>
+                {#if row.hasChildren}<button
+                    class="tree-toggle"
+                    aria-label={`${row.expanded ? '收起' : '展开'}${a.draft.title}的子相册`}
+                    aria-expanded={row.expanded}
+                    disabled={!!search.trim() || filter !== 'all'}
+                    onclick={() => toggleAlbum(a.id)}>{row.expanded ? '▾' : '▸'}</button
+                  >{:else}<span class="tree-leaf" aria-hidden="true">{row.depth ? '└' : ''}</span>{/if}
+                <button class="album-name" onclick={() => select(a)}
+                  >{#if a.draft.cover}<img src={media(a.draft.cover)} alt="" />{:else}<span class="cover-empty">▦</span
+                    >{/if}<span
+                    ><strong>{a.draft.title || '未命名相册'}</strong><small
+                      >{workspaceData.albums.find((p) => p.id === a.draft.parent)?.draft.title ?? '顶级相册'}</small
+                    ></span
+                  ></button
+                >
+              </div>
+              <span class="row-count"
+                >{a.draft.photos.length} 张照片 · {albumPhotoCounts(a.draft).groups} 个照片组<small
                   >{workspaceData.albums.filter((p) => p.draft.parent === a.id).length} 个子相册</small
                 ></span
               ><span class="badge" class:green={a.visible}>{status(a)}</span><button
@@ -437,6 +439,11 @@
             <h1>{content.title || '未命名相册'}</h1>
             <span class="badge" class:green={active.visible}>{status(active)}</span>
           </div>
+          <p class="muted">
+            {content.photos.length} 张照片 · {albumPhotoCounts(content).groups} 个照片组 · {workspaceData.albums.filter(
+              (a) => a.draft.parent === id,
+            ).length} 个子相册
+          </p>
           <p class="muted">{dirty ? '有尚未保存的修改' : `草稿已保存 · 版本 ${active.draftVersion}`}</p>
         </div>
         <div class="actions">
@@ -543,8 +550,8 @@
                 ></label
               ><label
                 >本册位置公开方式<select bind:value={content.location}
-                  ><option value="hidden">隐藏位置（默认）</option><option value="approximate">近似位置</option><option
-                    value="exact">精确位置</option
+                  ><option value="hidden">隐藏位置</option><option value="approximate">近似位置</option><option
+                    value="exact">精确位置（新相册默认）</option
                   ></select
                 ><small>照片可以进一步收紧精度，不能突破本册设置。GPS 跟随 Immich 更新。</small></label
               ><label class="checkbox-label"
@@ -636,7 +643,7 @@
         <p class="muted">填写后使用上方“保存并应用”，前台关于页随之更新。</p>
         <hr />
         <h2>页面与域名</h2>
-        <p class="muted">前台导航：相册 / 关于。关于页当前为静态文章，文章选篇后续加入。</p>
+        <p class="muted">前台导航：相册 / 相片 / 去过 / 关于。关于页当前为静态文章，文章选篇后续加入。</p>
         <a href={workspaceData.publicOrigin + '/albums'} target="_blank" rel="noreferrer"
           >{workspaceData.publicOrigin}</a
         >
@@ -958,10 +965,6 @@
   .toast.error {
     background: #fff0e9;
     border-color: #ead2c8;
-  }
-  .album-tree {
-    overflow: auto;
-    max-height: 50vh;
   }
   .asset-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));

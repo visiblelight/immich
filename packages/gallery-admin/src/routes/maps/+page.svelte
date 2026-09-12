@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { beforeNavigate } from '$app/navigation';
   import { untrack } from 'svelte';
   import Frame from '$lib/MapAdminFrame.svelte';
   let { data } = $props();
@@ -9,6 +10,12 @@
   let message = $state(''),
     busy = $state(false),
     failed = $state(false);
+  const snapshot = () => JSON.stringify({ gapDays: settings.gapDays, providers });
+  let baseline = $state(untrack(snapshot));
+  let dirty = $derived(snapshot() !== baseline);
+  beforeNavigate(({ cancel }) => {
+    if (dirty && !window.confirm('地图设置尚未保存。是否放弃这些修改？')) cancel();
+  });
   const names = { osm: 'OpenStreetMap', google: 'Google Maps', amap: '高德地图' };
   async function save() {
     busy = true;
@@ -25,6 +32,7 @@
       if (!fresh.ok) throw new Error('已保存，请重新载入查看最新状态。');
       settings = await fresh.json();
       providers = settings.providers.map((p) => ({ ...p, securityCode: '', clearSecret: false }));
+      baseline = snapshot();
       failed = false;
       message = '地图设置已应用。请打开前台验证服务 Key 与网络是否可用。';
     } catch (e) {
@@ -37,6 +45,9 @@
 </script>
 
 <svelte:head><title>地图设置 · Gallery 管理</title></svelte:head><Frame
+  active="maps"
+  user={data.user}
+  publicOrigin={data.publicOrigin}
   ><div class="map-admin">
     <h1>地图设置</h1>
     <p>启用的底图会出现在前台，访客可自行切换。浏览器 Key 需在服务商控制台限制为前台域名和对应地图 API。</p>

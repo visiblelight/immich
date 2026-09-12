@@ -87,11 +87,12 @@
     if (!pointers.size) drag = false;
   }
   function choose(event: MouseEvent, country: ReviewCountry) {
-    if (moved && event.detail !== 0) return;
+    if (!sampleVisits[country.id] || (moved && event.detail !== 0)) return;
     selected = country;
     hovered = null;
   }
   function focus(event: FocusEvent, country: ReviewCountry) {
+    if (!sampleVisits[country.id]) return;
     const box = (event.target as SVGElement).getBoundingClientRect();
     mouse = {
       x: Math.max(12, Math.min(box.right + 12, window.innerWidth - 292)),
@@ -180,20 +181,20 @@
           <rect x="-5000" y="-5000" width="10000" height="10000" fill="var(--water)" />
           {#each countries as country (country.id)}
             <g
-              role="button"
-              tabindex="0"
+              role={sampleVisits[country.id] ? 'button' : 'img'}
+              tabindex={sampleVisits[country.id] ? 0 : undefined}
               aria-label={`${country.name}，${sampleVisits[country.id] ? `示例中到访 ${sampleVisits[country.id]!.length} 次，${total(country.id)} 张照片` : '示例中尚未到访'}`}
               aria-pressed={selected?.id === country.id}
               aria-describedby={hovered?.id === country.id && !selected ? 'country-summary' : undefined}
               onpointerenter={(event) => {
-                if (event.pointerType === 'mouse' && !pointers.size) hovered = country;
+                if (sampleVisits[country.id] && event.pointerType === 'mouse' && !pointers.size) hovered = country;
               }}
               onpointerleave={() => (hovered = null)}
               onfocus={(event) => focus(event, country)}
               onblur={() => (hovered = null)}
               onclick={(event) => choose(event, country)}
               onkeydown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
+                if (sampleVisits[country.id] && (event.key === 'Enter' || event.key === ' ')) {
                   event.preventDefault();
                   selected = country;
                   hovered = null;
@@ -519,9 +520,6 @@
   svg g[role='button']:focus-visible .visited,
   .country.chosen.visited {
     fill: #255e51;
-  }
-  .country.chosen {
-    fill: #dbe6d8;
   }
   .country-label {
     text-anchor: middle;

@@ -415,13 +415,6 @@
             <div class="section-heading">
               <h2>编辑照片组 · {members(g.id).length} 张</h2>
             </div>
-            <label>组标题<input maxlength="200" bind:value={g.title} /></label><MarkdownEditor
-              label="共用说明"
-              bind:value={g.description}
-              maxLength={10000}
-              filename="photo-group.md"
-            />
-            <p class="muted">访客只看到组标题与共用说明。点击成员调整无障碍和位置设置；每张照片保留独立的拍摄参数。</p>
             <div class="collection-grid">
               {#each shownMembers(g.id) as p, index (p.id)}<article
                   class="collection-card"
@@ -494,6 +487,13 @@
                   >{/each}</select
               ></label
             >
+            <label>组标题<input maxlength="200" bind:value={g.title} /></label><MarkdownEditor
+              label="共用说明"
+              bind:value={g.description}
+              maxLength={10000}
+              filename="photo-group.md"
+            />
+            <p class="muted">访客只看到组标题与共用说明。点击成员调整无障碍和位置设置；每张照片保留独立的拍摄参数。</p>
             <button class="dissolve" onclick={() => (isNewGroup ? closeGroup() : dissolve(g.id))}
               >{isNewGroup ? '取消分组' : '解散照片组（保留说明）'}</button
             >

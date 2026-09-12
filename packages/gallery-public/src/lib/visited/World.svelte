@@ -105,6 +105,7 @@
     hovered = null;
   }
   function focus(event: FocusEvent, country: WorldCountry) {
+    if (!stats.has(country.id)) return;
     const box = (event.target as SVGElement).getBoundingClientRect();
     mouse = {
       x: Math.max(12, Math.min(box.right + 12, window.innerWidth - 292)),
@@ -172,8 +173,8 @@
         fill-rule="evenodd"
         class:visited={stats.has(country.id)}
         class:selected={selected?.id === country.id}
-        role="button"
-        tabindex={stats.has(country.id) ? 0 : -1}
+        role={stats.has(country.id) ? 'button' : 'img'}
+        tabindex={stats.has(country.id) ? 0 : undefined}
         aria-label={`${country.name}，${stats.get(country.id)?.count ?? 0} 张照片`}
         onclick={(e) => choose(e, country)}
         onkeydown={(e) => {
@@ -185,7 +186,7 @@
         onfocus={(e) => focus(e, country)}
         onblur={() => (hovered = null)}
         onpointerenter={(e) => {
-          if (e.pointerType === 'mouse' && !drag) hovered = country;
+          if (stats.has(country.id) && e.pointerType === 'mouse' && !drag) hovered = country;
         }}
         onpointerleave={() => (hovered = null)}
       />{/each}
@@ -236,7 +237,11 @@
           >{visit.count} 张</b
         >
       </div>{/each}{:else}<p>尚未留下公开的照片</p>{/if}{/snippet}
-{#if hovered && !drag && !selected}<aside class="tooltip" style:left={`${mouse.x}px`} style:top={`${mouse.y}px`}>
+{#if hovered && stats.has(hovered.id) && !drag && !selected}<aside
+    class="tooltip"
+    style:left={`${mouse.x}px`}
+    style:top={`${mouse.y}px`}
+  >
     {@render summary(hovered)}
   </aside>{/if}
 {#if selected}<aside class="sheet" aria-label="国家到访摘要">
@@ -307,7 +312,7 @@
     cursor: pointer;
   }
   path.visited:hover,
-  path:focus,
+  path.visited:focus,
   path.selected {
     fill: #637f6e;
   }

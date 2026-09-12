@@ -2224,3 +2224,79 @@ dialog.wide-dialog {
 .discard-edit button {
   margin-right: 10px;
 }
+
+/* Shared live admin shell and album hierarchy. Keep counts visible on small screens. */
+.live-workspace {
+  min-height: 100dvh;
+}
+.live-workspace .inventory-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+  margin: -12px 0 22px;
+}
+.live-workspace .album-tree-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-left: calc(var(--album-depth, 0) * 24px);
+}
+.live-workspace .tree-toggle,
+.live-workspace .tree-leaf {
+  flex: none;
+  width: 22px;
+  min-width: 22px;
+  text-align: center;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.live-workspace .tree-toggle {
+  font-size: 18px;
+}
+.live-workspace .tree-leaf {
+  align-self: center;
+}
+.live-workspace .ancestor-context {
+  background: #f7f9f4;
+}
+.live-workspace .album-name > span:last-child {
+  min-width: 0;
+}
+.live-workspace .row-count {
+  line-height: 1.7;
+}
+@media (max-width: 780px) {
+  .live-workspace .album-tree-name {
+    padding-left: calc(var(--album-depth, 0) * 16px);
+    gap: 4px;
+  }
+}
+@media (max-width: 520px) {
+  .live-workspace .album-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .live-workspace .album-tree-name {
+    grid-column: 1/-1;
+  }
+  .live-workspace .album-row .row-count {
+    display: block;
+    grid-column: 1;
+  }
+  .live-workspace .album-row .badge {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .live-workspace .album-name img,
+  .live-workspace .album-name > .cover-empty {
+    width: 48px;
+    height: 48px;
+  }
+  .live-workspace .stats > div {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

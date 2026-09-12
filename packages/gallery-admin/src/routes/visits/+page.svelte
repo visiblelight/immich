@@ -106,6 +106,9 @@
 </script>
 
 <svelte:head><title>到访记录 · Gallery 管理</title></svelte:head><Frame
+  active="visits"
+  user={data.user}
+  publicOrigin={data.publicOrigin}
   ><div class="map-admin">
     <h1>到访记录</h1>
     <p>自动汇总公开照片的位置和当地拍摄日期。人工整理可以修改日期、合并记录，或选出部分照片另建一次到访。</p>
