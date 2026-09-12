@@ -1,36 +1,31 @@
-# 去过：数据与接口设计草案
+# 去过：数据与接口
 
-状态：产品规则已确认；以下结构为实施设计，尚未迁移或接入运行库。依据 ADR 0006。
+状态：2026-09-12，区域样稿确认后实施；0006 已隔离验证并迁移本地开发库。Google/高德需真实 Key 联调。
 
-## 权威数据与派生数据
+## 数据来源
 
-| 数据 | 存放方式 | 约束 |
-| --- | --- | --- |
-| 原创抽象国家轮廓、共享边、标签、海域 | packages/gallery-public 内版本化静态模块 | 只用于展示，不参与 GPS 判断 |
-| 真实国家边界及归属口径 | 后续固定来源、版本、许可的服务端资源 | 覆盖小国、岛屿与跨日期变更线；边界歧义显式处理 |
-| 可公开照片与当前位置 | gallery.published_photo 动态查询 | 现有权限与近似规则不变，全站按 Asset 去重 |
-| 国家与到访统计 | 可重建服务端派生结果 | 不放入发布快照，不以缓存绕过授权 |
-| 底图配置 | 拟新增 gallery.map_provider_config | 管理员读写；公网站点只读不含秘密的启用配置 |
-| 到访校正 | 拟新增 gallery.visit_override / gallery.visit_override_asset | 管理员操作，证据关联不赋予照片公开资格 |
+原创世界轮廓由 Gallery 内的 cartogram-layout、regional-waters、generate-world-map 生成，195项清单来自自有 tickoff 原型。仅作展示，不使用 world-ex 几何或代码。
 
-## 待实施字段
+国家判定使用 Natural Earth v5.1.2 的10m边界，固定来源、SHA256、公共领域许可及分组方式见 packages/gallery-db/data。点在国界、争议重叠、海域或近似网格横跨国界时保持未知。查找按5度网格和边段索引加速，只缓存坐标→国家，不缓存公开资格或行程。几何概括无法保证每个海岸及争议地区的精确判定。
 
-map_provider_config：provider（osm/google/amap 主键）、enabled、is_default、public_options（限制字段的 JSON）、secret_reference 或 encrypted_secret、updated_at、updated_by。数据库约束最多一个启用默认项；不把检查成功视为永久可用。精确的密钥存储方式在现有部署密钥机制核对后落定，不用明文列临时顶替。
+每次请求在 repeatable-read 事务中查询当前 published_photo，按 Asset 去重、优先较保守精度，再分类。公开摘要不包含 Asset UUID。国家照片聚合与代表文案在同一读取事务中；照片媒体继续走已有独立授权管线。跨日期变更线 bbox 和分页均受控；聚合计数没有静默截断。
 
-visit_override：id、country_code、start_local_date、end_local_date、label、revision、created_at、updated_at、updated_by。日期范围有序；修改使用版本检查避免覆盖并发编辑。
+到访按可靠拍摄时刻排序、当地日期展示。未知时区或时间单独标为待确认；超过阈值（默认30天）或间隔中出现可靠异国证据则拆分。同时间的异国证据不会因输入次序误拆。人工校正关联 Asset 身份，照片 GPS 移国、失效或撤回后再校验；不保存 GPS 快照。部分失效时隐藏人工名称并重算剩余证据日期，全部失效时不公开，后台可清除或重新整理。
 
-visit_override_asset：override_id、asset_id（联合主键），同一国家下同 Asset 不可分配到两条人工记录。只保存稳定 Asset 引用，不保存原始 GPS；证据被移除或改到其他国家后标记待核对。后台修正不能把隐藏照片的数量、日期或名称带到公开结果。
+## 表与接口
 
-先验证动态查询成本，再决定是否添加物化国家索引；不预先安装 PostGIS 或写入 Immich 空间索引。正式迁移前把确定结构加入完整数据字典，与迁移一并检查角色权限。
+四张新表：map_settings、map_provider_config、visit_override、visit_override_asset。确定字段、外键、索引与权限见完整数据字典的0006章节；此前 public_options/secret_reference 等是设计候选，已由明确列与 AES-256-GCM 密文替代。
 
-## 拟定接口边界
+- `/visited`：世界摘要与完整抽象地图。
+- `/visited/[country]`：国家照片地图、到访筛选、可用底图选择。
+- `/api/visited/[country]`：可选 west/south/east/north/zoom、visit、cluster、page；聚合点和分页成员。每页48张，只返回授权 Gallery 入口及公开处理后的坐标。
+- `/albums/[slug]/photos/[photoId]?returnTo=...`：复用照片及照片组查看器。returnTo只接受站内国家地图格式；关闭后保留URL内地区、缩放、底图和到访筛选。
+- 后台 `/maps`、`/visits`；认证 API map-settings、visits、visit-save、visit-delete，保留原有 CSRF、独立账户与会话边界。
 
-- 世界摘要：国家标识、去重数量、推导到访时间段及不确定标记，不输出全图库坐标或 Asset 原始 ID。
-- 国家聚合：国家标识、WGS84 bbox、缩放级别、可选到访标识，返回完整计数的有限聚合点。
-- 聚合成员：分页返回授权 Gallery 相册/照片入口；同点照片不能静默截断。
-- 地图服务配置：只返回已启用服务及所需的公开字段，私有密钥永不进入此接口。
-- 到访校正：仅后台角色，合并/拆分基于当前证据；公开读取时再次关联当前有效照片。
+## 底图与秘密
 
-## 已知现有基础
+OSM 使用官方HTTPS瓦片与署名链接，不离线预取；MapLibre6.9.0官方ESM以固定文件及许可存放，避免安装包影响共用的 Immich 开发依赖。地图页面发送 strict-origin-when-cross-origin Referer，以支持瓦片政策和服务商域名限制。只加载访客选中的服务。
 
-packages/gallery-db/src/map.server.ts 已有 bbox/zoom/可选 albumId 的服务端网格聚合，使用当前 published_photo，先保守去重再边界筛选。尚缺国家过滤、到访过滤、缩略图代表、分页成员与页面接入。本阶段不宣称这些已完成。
+Google Maps JS API接收WGS84；高德通过官方convertFrom进行转换，视口及中心使用迭代反向求解，还原到WGS84查询，失败时明确提示切换底图。没有使用“矩形范围内全部算中国”的偏移捷径；海外坐标也交由官方转换处理。代码已有实现，国内外实际控制点精度仍需真实 Key 验证。Google当前使用官方DEMO_MAP_ID作为默认标记地图标识，正式Google部署应替换为自有Cloud Map ID并联调。
+
+高德securityJsCode由服务器AES-256-GCM加密保存，32字节十六进制主密钥由public/admin各自环境文件提供同一值；禁止进入浏览器环境。`/_AMapService/`代理仅允许样式、海外矢量及坐标转换三个固定官方目标路径，校验当前配置Key和来源，限制并发、请求频率、超时、响应尺寸，替换安全码且不转发浏览器cookie。通用路线、搜索等接口不开放。需要新增高德功能时应先确认对应官方代理路径。

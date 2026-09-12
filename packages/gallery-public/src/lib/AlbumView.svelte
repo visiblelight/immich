@@ -10,6 +10,7 @@
       albums: DisplayAlbum[];
       active?: DisplayAlbum | null;
       photoId?: string | null;
+      returnTo?: string | null;
       initialPage?: number;
     };
   } = $props();
@@ -27,11 +28,16 @@
       ? (data.active.photos.find((p) => p.id === selected.group?.cover) ?? items[selectedIndex])
       : selected;
     const returnUrl = `${base}?page=${Math.max(1, Math.floor(selectedIndex / 48) + 1)}#photo-${cover?.id ?? ''}`;
-    void goto(photo ? `${base}/photos/${photo.id}` : returnUrl, {
-      replaceState: replace,
-      noScroll: !!photo,
-      keepFocus: false,
-    });
+    void goto(
+      photo
+        ? `${base}/photos/${photo.id}${data.returnTo ? `?returnTo=${encodeURIComponent(data.returnTo)}` : ''}`
+        : data.returnTo || returnUrl,
+      {
+        replaceState: replace,
+        noScroll: !!photo,
+        keepFocus: false,
+      },
+    );
   }
 </script>
 

@@ -78,3 +78,11 @@ GALLERY_UPGRADE_CHECK=1 sh deployment/gallery/scripts/pnpm.sh gallery:test:db /a
 ## v3.2.0 完整照片工作流升级
 
 已在独立工作树、数据库和媒体副本中完成官方稳定镜像启动、Web 登录看图、Gallery 发布链路与旧版备份恢复。脚本、镜像、步骤及验收边界见[升级记录](../delivery/immich-v3.2.0.md)。上文候选数据库检查仍是快速预检，不替代这一完整流程。
+
+## 去过与地图服务
+
+新部署先运行 Gallery 0006 迁移，再启动前后台。OSM默认可用，后台 `/maps` 管理三种底图与自动到访间隔；`/visits` 维护到访日期和照片分组。只发布且允许公开位置的照片进入统计，Immich GPS 修改在下次请求反映。
+
+高德安全码需要一个随机32字节（64个hex字符）的 `GALLERY_MAP_SECRET_KEY`，在public/admin运行环境中设置相同值并重启Gallery服务。Compose沿用各服务env_file，不将密钥写进镜像、站点响应或Git。数据库备份与这份环境密钥分开保管；丢失密钥后只能重新填写服务商安全码。轮换需解密重加密已有密文，不能仅改环境字符串。当前本地开发环境已生成并配置，共享密钥不在文档记录。
+
+浏览器Key在服务商控制台限制到前台域名和对应API；高德填写securityJsCode，Google需开启Maps JavaScript API。保存只验证结构、配置版本及密文可解密，不能证明账单、域名限制、授权与当前网络可用；填写后应在前台切换服务验证国内与海外控制点、聚合、返回地图。当前默认Google示例Map ID在正式部署前应替换为自有Cloud Map ID。OSM署名与HTTP缓存策略保持，勿批量下载标准瓦片。

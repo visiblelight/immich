@@ -5,6 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "gallery:map:generate": "node packages/gallery-public/scripts/generate-world-map.mjs",
+    "gallery:map:boundaries": "node packages/gallery-db/scripts/prepare-countries.ts",
     "gallery:local:init": "node packages/gallery-db/scripts/initialize-local.ts",
     "gallery:local:public": "node --env-file=.gallery-local/runtime/public.env packages/gallery-public/build/index.js",
     "gallery:local:admin": "node --env-file=.gallery-local/runtime/admin.env packages/gallery-admin/build/index.js",

@@ -84,3 +84,43 @@ test('country interiors do not overlap across a dense independent sampling grid'
       assert.ok(matches.length <= 1, `overlap at ${x},${y}: ${matches.map((c) => c.id).join('/')}`);
     }
 });
+
+test('full world inventory, complete names and Caucasus geography remain consistent', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const world = JSON.parse(
+    await readFile(new URL('../../gallery-public/src/lib/visited/world-map.json', import.meta.url), 'utf8'),
+  );
+  assert.equal(world.countries.length, 195);
+  assert.equal(new Set(world.countries.map((c: { id: string }) => c.id)).size, 195);
+  const byId = new Map<string, any>(world.countries.map((c: any) => [c.id, c]));
+  for (const id of ['GE', 'AM', 'AZ', 'KZ', 'CN', 'RU', 'US', 'CA', 'BR', 'AU', 'VA', 'MC', 'SG', 'PS', 'NR', 'TV'])
+    assert.ok(byId.has(id));
+  assert.ok(byId.get('AM').label[1] > byId.get('GE').label[1]);
+  assert.ok(byId.get('AZ').label[0] > byId.get('AM').label[0]);
+  assert.ok(byId.get('KZ').label[0] > byId.get('AZ').label[0]);
+  for (const c of world.countries) assert.equal(c.lines.join(''), c.name);
+  for (const sea of ['地中海', '黑海', '里海', '红海'])
+    assert.ok(world.waters.some((s: { name: string }) => s.name === sea));
+});
+
+test('full-world shared edges preserve Caucasus and Central Asia land neighbours', async () => {
+  const { countries } = await import('../../gallery-core/src/countries.ts');
+  // Original code-native generator is tested independently of the generated SVG.
+  const { buildCartogram, COLS } = await import('../../gallery-public/scripts/cartogram-layout.mjs');
+  const { owners } = buildCartogram(countries);
+  const neighbours = (id: string) => {
+    const adjacent = new Set<string>();
+    for (const [key, value] of owners)
+      if (value === id)
+        for (const k of [key - 1, key + 1, key - COLS, key + COLS]) {
+          const n = owners.get(k);
+          if (n && n !== id) adjacent.add(n);
+        }
+    return adjacent;
+  };
+  assert.deepEqual([...neighbours('GE')].sort(), ['AM', 'AZ', 'RU', 'TR']);
+  assert.deepEqual([...neighbours('AM')].sort(), ['AZ', 'GE', 'IR', 'TR']);
+  assert.ok(neighbours('KZ').has('CN'));
+  assert.ok(!neighbours('KZ').has('MN'));
+  assert.ok(!neighbours('AZ').has('KZ'));
+});

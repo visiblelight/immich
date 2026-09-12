@@ -2,7 +2,7 @@ import { publicCatalog } from '@gallery/db/server';
 import { GalleryError, isUuid } from '@gallery/core';
 import { error } from '@sveltejs/kit';
 import { getRuntime } from '$lib/server/runtime';
-export async function load({ params }: { params: { slug: string; photoId: string } }) {
+export async function load({ params, url }: { params: { slug: string; photoId: string }; url: URL }) {
   if (!isUuid(params.photoId)) error(404, '照片不存在或尚未公开。');
   try {
     const app = getRuntime();
@@ -12,6 +12,9 @@ export async function load({ params }: { params: { slug: string; photoId: string
     return {
       ...catalog,
       photoId: photo.id,
+      returnTo: /^\/visited\/[A-Z]{2}(?:\?[^#]*)?$/.test(url.searchParams.get('returnTo') ?? '')
+        ? url.searchParams.get('returnTo')
+        : null,
       photoTitle: photo.group ? photo.group.title : photo.title,
       photoDescription: photo.group ? photo.group.description : photo.description,
       origin: app.origin,

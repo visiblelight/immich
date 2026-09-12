@@ -26,4 +26,6 @@ export * from './albums.server.ts';
 export * from './catalog.server.ts';
 export * from './feed.server.ts';
 export * from './runtime.server.ts';
+export * from './visited.server.ts';
+export * from './map-settings.server.ts';
 export { readSourceDerivative, sanitizeImage } from './media.server.ts';

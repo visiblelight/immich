@@ -1,0 +1,9 @@
+{
+  "version": "5.1.2",
+  "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson",
+  "sha256": "239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255",
+  "license": "Public domain",
+  "countries": 195,
+  "sourceFeatures": 258,
+  "grouping": "193 UN members + Holy See + Palestine; dependencies grouped by sovereignty; explicit TW/HK/MO → CN, CYN/CNM → CY, SOL → SO, KOS → RS. Unassigned areas remain unknown."
+}

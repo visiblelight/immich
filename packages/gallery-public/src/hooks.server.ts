@@ -9,7 +9,10 @@ export const handle: Handle = async ({ event, resolve }) => {
     const response = await resolve(event);
     response.headers.set('cache-control', 'no-store');
     response.headers.set('x-content-type-options', 'nosniff');
-    response.headers.set('referrer-policy', 'same-origin');
+    response.headers.set(
+      'referrer-policy',
+      event.url.pathname.startsWith('/visited') ? 'strict-origin-when-cross-origin' : 'same-origin',
+    );
     return response;
   } catch (e) {
     return new Response(e instanceof GalleryError ? e.message : 'Gallery 暂时无法读取内容。', {

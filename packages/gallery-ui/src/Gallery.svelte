@@ -176,7 +176,7 @@
     <nav aria-label="主导航">
       <a class:chosen={!about && !feed} href="/albums">相册</a>{#if !preview}<a class:chosen={!!feed} href="/photos"
           >相片</a
-        ><a class:chosen={about} href="/about">关于</a>{/if}
+        ><a href="/visited">去过</a><a class:chosen={about} href="/about">关于</a>{/if}
     </nav>
   </header>
   {#snippet albumPagination()}

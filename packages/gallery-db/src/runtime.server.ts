@@ -39,6 +39,7 @@ export function runtime(env: Record<string, string | undefined>, service: Databa
   };
   return {
     db,
+    mapSecretKey: env.GALLERY_MAP_SECRET_KEY,
     origin: origin.origin,
     secure: origin.protocol === 'https:',
     root,

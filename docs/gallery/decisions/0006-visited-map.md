@@ -1,6 +1,6 @@
 # ADR 0006：去过、抽象世界地图与真实照片地图
 
-状态：产品方案已确认，2026-09-12；视觉样稿待确认，尚未接入公开地图业务。
+状态：产品方案已确认，2026-09-12；区域视觉样稿已获确认；完整地图与 OSM 业务已接入，Google/高德待真实 Key 联调。
 
 ## 已接受的需求
 
@@ -43,6 +43,7 @@
 后台配置启用状态、默认服务、公开浏览器 Key、私有安全密钥及检测结果。浏览器 Key 使用来源/API 限制；高德安全密钥经服务端代理，不混入公开站点配置。未配置服务前台不显示，不可用服务提示切换。Google/高德需实际授权 Key 联调，不以配置页存在冒充完成。
 
 官方核对入口（2026-09-12）：
+
 - https://operations.osmfoundation.org/policies/tiles/
 - https://developers.google.com/maps/documentation/javascript/get-api-key
 - https://developers.google.com/maps/documentation/javascript/coordinates

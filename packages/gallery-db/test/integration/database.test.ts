@@ -141,7 +141,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
     await admin.connect();
     await pub.connect();
     await t.test('transactional migration, repeat execution, role identity', async () => {
-      assert.deepEqual(await migrate(migrator), ['0001', '0002', '0003', '0004', '0005']);
+      assert.deepEqual(await migrate(migrator), ['0001', '0002', '0003', '0004', '0005', '0006']);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
       assert.equal(
@@ -150,7 +150,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
           )
         ).rows[0].count,
-        '15',
+        '19',
       );
     });
     await t.test('runtime compatibility checks validate service roles and view contracts', async () => {
@@ -168,7 +168,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         await assert.rejects(migrate(migrator, dirUrl), /history mismatch/);
         await copyFile(new URL('0001_foundation.sql', migrationDirectory), path.join(directory, '0001_foundation.sql'));
         await writeFile(
-          path.join(directory, '0006_failure.sql'),
+          path.join(directory, '0007_failure.sql'),
           'CREATE TABLE gallery.rollback_probe(id integer); SELECT 1/0;',
         );
         await assert.rejects(migrate(migrator, dirUrl), (e: { code: string }) => e.code === '22012');
@@ -177,7 +177,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           null,
         );
         assert.equal(
-          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='0006'")).rows[0].count,
+          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='0007'")).rows[0].count,
           '0',
         );
       } finally {
@@ -622,6 +622,90 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       const itemAssets = Array.from({ length: 4 }, () => randomUUID());
       for (const asset of itemAssets) await sourceAsset(asset, ids.owner);
       await itemPublication(adminDb, publicDb, owner, ids.user, itemAssets, mediaRoot);
+    });
+    await t.test('visited map reads live GPS, deduplicates, revokes evidence and keeps secrets private', async () => {
+      const {
+        publicVisited,
+        adminVisited,
+        countryPhotos,
+        saveVisit,
+        deleteVisit,
+        adminMapSettings,
+        saveMapSettings,
+        publicMapSettings,
+      } = await import('../../src/index.server.ts');
+      const user = { id: ids.user, email: 'gallery@example.invalid', displayName: 'Gallery' };
+      const mapAssets = [randomUUID(), randomUUID()];
+      for (const asset of mapAssets) await sourceAsset(asset, ids.owner);
+      await owner.query(`UPDATE public.asset_exif SET "timeZone"='Asia/Tbilisi' WHERE "assetId"=ANY($1::uuid[])`, [
+        mapAssets,
+      ]);
+      const a = await album('visited-test', null, 'exact', mapAssets);
+      const before = await publicVisited(publicDb);
+      const duplicate = await album('visited-duplicate', null, 'exact', [mapAssets[0]!]);
+      assert.equal((await publicVisited(publicDb)).total, before.total);
+      let ge = await adminVisited(adminDb, 'GE');
+      const selected = ge.photos.filter((p) => p.albumSlug === 'visited-test' || p.albumSlug === 'visited-duplicate');
+      assert.equal(selected.length, 2);
+      const correction = await saveVisit(adminDb, user, {
+        country: 'GE',
+        photoIds: selected.map((p) => p.id),
+        start: '2025-01-01',
+        end: '2025-01-12',
+        label: 'Manual dates',
+      });
+      const manual = (await publicVisited(publicDb)).countries
+        .find((c) => c.id === 'GE')!
+        .visits.find((v) => v.id === correction)!;
+      assert.equal(manual.count, 2);
+      assert.equal(manual.label, 'Manual dates');
+      await owner.query('UPDATE public.asset_exif SET latitude=48.8566,longitude=2.3522 WHERE "assetId"=$1', [
+        mapAssets[0],
+      ]);
+      const moved = await publicVisited(publicDb);
+      assert.ok(moved.countries.some((c) => c.id === 'FR'));
+      const reduced = moved.countries.find((c) => c.id === 'GE')!.visits.find((v) => v.id === correction)!;
+      assert.equal(reduced.count, 1);
+      assert.equal(reduced.label, '');
+      assert.notEqual(reduced.start, '2025-01-01');
+      const photos = await countryPhotos(publicDb, 'FR');
+      assert.ok(photos.photos.some((p) => p.albumSlug === 'visited-test' || p.albumSlug === 'visited-duplicate'));
+      assert.ok(!JSON.stringify(photos).includes(mapAssets[0]!));
+      await owner.query('UPDATE public.asset_exif SET latitude=NULL,longitude=NULL WHERE "assetId"=$1', [mapAssets[1]]);
+      assert.ok(!(await publicVisited(publicDb)).countries.flatMap((c) => c.visits).some((v) => v.id === correction));
+      await deleteVisit(adminDb, user, { id: correction, version: 1 });
+      const master = 'ab'.repeat(32),
+        settings = await adminMapSettings(adminDb, master);
+      await saveMapSettings(
+        adminDb,
+        user,
+        {
+          ...settings,
+          providers: settings.providers.map((p) =>
+            p.provider === 'amap'
+              ? { ...p, enabled: true, browserKey: 'synthetic-key', securityCode: 'synthetic-secret' }
+              : p,
+          ),
+        },
+        master,
+      );
+      const publicConfig = JSON.stringify(await publicMapSettings(publicDb));
+      assert.ok(publicConfig.includes('synthetic-key'));
+      assert.ok(!publicConfig.includes('synthetic-secret'));
+      assert.ok(!publicConfig.includes('ciphertext'));
+      await assert.rejects(saveMapSettings(adminDb, user, settings, master), /已被修改/);
+      await denied(pub, 'UPDATE gallery.map_settings SET visit_gap_days=1');
+      await denied(admin, 'UPDATE public.asset_exif SET latitude=0');
+      const current = await adminMapSettings(adminDb, master);
+      await saveMapSettings(
+        adminDb,
+        user,
+        { ...current, providers: settings.providers.map((p) => ({ ...p, clearSecret: true })) },
+        master,
+      );
+      await admin.query(`UPDATE gallery.album SET status='offline',offline_at=now() WHERE id=ANY($1::uuid[])`, [
+        [a.id, duplicate.id],
+      ]);
     });
     await t.test('full database backup and isolated recovery', async () => {
       await recovery(config, mediaRoot);

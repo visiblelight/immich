@@ -381,3 +381,19 @@ erDiagram
 已有部署需数据库 owner 先运行 deployment/gallery/database/prepare-0005.sql，仅给 NOLOGIN gallery_view_owner 增加两列 SELECT；再由 gallery_migrator 执行迁移。首次初始化 bootstrap 已包含这两个列授权。运行时仍不得持有 owner/migrator 凭据或直接查询 Immich 表。迁移递增 album.version，旧页面必须重新载入以避免旧逻辑覆盖新语义。
 
 局部发布仍追加 album_release / album_release_photo；未涉及照片保留原 EXIF 快照。组成员闭包一次提交，source_draft_version 记录保存后版本；是否仍有其他草稿由 has_unpublished_changes 表示。照片 created_at 和 asset_entry 首次加入时间保持稳定。
+
+## 0006：去过与地图服务（2026-09-12）
+
+以下四表与 `0006_visited_maps.sql` 同步新增。统计不落地 GPS、公开照片日期或国别快照；每次读取当前 `published_photo` 再分类。国家边界文件是固定版本的公共基础数据。
+
+| 表                   | 字段与类型                                                                                                                                                                                       | 说明                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| map_settings         | id integer PK=1；version integer>0；visit_gap_days integer 1–365，默认30；updated_at timestamptz                                                                                                 | 全局到访间隔与乐观版本；保存时锁行，人工整理也使用该锁避免并发覆盖                                                                                      |
+| map_provider_config  | provider text PK（osm/google/amap）；enabled boolean；is_default boolean                                                                                                                         | 固定三行；默认项必须启用；部分唯一索引保证最多一个默认，服务层保证恰好一个                                                                              |
+| map_provider_config  | browser_key text≤256；tile_url text；attribution text≤300；secret_ciphertext text≤4096 nullable                                                                                                  | 浏览器 Key 为公开配置；安全码只允许高德，AES-256-GCM 随机 IV、认证标签、固定 AAD。主密钥只在运行环境保存，不在数据库内                                  |
+| visit_override       | id uuid PK；country_code text（两位大写）；start_local_date/end_local_date date nullable；label text≤120；version integer>0；created_at/updated_at timestamptz；updated_by uuid nullable FK user | 成对日期均空或顺序合法。国家在服务层校验195项清单，(id,country_code)额外唯一用于子表复合外键                                                            |
+| visit_override_asset | override_id uuid；country_code text；asset_id uuid                                                                                                                                               | 主键(override_id,asset_id)，唯一(country_code,asset_id)，复合外键(override_id,country_code)引用校正记录并级联删除；asset_id只是外部身份，无 Immich 外键 |
+
+`gallery_admin` 可读写设置（不能插删固定配置行）、维护人工记录。`gallery_public` 只有 SELECT；服务端代理可读取密文，HTTP 配置投影只选公开字段，不输出密文或安全码。运行服务不获得 migrator/owner 权限。
+
+人工记录只关联本次仍有效的公开位置证据。任一关联照片失效或移国，公开日期重新按剩余证据计算、人工名称隐藏；没有有效照片则不公开。后台提示待核对，可恢复自动推导。恢复自动仅删除 Gallery 校正，不改变照片或元数据。迁移回滚不能简单丢表；按独立备份恢复流程处理。

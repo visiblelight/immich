@@ -334,6 +334,15 @@
     <a class="brand" href="/albums"><span class="brand-mark">G</span><span>Gallery<small>创作工作台</small></span></a>
     <p class="nav-label">内容管理</p>
     <nav aria-label="后台导航">
+      <button
+        onclick={() => {
+          if (abandon()) location.href = '/visits';
+        }}>◎ <span>到访记录</span></button
+      ><button
+        onclick={() => {
+          if (abandon()) location.href = '/maps';
+        }}>⌘ <span>地图设置</span></button
+      >
       <button class:active={page === 'albums'} onclick={() => nav('albums')}
         >▦ <span>相册</span><small>{workspaceData.albums.length}</small></button
       ><button class:active={page === 'settings'} onclick={() => nav('settings')}>⚙ <span>站点设置</span></button>
