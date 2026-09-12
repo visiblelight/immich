@@ -2,7 +2,7 @@
 
 > 2026-09-11 范围修订：见 [ADR 0002](../decisions/0002-albums-first.md)。首页／地图暂缓，详细介绍不再插图，关于未来由文章选篇。本文保留已验证结构和扩展边界，不代表相应 UI 仍在 MVP；文章模块仍未建表；认证限流见迁移 0003，Markdown、照片组及时间轴见文末 0004 增量。
 
-状态：0001–0004 与真实应用已通过隔离 PostgreSQL 14 验证；本地接入记录见 [MVP 交付](../delivery/mvp-local.md)。版本：0.4，2026-09-11。
+状态：0001–0005 与真实应用已通过隔离 PostgreSQL 14 验证；本次本地接入见 [单项发布交付](../delivery/item-publication.md)。版本：0.5，2026-09-12。
 
 ## 1. 设计边界
 
@@ -195,7 +195,7 @@ UNIQUE `(album_id,immich_asset_id)` 防止同册重复；UNIQUE `(album_id,posit
 | `id` | uuid，PK，必填 | 发布版本 ID |
 | `album_id` | uuid，FK → album.id，必填 | 所属相册 |
 | `release_number` | integer，必填，CHECK > 0 | 册内递增，锁 album 行后分配 |
-| `source_draft_version` | bigint，必填，CHECK > 0 | 发布源草稿版本，判断是否有未发布修改 |
+| `source_draft_version` | bigint，必填，CHECK > 0 | 发布源草稿版本；0005 起不单独用于判断未发布修改 |
 | `parent_album_id` | uuid，可空，FK → album.id | 本版本的父级，非自指；公开树按各册 current_release 解析 |
 | `position` | bigint，必填，CHECK >= 0 | 本次发布的同级顺序键 |
 | `title` | text，必填 | 1–200 字符 |
@@ -363,3 +363,21 @@ erDiagram
 受控 published_photo 视图末尾增加 group_id、description_format、taken_at、first_added_at、estimated。仍从当前可公开相册、有效祖先及来源视图出发；GPS 继续使用原有脱敏逻辑。taken_at 沿用 Immich fileCreatedAt，年月按 UTC 确定以避免访问者时区改变分组；无法确定时归到 unknown。全站查询先应用权限，再按 Asset 去重，代表出现位置按相册首次发布时间及稳定 ID 选择。返回的标题、组说明、EXIF 和位置全部来自该代表上下文；其他相册入口仅列当前可公开出现位置。
 
 0004 使旧打开表单的 album.version 递增，避免旧客户端覆盖新增字段。现有 photo ID 与 URL 不变；新增前台 /photos 不按 Asset ID 直接授予媒体访问。
+
+
+## 0005 增量：单项发布与当地拍摄时间
+
+2026-09-12，见 [ADR 0005](../decisions/0005-item-publication-and-viewer.md)。无新增业务表，不修改 Immich 表或历史 release。
+
+| 对象 / 字段 | 类型 | 含义 |
+|---|---|---|
+| album.has_unpublished_changes | boolean NOT NULL DEFAULT true | 当前完整草稿与公开内容是否不同。迁移按旧版本差异回填；全册发布清除，局部发布按实际内容比较 |
+| admin_source_asset.local_taken_at | timestamptz，可空投影 | Immich asset.localDateTime；其 UTC 字段表示当地钟表值，禁止再次时区换算 |
+| admin_source_asset.time_zone | varchar，可空投影 | Immich asset_exif.timeZone；可能为 IANA 时区或 UTC 偏移 |
+| published_photo.local_taken_at / time_zone | 同源投影类型 | 通过既有来源资格和发布祖先检查后暴露，不存入 release |
+
+0004 的“年月按 UTC 拍摄时间”规则被替代：拍摄年月按 local_taken_at 的钟表字段确定；排序沿用 taken_at，加入时间规则不变。GPS 不参与钟表换算。
+
+已有部署需数据库 owner 先运行 deployment/gallery/database/prepare-0005.sql，仅给 NOLOGIN gallery_view_owner 增加两列 SELECT；再由 gallery_migrator 执行迁移。首次初始化 bootstrap 已包含这两个列授权。运行时仍不得持有 owner/migrator 凭据或直接查询 Immich 表。迁移递增 album.version，旧页面必须重新载入以避免旧逻辑覆盖新语义。
+
+局部发布仍追加 album_release / album_release_photo；未涉及照片保留原 EXIF 快照。组成员闭包一次提交，source_draft_version 记录保存后版本；是否仍有其他草稿由 has_unpublished_changes 表示。照片 created_at 和 asset_entry 首次加入时间保持稳定。

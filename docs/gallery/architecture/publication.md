@@ -1,5 +1,7 @@
 # 草稿、相册树与发布规则
 
+2026-09-12 补充：单张／单组发布及编辑弹窗遵循 [ADR 0005](../decisions/0005-item-publication-and-viewer.md)。
+
 2026-09-11 补充：本文早期的两项导航、文字块正文和逐张排序规则，由已确认的 [ADR 0004](../decisions/0004-markdown-photo-groups.md) 更新；实际完成及验证范围见 [交互升级记录](../delivery/interaction-upgrade.md)。
 
 > 2026-09-11 范围修订：见 [ADR 0002](../decisions/0002-albums-first.md)。首页／地图暂缓，详细介绍不再插图，关于未来由文章选篇。本文保留已验证结构和扩展边界，不代表相应 UI 仍在 MVP；本轮未修改迁移或新增文章表。
@@ -23,7 +25,7 @@ Gallery Album ID 与公开 slug 表示稳定身份。后台编辑树来自 album
 | published，但祖先 offline | 因上级下线暂不可见 | 包括直接链接在内全部阻断 |
 | offline，保留 current_release | 手动下线 | 不可访问 |
 
-“有未发布修改”通过 draft.version 与 current_release.source_draft_version 比较，不另造状态字段。GPS 改动不使草稿变脏；源资源失效另显示警告。
+2026-09-12 起，“有未发布修改”使用 album.has_unpublished_changes：局部发布后比较完整草稿与新公开内容；source_draft_version 只记录来源版本，不单独代表全部草稿已发布。GPS 改动不使草稿变脏；源资源失效另显示警告。
 
 有效公开相册必须能沿当前发布父链到达顶级，链上每个相册均 published、存在有效 current_release，并且无循环。结构异常或无法读取时拒绝返回该分支，不退化成无父级公开。
 

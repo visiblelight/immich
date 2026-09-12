@@ -16,7 +16,26 @@
     content = $bindable(),
     editPhoto,
     pick,
-  }: { content: AlbumContent; editPhoto: (p: DraftPhoto) => void; pick: () => void } = $props();
+    saveItem,
+    canPublish,
+  }: {
+    content: AlbumContent;
+    editPhoto: (p: DraftPhoto) => void;
+    pick: () => void;
+    saveItem: (candidate: AlbumContent, target: string, publish: boolean) => Promise<void>;
+    canPublish: boolean;
+  } = $props();
+  const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+  let groupDraft = $state<AlbumContent | null>(null);
+  let groupDialog: HTMLDialogElement;
+  let groupBaseline = '';
+  let isNewGroup = $state(false);
+  let fallbackTarget = '';
+  let saving = $state(false);
+  let groupError = $state('');
+  let discardGroup = $state(false);
+  let memberEditing = $state('');
+  const working = () => groupDraft ?? content;
   let selected = $state<string[]>([]),
     notice = $state(''),
     editing = $state('');
@@ -43,15 +62,16 @@
   let items = $derived(
     dragging && !scope ? previewOrder.map((key) => baseItems.find((p) => photoItemKey(p) === key)!) : baseItems,
   );
-  const members = (id: string) => content.photos.filter((p) => p.group === id);
+  const members = (id: string) => working().photos.filter((p) => p.group === id);
   const shownMembers = (id: string) =>
     dragging && scope === id ? previewOrder.map((key) => members(id).find((p) => p.id === key)!) : members(id);
-  const group = (id: string) => groups.find((g) => g.id === id);
+  const group = (id: string) => (working().groups ?? []).find((g) => g.id === id);
   const cover = (p: DraftPhoto) => (p.group ? (members(p.group).find((x) => x.id === group(p.group!)?.cover) ?? p) : p);
   const motionDuration = () =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
   function normalize() {
-    content.photos = orderAlbumPhotos(content.photos, albumPhotoItems(content.photos).map(photoItemKey));
+    const c = working();
+    c.photos = orderAlbumPhotos(c.photos, albumPhotoItems(c.photos).map(photoItemKey));
   }
   function makeGroup() {
     if (selectedPhotos.length < 2) return;
@@ -60,11 +80,12 @@
       selectedPhotos.map((p) => p.id),
       crypto.randomUUID(),
     );
-    content.groups = [...groups, result.group];
-    content.photos = result.photos;
-    selected = [];
-    void openGroup(result.group.id);
-    notice = '已将选中的照片组成一组，请保存草稿。';
+    void openGroup(result.group.id, {
+      ...copy(content),
+      groups: [...copy(groups), result.group],
+      photos: copy(result.photos),
+    });
+    notice = '';
   }
   function preservedDescription(g: PhotoGroup, p: DraftPhoto) {
     return [g.title ? `## ${literalMarkdown(g.title)}` : '', g.description, p.description].filter(Boolean).join('\n\n');
@@ -73,6 +94,7 @@
     notice = photos.some((p) => preservedDescription(g, p).length > 50000)
       ? '保留共用说明后，个别照片的描述会超过 50,000 字符。请先缩短说明再移出或解散。'
       : '';
+    groupError = notice;
     return !notice;
   }
   function dissolve(id: string) {
@@ -82,8 +104,7 @@
       p.description = preservedDescription(g, p);
       p.group = '';
     }
-    content.groups = groups.filter((g) => g.id !== id);
-    editing = '';
+    working().groups = (working().groups ?? []).filter((g) => g.id !== id);
     return true;
   }
   function detach(p: DraftPhoto) {
@@ -110,13 +131,15 @@
       to = from + offset;
     if (from < 0 || to < 0 || to >= keys.length) return;
     keys.splice(to, 0, keys.splice(from, 1)[0]!);
-    content.photos = orderAlbumPhotos(content.photos, keys, groupId);
+    const c = groupId ? working() : content;
+    c.photos = orderAlbumPhotos(c.photos, keys, groupId);
     notice = `已移到第 ${to + 1} ${groupId ? '张' : '项'}，请保存草稿。`;
   }
   function cancelDrag() {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
-    if (pointerId >= 0 && root?.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
+    if (pointerId >= 0)
+      for (const el of [root, groupDialog]) if (el?.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
     pointerId = -1;
     dragKey = '';
     dragging = false;
@@ -132,7 +155,7 @@
     pointerId = e.pointerId;
     startX = lastX = e.clientX;
     startY = lastY = e.clientY;
-    scrollY = window.scrollY;
+    scrollY = groupId ? groupDialog.scrollTop : window.scrollY;
     originalKeys = groupId ? members(groupId).map((p) => p.id) : baseItems.map(photoItemKey);
     slots = Array.from(root.querySelectorAll<HTMLElement>('[data-order]'))
       .filter((el) => el.dataset.scope === groupId)
@@ -144,7 +167,7 @@
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
   function targetAtPointer() {
-    const offset = window.scrollY - scrollY;
+    const offset = (scope ? groupDialog.scrollTop : window.scrollY) - scrollY;
     let target = -1,
       distance = Infinity;
     slots.forEach((r, index) => {
@@ -172,7 +195,7 @@
           ? Math.ceil((lastY - window.innerHeight + edge) / 4)
           : 0;
     if (amount) {
-      window.scrollBy(0, amount);
+      (scope ? groupDialog : window).scrollBy(0, amount);
       targetAtPointer();
     }
     frame = requestAnimationFrame(autoScroll);
@@ -184,7 +207,7 @@
     if (!dragging && Math.hypot(lastX - startX, lastY - startY) < 6) return;
     if (!dragging) {
       dragging = true;
-      root.setPointerCapture(pointerId);
+      (scope ? groupDialog : root).setPointerCapture(pointerId);
       const p = scope
         ? members(scope).find((p) => p.id === dragKey)!
         : cover(baseItems.find((p) => photoItemKey(p) === dragKey)!);
@@ -202,18 +225,55 @@
   function drop(e: PointerEvent) {
     if (e.pointerId !== pointerId) return;
     if (dragging) {
-      content.photos = orderAlbumPhotos(content.photos, previewOrder, scope);
+      const c = scope ? working() : content;
+      c.photos = orderAlbumPhotos(c.photos, previewOrder, scope);
       notice = `已移到第 ${previewOrder.indexOf(dragKey) + 1} ${scope ? '张' : '项'}，请保存草稿。`;
       suppressClickUntil = performance.now() + 250;
     }
     cancelDrag();
   }
-  async function openGroup(id: string) {
+  async function openGroup(id: string, candidate?: AlbumContent) {
+    groupDraft = candidate ?? copy(content);
+    isNewGroup = !!candidate;
     editing = id;
+    fallbackTarget = groupDraft.photos.find((p) => p.group === id)?.id ?? id;
+    groupBaseline = candidate ? '' : JSON.stringify(groupDraft);
+    groupError = '';
+    discardGroup = false;
+    memberEditing = '';
     await tick();
-    root
-      .querySelector('.group-panel')
-      ?.scrollIntoView({ behavior: motionDuration() ? 'smooth' : 'auto', block: 'start' });
+    groupDialog.showModal();
+  }
+  function closeGroup(force = false) {
+    if (saving) return;
+    if (!force && JSON.stringify(groupDraft) !== groupBaseline) {
+      discardGroup = true;
+      groupDialog.scrollTo({ top: 0 });
+      return;
+    }
+    cancelDrag();
+    groupDialog.close();
+    groupDraft = null;
+    editing = '';
+  }
+  async function saveGroup(publish: boolean) {
+    if (!groupDraft || saving) return;
+    saving = true;
+    groupError = '';
+    try {
+      await saveItem(
+        copy(groupDraft),
+        groupDraft.groups?.some((g) => g.id === editing) ? editing : fallbackTarget,
+        publish,
+      );
+      saving = false;
+      selected = [];
+      closeGroup(true);
+    } catch (e) {
+      groupError = e instanceof Error ? e.message : '保存失败，请重试。';
+    } finally {
+      saving = false;
+    }
   }
   function clickPhoto(p: DraftPhoto, groupId = '') {
     if (performance.now() < suppressClickUntil) return;
@@ -223,6 +283,12 @@
 </script>
 
 <svelte:window
+  onbeforeunload={(e) => {
+    if (groupDraft && JSON.stringify(groupDraft) !== groupBaseline) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  }}
   onpointermove={pointer}
   onpointerup={drop}
   onpointercancel={cancelDrag}
@@ -320,92 +386,224 @@
       <h3>把照片整理成自己的故事</h3>
       <button class="primary" onclick={pick}>从 Immich 选片</button>
     </div>{/if}
-  {#each groups.filter((g) => g.id === editing) as g}<section class="group-panel">
-      <div class="section-heading">
-        <h2>编辑照片组 · {members(g.id).length} 张</h2>
-        <button onclick={() => (editing = '')}>收起</button>
-      </div>
-      <label>组标题<input maxlength="200" bind:value={g.title} /></label><MarkdownEditor
-        label="共用说明"
-        bind:value={g.description}
-        maxLength={10000}
-        filename="photo-group.md"
-      />
-      <p class="muted">共用说明只写一次；点击成员编辑角度说明。成员的拍摄参数独立显示。</p>
-      <div class="collection-grid">
-        {#each shownMembers(g.id) as p, index (p.id)}<article
-            class="collection-card"
-            class:drag-placeholder={dragging && scope === g.id && dragKey === p.id}
-            animate:flip={{ duration: motionDuration() }}
-            data-order={p.id}
-            data-scope={g.id}
-          >
-            <div class="collection-top">
-              <button
-                class="drag"
-                aria-label={`拖动组内照片 ${index + 1}`}
-                onpointerdown={(e) => start(e, p.id, g.id)}
-                onkeydown={(e) => {
-                  if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                    e.preventDefault();
-                    arrow(p.id, e.key === 'ArrowLeft' ? -1 : 1, g.id);
-                  }
-                }}>⠿</button
-              ><small>{index + 1}{g.cover === p.id ? ' · 组封面' : ''}</small>
-            </div>
-            <button
-              class="collection-image"
-              onpointerdown={(e) => {
-                if (e.pointerType !== 'touch') start(e, p.id, g.id);
-              }}
-              onclick={() => clickPhoto(p)}
-              ><img draggable="false" src={media(p)} alt={p.alt || p.title || '编辑角度说明'} /></button
-            >
-            <div class="collection-actions">
-              <button
-                disabled={index === 0}
-                aria-label={`前移组内照片 ${index + 1}`}
-                onclick={() => arrow(p.id, -1, g.id)}>←</button
-              ><button
-                disabled={index === members(g.id).length - 1}
-                aria-label={`后移组内照片 ${index + 1}`}
-                onclick={() => arrow(p.id, 1, g.id)}>→</button
-              ><button onclick={() => (g.cover = p.id)}>组封面</button><button onclick={() => detach(p)}>移出组</button>
-            </div>
-          </article>{/each}
-      </div>
-      <label
-        >添加本册照片<select
-          value=""
-          onchange={(e) => {
-            const p = content.photos.find((p) => p.id === e.currentTarget.value);
-            if (p) {
-              p.group = g.id;
-              normalize();
-              selected = selected.filter((id) => id !== p.id);
-            }
-            e.currentTarget.value = '';
-          }}
-          ><option value="">选择一张未分组照片</option>{#each content.photos.filter((p) => !p.group) as p}<option
-              value={p.id}>{p.title || `照片 ${content.photos.indexOf(p) + 1}`}</option
-            >{/each}</select
-        ></label
-      >
-      <button class="dissolve" onclick={() => dissolve(g.id)}>解散照片组（保留说明）</button>
-    </section>{/each}
-</section>
-{#if dragging && ghost}<div
-    class="drag-ghost"
-    aria-hidden="true"
-    style:left={`${ghost.x + 16}px`}
-    style:top={`${ghost.y + 14}px`}
+  <dialog
+    class="group-dialog"
+    bind:this={groupDialog}
+    aria-label="编辑照片组"
+    oncancel={(e) => {
+      e.preventDefault();
+      closeGroup();
+    }}
   >
-    <img src={ghost.src} alt="" /><strong>{ghost.title}</strong><span
-      >松开移到第 {previewOrder.indexOf(dragKey) + 1} 位 · Esc 取消</span
+    {#if groupDraft}
+      <header class="group-heading">
+        <h2>编辑照片组</h2>
+        <button disabled={saving} onclick={() => closeGroup()}>取消</button>
+      </header>
+      <div class="group-body">
+        {#if discardGroup}<div class="discard-edit" role="alert">
+            <p>照片组修改尚未保存。</p>
+            <button onclick={() => (discardGroup = false)}>继续编辑</button><button onclick={() => closeGroup(true)}
+              >放弃修改并关闭</button
+            >
+          </div>{/if}
+        {#if groupError}<p class="error" role="alert">{groupError}</p>{/if}
+        {#if !(groupDraft.groups ?? []).some((g) => g.id === editing)}<p>
+            照片组已在编辑副本中解散。保存后生效，原有个人说明和共用说明均保留。
+          </p>{/if}
+        {#each (groupDraft.groups ?? []).filter((g) => g.id === editing) as g}<section class="group-panel">
+            <div class="section-heading">
+              <h2>编辑照片组 · {members(g.id).length} 张</h2>
+            </div>
+            <label>组标题<input maxlength="200" bind:value={g.title} /></label><MarkdownEditor
+              label="共用说明"
+              bind:value={g.description}
+              maxLength={10000}
+              filename="photo-group.md"
+            />
+            <p class="muted">访客只看到组标题与共用说明。点击成员调整无障碍和位置设置；每张照片保留独立的拍摄参数。</p>
+            <div class="collection-grid">
+              {#each shownMembers(g.id) as p, index (p.id)}<article
+                  class="collection-card"
+                  class:drag-placeholder={dragging && scope === g.id && dragKey === p.id}
+                  animate:flip={{ duration: motionDuration() }}
+                  data-order={p.id}
+                  data-scope={g.id}
+                >
+                  <div class="collection-top">
+                    <button
+                      class="drag"
+                      aria-label={`拖动组内照片 ${index + 1}`}
+                      onpointerdown={(e) => start(e, p.id, g.id)}
+                      onkeydown={(e) => {
+                        if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                          e.preventDefault();
+                          arrow(p.id, e.key === 'ArrowLeft' ? -1 : 1, g.id);
+                        }
+                      }}>⠿</button
+                    ><small>{index + 1}{g.cover === p.id ? ' · 组封面' : ''}</small>
+                  </div>
+                  <button
+                    class="collection-image"
+                    onpointerdown={(e) => {
+                      if (e.pointerType !== 'touch') start(e, p.id, g.id);
+                    }}
+                    onclick={() => (memberEditing = memberEditing === p.id ? '' : p.id)}
+                    ><img draggable="false" src={media(p)} alt={p.alt || p.title || '编辑成员设置'} /></button
+                  >
+                  <div class="collection-actions">
+                    <button
+                      disabled={index === 0}
+                      aria-label={`前移组内照片 ${index + 1}`}
+                      onclick={() => arrow(p.id, -1, g.id)}>←</button
+                    ><button
+                      disabled={index === members(g.id).length - 1}
+                      aria-label={`后移组内照片 ${index + 1}`}
+                      onclick={() => arrow(p.id, 1, g.id)}>→</button
+                    ><button onclick={() => (g.cover = p.id)}>组封面</button><button onclick={() => detach(p)}
+                      >移出组</button
+                    >
+                  </div>
+                  {#if memberEditing === p.id}<div class="member-settings">
+                      <label>画面描述（无障碍）<input maxlength="500" bind:value={p.alt} /></label>
+                      <label
+                        >位置公开方式<select bind:value={p.location}
+                          ><option value="inherit">跟随相册</option><option value="hidden">隐藏</option><option
+                            value="approximate">近似位置</option
+                          ><option value="exact">精确位置（受相册限制）</option></select
+                        ></label
+                      >
+                    </div>{/if}
+                </article>{/each}
+            </div>
+            <label
+              >添加本册照片<select
+                value=""
+                onchange={(e) => {
+                  const p = groupDraft!.photos.find((p) => p.id === e.currentTarget.value);
+                  if (p) {
+                    p.group = g.id;
+                    normalize();
+                    selected = selected.filter((id) => id !== p.id);
+                  }
+                  e.currentTarget.value = '';
+                }}
+                ><option value="">选择一张未分组照片</option
+                >{#each groupDraft.photos.filter((p) => !p.group) as p}<option value={p.id}
+                    >{p.title || `照片 ${groupDraft.photos.indexOf(p) + 1}`}</option
+                  >{/each}</select
+              ></label
+            >
+            <button class="dissolve" onclick={() => (isNewGroup ? closeGroup() : dissolve(g.id))}
+              >{isNewGroup ? '取消分组' : '解散照片组（保留说明）'}</button
+            >
+          </section>{/each}
+      </div>
+      <footer class="group-footer">
+        <p>
+          仅保存或发布本组及必要的成员关系变更，其他相册修改继续保留在草稿中。 {#if !canPublish}请先公开相册及所有上级。{/if}
+        </p>
+        <div>
+          <button disabled={saving} onclick={() => closeGroup()}>取消</button>
+          <button disabled={saving} onclick={() => saveGroup(false)}>保存草稿</button>
+          <button class="primary" disabled={saving || !canPublish} onclick={() => saveGroup(true)}
+            >{saving ? '正在保存…' : '保存并发布'}</button
+          >
+        </div>
+      </footer>
+    {/if}
+    {#if scope}{#if dragging && ghost}<div
+          class="drag-ghost"
+          aria-hidden="true"
+          style:left={`${ghost.x + 16}px`}
+          style:top={`${ghost.y + 14}px`}
+        >
+          <img src={ghost.src} alt="" /><strong>{ghost.title}</strong><span
+            >松开移到第 {previewOrder.indexOf(dragKey) + 1} 位 · Esc 取消</span
+          >
+        </div>{/if}
+    {/if}
+  </dialog>
+</section>
+{#if !scope}{#if dragging && ghost}<div
+      class="drag-ghost"
+      aria-hidden="true"
+      style:left={`${ghost.x + 16}px`}
+      style:top={`${ghost.y + 14}px`}
     >
-  </div>{/if}
+      <img src={ghost.src} alt="" /><strong>{ghost.title}</strong><span
+        >松开移到第 {previewOrder.indexOf(dragKey) + 1} 位 · Esc 取消</span
+      >
+    </div>{/if}
+{/if}
 
 <style>
+  .group-dialog {
+    width: min(1100px, calc(100vw - 48px));
+    max-width: none;
+    max-height: 92dvh;
+    padding: 0;
+    border: 0;
+    border-radius: 12px;
+    background: #fbfcf8;
+  }
+  .group-heading,
+  .group-footer {
+    position: sticky;
+    background: #fbfcf8;
+    padding: 18px 24px;
+    z-index: 2;
+  }
+  .group-heading {
+    top: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #dde2d7;
+  }
+  .group-heading h2 {
+    margin: 0;
+  }
+  .group-body {
+    padding: 24px;
+  }
+  .group-footer {
+    bottom: 0;
+    border-top: 1px solid #dde2d7;
+  }
+  .group-footer p {
+    font-size: 12px;
+    color: #60724f;
+    margin: 0 0 10px;
+  }
+  .group-footer > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: end;
+  }
+  .member-settings {
+    padding: 12px;
+    display: grid;
+    gap: 12px;
+  }
+  @media (max-width: 600px) {
+    .group-dialog {
+      width: 100vw;
+      height: 100dvh;
+      max-height: 100dvh;
+      margin: 0;
+      border-radius: 0;
+    }
+    .group-body {
+      padding: 16px;
+    }
+    .group-heading,
+    .group-footer {
+      padding: 14px 16px;
+    }
+  }
+
   .album-photo-editor {
     display: block;
     min-width: 0;

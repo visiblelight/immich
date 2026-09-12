@@ -13,3 +13,5 @@ export function liveness(service: GalleryService) {
 }
 export * from './markdown.ts';
 export * from './photo-order.ts';
+export * from './album-item.ts';
+export * from './capture-time.ts';

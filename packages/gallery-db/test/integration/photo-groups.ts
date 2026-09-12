@@ -32,7 +32,10 @@ export async function photoGroups(
   for (const asset of assets) {
     for (const variant of ['preview', 'thumbnail'])
       await writeFile(path.join(mediaRoot, `${asset}-${variant}.jpg`), bytes);
-    await owner.query('UPDATE public.asset SET "fileCreatedAt"=$2 WHERE id=$1', [asset, '2030-04-15T10:00:00Z']);
+    await owner.query('UPDATE public.asset SET "fileCreatedAt"=$2,"localDateTime"=$2 WHERE id=$1', [
+      asset,
+      '2030-04-15T10:00:00Z',
+    ]);
   }
   const versions = async (id: string) => {
     const s = await adminState(db),

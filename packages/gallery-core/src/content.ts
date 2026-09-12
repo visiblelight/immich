@@ -35,6 +35,7 @@ export interface ManagedAlbum {
   version: string;
   draftVersion: string;
   releaseVersion: string | null;
+  hasUnpublishedChanges?: boolean;
   publishedParent: string | null;
   status: 'draft' | 'published' | 'offline';
   visible: boolean;
@@ -65,6 +66,8 @@ export interface SourcePhoto {
 export interface DisplayPhoto {
   group?: PhotoGroup;
   takenAt?: string | null;
+  localTakenAt?: string | null;
+  timeZone?: string | null;
   addedAt?: string | null;
   addedEstimated?: boolean;
   albumId?: string;

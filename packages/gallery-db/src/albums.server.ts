@@ -3,6 +3,8 @@ import { sql, type Kysely } from 'kysely';
 import sharp from 'sharp';
 import { readSourceDerivative, type MediaRoot } from './media.server.ts';
 import {
+  mergeAlbumItem,
+  sameAlbumContent,
   documentMarkdown,
   literalMarkdown,
   assertTree,
@@ -41,6 +43,7 @@ interface DraftRow {
   location_mode: AlbumContent['location'];
   show_exif: boolean;
   visible: boolean;
+  has_unpublished_changes: boolean;
 }
 async function siteRow(db: Db, lock = false): Promise<GallerySite> {
   const r = (
@@ -70,7 +73,7 @@ export async function adminState(db: Db) {
     .execute(async (trx) => {
       const site = await siteRow(trx);
       const rows = (
-        await sql<DraftRow>`SELECT a.id,a.slug,a.status,a.version,d.version AS draft_version,r.source_draft_version,r.parent_album_id AS release_parent_album_id,d.parent_album_id,d.position,d.title,d.summary,d.description_document,d.cover_asset_id,d.location_mode,d.show_exif,EXISTS(SELECT 1 FROM gallery.published_album p WHERE p.album_id=a.id) AS visible FROM gallery.album a JOIN gallery.album_draft d ON d.album_id=a.id LEFT JOIN gallery.album_release r ON r.id=a.current_release_id ORDER BY d.position,a.created_at,a.id`.execute(
+        await sql<DraftRow>`SELECT a.id,a.slug,a.status,a.version,a.has_unpublished_changes,d.version AS draft_version,r.source_draft_version,r.parent_album_id AS release_parent_album_id,d.parent_album_id,d.position,d.title,d.summary,d.description_document,d.cover_asset_id,d.location_mode,d.show_exif,EXISTS(SELECT 1 FROM gallery.published_album p WHERE p.album_id=a.id) AS visible FROM gallery.album a JOIN gallery.album_draft d ON d.album_id=a.id LEFT JOIN gallery.album_release r ON r.id=a.current_release_id ORDER BY d.position,a.created_at,a.id`.execute(
           trx,
         )
       ).rows;
@@ -89,6 +92,7 @@ export async function adminState(db: Db) {
         publishedParent: r.release_parent_album_id,
         status: r.status,
         visible: r.visible,
+        hasUnpublishedChanges: r.has_unpublished_changes,
         draft: {
           title: r.title,
           slug: r.slug,
@@ -242,55 +246,184 @@ export async function createAlbum(db: Db, user: GalleryUser, input: Record<strin
 }
 export async function saveAlbum(db: Db, user: GalleryUser, id: string, input: Record<string, unknown>) {
   const c = validateContent(input.content);
-  await db.transaction().execute(async (trx) => {
-    await actor(trx, user);
-    const a = await lockAlbum(trx, id, input);
-    ensure(!a.current_release_id || a.slug === c.slug, '首次发布后不能修改访问地址。', 409);
-    const tree = await trees(trx);
-    const previousParent = tree.draft.get(id);
-    tree.draft.set(id, c.parent);
-    assertTree(tree.draft);
-    await sources(
-      trx,
-      c.photos.map((p) => p.asset),
-    );
-    await coverValid(trx, id, c, tree.draft);
-    const duplicate = (await sql`SELECT id FROM gallery.album WHERE slug=${c.slug} AND id<>${id}::uuid`.execute(trx))
-      .rows.length;
-    ensure(!duplicate, '访问地址已被其他相册使用。', 409);
-    await sql`UPDATE gallery.album SET slug=${c.slug},version=version+1,updated_at=now() WHERE id=${id}::uuid`.execute(
-      trx,
-    );
-    await sql`UPDATE gallery.album_draft SET title=${c.title},summary=${c.summary},description_document=${JSON.stringify({ schemaVersion: 1, blocks: [], markdown: c.markdown, groups: c.groups })}::jsonb,parent_album_id=${c.parent || null}::uuid,position=${c.position},cover_asset_id=${c.cover || null}::uuid,location_mode=${c.location},show_exif=${c.showExif},version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE album_id=${id}::uuid`.execute(
-      trx,
-    );
-    const previous = (
-      await sql<{
-        id: string;
-        asset: string;
-        created_at: Date;
-      }>`SELECT id,immich_asset_id AS asset,created_at FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx)
-    ).rows;
-    for (const p of c.photos) {
-      const old = previous.find((x) => x.id === p.id);
-      ensure(!old || old.asset === p.asset, '照片身份不能更换来源。', 409);
-    }
-    await sql`INSERT INTO gallery.asset_entry(immich_asset_id) SELECT x.asset FROM jsonb_to_recordset(${JSON.stringify(c.photos)}::jsonb) AS x(asset uuid) ON CONFLICT DO NOTHING`.execute(
-      trx,
-    );
-    await sql`DELETE FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx);
-    if (c.photos.length)
-      await sql`INSERT INTO gallery.album_photo(id,album_id,immich_asset_id,position,title,description,alt_text,location_mode,group_id,description_format,created_at)
+  await db.transaction().execute((trx) => saveAlbumInTransaction(trx, user, id, input, c));
+}
+async function saveAlbumInTransaction(
+  trx: Db,
+  user: GalleryUser,
+  id: string,
+  input: Record<string, unknown>,
+  c: AlbumContent,
+) {
+  await actor(trx, user);
+  const a = await lockAlbum(trx, id, input);
+  ensure(!a.current_release_id || a.slug === c.slug, '首次发布后不能修改访问地址。', 409);
+  const tree = await trees(trx);
+  const previousParent = tree.draft.get(id);
+  tree.draft.set(id, c.parent);
+  assertTree(tree.draft);
+  await sources(
+    trx,
+    c.photos.map((p) => p.asset),
+  );
+  await coverValid(trx, id, c, tree.draft);
+  const duplicate = (await sql`SELECT id FROM gallery.album WHERE slug=${c.slug} AND id<>${id}::uuid`.execute(trx)).rows
+    .length;
+  ensure(!duplicate, '访问地址已被其他相册使用。', 409);
+  await sql`UPDATE gallery.album SET slug=${c.slug},has_unpublished_changes=true,version=version+1,updated_at=now() WHERE id=${id}::uuid`.execute(
+    trx,
+  );
+  await sql`UPDATE gallery.album_draft SET title=${c.title},summary=${c.summary},description_document=${JSON.stringify({ schemaVersion: 1, blocks: [], markdown: c.markdown, groups: c.groups })}::jsonb,parent_album_id=${c.parent || null}::uuid,position=${c.position},cover_asset_id=${c.cover || null}::uuid,location_mode=${c.location},show_exif=${c.showExif},version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE album_id=${id}::uuid`.execute(
+    trx,
+  );
+  const previous = (
+    await sql<{
+      id: string;
+      asset: string;
+      created_at: Date;
+    }>`SELECT id,immich_asset_id AS asset,created_at FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx)
+  ).rows;
+  for (const p of c.photos) {
+    const old = previous.find((x) => x.id === p.id);
+    ensure(!old || old.asset === p.asset, '照片身份不能更换来源。', 409);
+  }
+  await sql`INSERT INTO gallery.asset_entry(immich_asset_id) SELECT x.asset FROM jsonb_to_recordset(${JSON.stringify(c.photos)}::jsonb) AS x(asset uuid) ON CONFLICT DO NOTHING`.execute(
+    trx,
+  );
+  await sql`DELETE FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx);
+  if (c.photos.length)
+    await sql`INSERT INTO gallery.album_photo(id,album_id,immich_asset_id,position,title,description,alt_text,location_mode,group_id,description_format,created_at)
       SELECT x.id,${id}::uuid,x.asset,x.position,x.title,x.description,x.alt,x.location,x.group_id,'markdown',coalesce(x.created_at,now())
       FROM jsonb_to_recordset(${JSON.stringify(c.photos.map((p, position) => ({ ...p, position, group_id: p.group || null, created_at: previous.find((x) => x.id === p.id)?.created_at ?? null })))}::jsonb)
       AS x(id uuid,asset uuid,position integer,title text,description text,alt text,location text,group_id uuid,created_at timestamptz)`.execute(
-        trx,
-      );
-    if (previousParent !== c.parent)
-      await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);
-    await audit(trx, user, 'album.save', id);
+      trx,
+    );
+  if (previousParent !== c.parent)
+    await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);
+  await audit(trx, user, 'album.save', id);
+}
+async function storedContent(db: Db, id: string, release?: string): Promise<AlbumContent> {
+  const row = (
+    await sql<DraftRow>`SELECT a.slug,d.* FROM gallery.album a JOIN ${release ? sql`gallery.album_release` : sql`gallery.album_draft`} d ON d.album_id=a.id WHERE a.id=${id}::uuid ${release ? sql`AND d.id=${release}::uuid` : sql``}`.execute(
+      db,
+    )
+  ).rows[0]!;
+  const photos = (
+    await sql<
+      DraftPhoto & { description_format: string }
+    >`SELECT ${release ? sql`photo_id` : sql`id`} AS id,immich_asset_id AS asset,title,description,alt_text AS alt,location_mode AS location,group_id AS "group",description_format FROM ${release ? sql`gallery.album_release_photo` : sql`gallery.album_photo`} WHERE ${release ? sql`release_id=${release}::uuid` : sql`album_id=${id}::uuid`} ORDER BY position`.execute(
+      db,
+    )
+  ).rows;
+  return validateContent({
+    title: row.title,
+    slug: row.slug,
+    parent: row.parent_album_id ?? '',
+    position: Number(row.position),
+    summary: row.summary,
+    markdown: documentMarkdown(row.description_document, row.summary),
+    blocks: [],
+    groups: row.description_document.groups ?? [],
+    cover: row.cover_asset_id ?? '',
+    location: row.location_mode,
+    showExif: row.show_exif,
+    photos: photos.map(({ description_format, ...p }) => ({
+      ...p,
+      group: p.group ?? '',
+      description: description_format === 'plain' ? literalMarkdown(p.description) : p.description,
+    })),
   });
 }
+
+/** Save and optionally publish one dependency-closed item, in one transaction. */
+export async function saveAlbumItem(
+  db: Db,
+  user: GalleryUser,
+  id: string,
+  input: Record<string, unknown>,
+  root: MediaRoot,
+) {
+  const incoming = validateContent(input.content),
+    target = uuid(input.target);
+  ensure(typeof input.publish === 'boolean', '发布操作无效。');
+  await db.transaction().execute(async (trx) => {
+    await actor(trx, user);
+    const album = await lockAlbum(trx, id, input);
+    const draft = await storedContent(trx, id);
+    const published = album.current_release_id ? await storedContent(trx, id, album.current_release_id) : null;
+    if (input.publish)
+      ensure(
+        published &&
+          (await sql`SELECT album_id FROM gallery.published_album WHERE album_id=${id}::uuid`.execute(trx)).rows.length,
+        '请先发布相册并确认所有上级已公开。当前可保存草稿。',
+        409,
+      );
+    const saved = mergeAlbumItem(draft, incoming, target, ...(published ? [published] : []));
+    await saveAlbumInTransaction(trx, user, id, input, saved.content);
+    if (!input.publish || !published) {
+      if (published)
+        await sql`UPDATE gallery.album SET has_unpublished_changes=${!sameAlbumContent(saved.content, published)} WHERE id=${id}::uuid`.execute(
+          trx,
+        );
+      return;
+    }
+    const next = mergeAlbumItem(published, incoming, target, draft);
+    const members = next.content.photos.filter((p) => next.ids.has(p.id));
+    const qualified = await sources(
+      trx,
+      members.map((p) => p.asset),
+    );
+    for (const member of members)
+      for (const variant of ['preview', 'thumbnail'] as const) {
+        try {
+          const bytes = await readSourceDerivative(trx, member.asset, variant, root);
+          const info = await sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' }).metadata();
+          ensure(info.width && info.height, '图片不可用。');
+        } catch {
+          ensure(false, '照片预览不可用，请检查 Immich；本次修改尚未保存或发布。', 409);
+        }
+      }
+    const release = randomUUID();
+    // Copy album-level fields from the PUBLIC version, including privacy policy and ancestry.
+    await sql`INSERT INTO gallery.album_release(id,album_id,release_number,source_draft_version,published_by,parent_album_id,position,title,summary,description_document,cover_asset_id,cover_focal_point,location_mode,show_exif,seo_title,seo_description)
+      SELECT ${release}::uuid,r.album_id,(SELECT max(release_number)+1 FROM gallery.album_release WHERE album_id=${id}::uuid),(SELECT version FROM gallery.album_draft WHERE album_id=${id}::uuid),${user.id}::uuid,r.parent_album_id,r.position,r.title,r.summary,
+      jsonb_set(r.description_document,'{groups}',${JSON.stringify(next.content.groups)}::jsonb),${next.content.cover || null}::uuid,r.cover_focal_point,r.location_mode,r.show_exif,r.seo_title,r.seo_description
+      FROM gallery.album_release r WHERE r.id=${album.current_release_id}::uuid`.execute(trx);
+    const values = next.content.photos.map((p, position) => {
+      const s = qualified.find((s) => s.asset_id === p.asset);
+      return {
+        ...p,
+        position,
+        affected: next.ids.has(p.id),
+        group_id: p.group || null,
+        exif:
+          s && published.showExif
+            ? {
+                make: s.make,
+                model: s.model,
+                lensModel: s.lens_model,
+                fNumber: s.f_number,
+                focalLength: s.focal_length,
+                iso: s.iso,
+                exposureTime: s.exposure_time,
+              }
+            : null,
+      };
+    });
+    await sql`INSERT INTO gallery.album_release_photo(release_id,photo_id,immich_asset_id,position,title,description,alt_text,location_mode,public_exif,group_id,description_format)
+      SELECT ${release}::uuid,x.id,x.asset,x.position,x.title,x.description,x.alt,x.location,CASE WHEN x.affected THEN x.exif ELSE old.public_exif END,x.group_id,'markdown'
+      FROM jsonb_to_recordset(${JSON.stringify(values)}::jsonb) AS x(id uuid,asset uuid,position integer,title text,description text,alt text,location text,exif jsonb,group_id uuid,affected boolean)
+      LEFT JOIN gallery.album_release_photo old ON old.release_id=${album.current_release_id}::uuid AND old.photo_id=x.id`.execute(
+      trx,
+    );
+    await sql`UPDATE gallery.album SET current_release_id=${release}::uuid,has_unpublished_changes=${!sameAlbumContent(saved.content, next.content)},version=version+1,last_published_at=now(),updated_at=now() WHERE id=${id}::uuid`.execute(
+      trx,
+    );
+    await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);
+    await audit(trx, user, 'album.publish-item', id);
+  });
+}
+
 export async function publishAlbum(
   db: Db,
   user: GalleryUser,
@@ -371,7 +504,7 @@ export async function publishAlbum(
     await sql`INSERT INTO gallery.album_release_photo(release_id,photo_id,immich_asset_id,position,title,description,alt_text,location_mode,public_exif,group_id,description_format) SELECT ${release}::uuid,p.id,p.immich_asset_id,p.position,p.title,p.description,p.alt_text,p.location_mode,x.exif,p.group_id,p.description_format FROM gallery.album_photo p LEFT JOIN jsonb_to_recordset(${JSON.stringify(exifs)}::jsonb) AS x(asset uuid,exif jsonb) ON x.asset=p.immich_asset_id WHERE p.album_id=${id}::uuid`.execute(
       trx,
     );
-    await sql`UPDATE gallery.album SET status='published',current_release_id=${release}::uuid,version=version+1,first_published_at=coalesce(first_published_at,now()),last_published_at=now(),offline_at=NULL,updated_at=now() WHERE id=${id}::uuid`.execute(
+    await sql`UPDATE gallery.album SET has_unpublished_changes=false,status='published',current_release_id=${release}::uuid,version=version+1,first_published_at=coalesce(first_published_at,now()),last_published_at=now(),offline_at=NULL,updated_at=now() WHERE id=${id}::uuid`.execute(
       trx,
     );
     await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);

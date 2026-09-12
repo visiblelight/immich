@@ -11,6 +11,7 @@ import {
   picker,
   publishAlbum,
   saveAlbum,
+  saveAlbumItem,
   saveSite,
   setAlbumAvailability,
 } from '@gallery/db/server';
@@ -99,6 +100,9 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
         return json({ id: await createAlbum(app.db, user, input) });
       case 'save':
         await saveAlbum(app.db, user, uuid(input.id), input);
+        break;
+      case 'item':
+        await saveAlbumItem(app.db, user, uuid(input.id), input, app.root);
         break;
       case 'delete':
         await deleteDraftAlbum(app.db, user, uuid(input.id), input);

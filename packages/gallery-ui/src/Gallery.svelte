@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import { captureTime } from '../../gallery-core/src/capture-time';
   import Markdown from './Markdown.svelte';
   import { documentMarkdown } from '../../gallery-core/src/markdown';
   import type { DisplayAlbum, DisplayPhoto } from '../../gallery-core/src/content';
@@ -28,6 +29,16 @@
   } = $props();
   let photo = $state<DisplayPhoto | null>(null);
   let viewer: HTMLDialogElement;
+  let showVariants = $state(true);
+  const photoTitle = (p: DisplayPhoto) => (p.group ? p.group.title || '未命名照片组' : p.title || '未命名照片');
+  $effect(() => {
+    const selectedId = photo?.id;
+    if (selectedId)
+      void tick().then(() => {
+        for (const selector of ['.group-variants .chosen', '.album-strip .chosen'])
+          viewer?.querySelector(selector)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      });
+  });
   let imageViewport = $state<HTMLDivElement>();
   let zoom = $state(false),
     touchX = 0,
@@ -209,8 +220,8 @@
       <div class="timeline-layout">
         <div class="timeline-photos">
           {#each items as p, index (p.id)}{@const month =
-              (feed.sort === 'added' ? p.addedAt : p.takenAt)?.slice(0, 7) || 'unknown'}
-            {#if index === 0 || month !== ((feed.sort === 'added' ? items[index - 1]?.addedAt : items[index - 1]?.takenAt)?.slice(0, 7) || 'unknown')}<h2
+              (feed.sort === 'added' ? p.addedAt : p.localTakenAt)?.slice(0, 7) || 'unknown'}
+            {#if index === 0 || month !== ((feed.sort === 'added' ? items[index - 1]?.addedAt : items[index - 1]?.localTakenAt)?.slice(0, 7) || 'unknown')}<h2
                 class="month-heading"
               >
                 {month === 'unknown' ? '日期未知' : month.replace('-', ' 年 ') + ' 月'}
@@ -222,7 +233,7 @@
                 width="600"
                 height="450"
                 loading="lazy"
-              /><span>{p.title || p.group?.title || p.albumTitle}{p.group ? ' · 照片组' : ''}</span></button
+              /><span>{photoTitle(p)}{p.group ? ' · 照片组' : ''}</span></button
             >
           {/each}
           {#if !items.length}<p class="empty">这里还没有公开照片。</p>{/if}
@@ -343,13 +354,26 @@
           : ''}</span
       >
       <div>
+        {#if variants.length}<button onclick={() => (showVariants = !showVariants)}
+            >{showVariants ? '收起组内视角' : '展开组内视角'}</button
+          >{/if}
         {#if !preview}<a class="photo-permalink" href={photoLink(photo)}>照片直链</a>{/if}
         <button onclick={() => (zoom = !zoom)}>{zoom ? '适应屏幕' : '放大查看'}</button><button
           onclick={() => (info = !info)}>{info ? '隐藏信息' : '显示信息'}</button
-        ><button aria-label="关闭大图" onclick={() => viewer.close()}>×</button>
+        ><button class="viewer-close" aria-label="关闭大图" onclick={() => viewer.close()}>×</button>
       </div>
     </div>
-    <div class="viewer-body" class:without-info={!info}>
+    <div class="viewer-body" class:with-variants={variants.length > 0 && showVariants} class:without-info={!info}>
+      {#if variants.length && showVariants}<div class="group-variants" aria-label="组内视角">
+          <span>组内视角<br />↑ ↓ 切换</span><button aria-label="上一个视角" onclick={() => angle(-1)}>↑</button
+          >{#each variants as p, index}<button
+              class:chosen={p.id === photo.id}
+              aria-label={`查看组内第 ${index + 1} 张`}
+              aria-pressed={p.id === photo.id}
+              onclick={() => choose(p)}><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
+            >{/each}
+          <button aria-label="下一个视角" onclick={() => angle(1)}>↓</button>
+        </div>{/if}
       <div
         role="group"
         aria-label="照片画面"
@@ -373,32 +397,21 @@
       >
         <img src={photo.src} alt={photo.alt || photo.title || '照片'} />
         <div class="viewer-arrows">
-          <button aria-label="上一张照片" onclick={() => shift(-1)}>←</button><button
-            aria-label="下一张照片"
+          <button aria-label="上一个相册项目" onclick={() => shift(-1)}>←</button><button
+            aria-label="下一个相册项目"
             onclick={() => shift(1)}>→</button
           >
         </div>
-        {#if variants.length}<div class="group-variants" aria-label="组内视角">
-            <span>不同角度 · 上下键切换</span>{#each variants as p, index}<button
-                class:chosen={p.id === photo.id}
-                aria-label={`查看组内第 ${index + 1} 张`}
-                aria-pressed={p.id === photo.id}
-                onclick={() => choose(p)}
-                ><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
-              >{/each}
-          </div>{/if}
       </div>
       {#if info}<aside class="photo-information">
           <section class="work-description">
-            <h2>{photo.group?.title || photo.title || '未命名照片'}</h2>
-            {#if photo.group?.description}<Markdown text={photo.group.description} />{/if}
-            {#if photo.group && photo.title && photo.title !== photo.group.title}<h3 class="angle-title">
-                {photo.title}
-              </h3>{/if}
-            {#if photo.description}<Markdown text={photo.description} />{/if}
+            <h2>{photoTitle(photo)}</h2>
+            {#if photo.group}<Markdown text={photo.group.description} />{:else if photo.description}<Markdown
+                text={photo.description}
+              />{/if}
           </section>
           <section class="capture-facts">
-            <p><span>拍摄日期</span><strong>{date(photo.takenAt)}</strong></p>
+            <p><span>{captureTime(photo).label}</span><strong>{captureTime(photo).value}</strong></p>
             {#if feed?.sort === 'added' && photo.addedAt}<p>
                 <span>加入 Gallery</span><strong
                   >{date(photo.addedAt)}{photo.addedEstimated ? '（历史估算）' : ''}</strong
@@ -449,6 +462,23 @@
             </section>{/if}
         </aside>{/if}
     </div>
+    <nav class="album-navigation" aria-label={feed ? '当前相片列表' : '同相册项目'}>
+      <div class="strip-heading">
+        <button onclick={() => shift(-1)}>← 上一项</button><span
+          >{feed ? '当前相片排序' : '同相册照片与照片组'} · ← → 切换</span
+        ><button onclick={() => shift(1)}>下一项 →</button>
+      </div>
+      <div class="album-strip">
+        {#each items as p, index (p.id)}<button
+            class:chosen={itemIndex(photo) === index}
+            aria-current={itemIndex(photo) === index ? 'true' : undefined}
+            aria-label={`查看第 ${index + 1} 项：${photoTitle(p)}`}
+            onclick={() => choose(p)}
+            ><img loading="lazy" src={p.thumbnail} alt="" /><span>{index + 1}{p.group && !feed ? ' · 组' : ''}</span
+            ></button
+          >{/each}
+      </div>
+    </nav>
   {/if}
 </dialog>
 
@@ -585,12 +615,6 @@
     height: 48px;
     object-fit: contain;
   }
-  .full-image.has-variants > img {
-    height: calc(100dvh - 195px);
-  }
-  .full-image.has-variants .viewer-arrows {
-    bottom: 100px;
-  }
   .full-image.zoomed {
     overflow: auto;
     height: calc(100dvh - 180px);
@@ -602,11 +626,6 @@
   }
   .full-image.zoomed .viewer-arrows {
     display: none;
-  }
-  .viewer-body aside .angle-title {
-    font-size: 15px;
-    letter-spacing: 0;
-    color: #dce6d5;
   }
   @media (max-width: 760px) {
     .timeline-layout {
@@ -626,7 +645,7 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .group-variants span {
-      display: none;
+      display: block;
     }
     .viewer-toolbar {
       flex-wrap: wrap;
@@ -904,7 +923,7 @@
     padding: 8px 12px;
     font-size: 13px;
   }
-  .viewer-toolbar button:last-child {
+  .viewer-toolbar .viewer-close {
     font-size: 25px;
   }
   .viewer-body {
@@ -1093,5 +1112,161 @@
   .viewer-body .full-image.zoomed > img {
     height: auto;
     max-height: none;
+  }
+  .viewer-body {
+    min-height: 0;
+    height: calc(100dvh - 225px);
+  }
+  .viewer-body.with-variants {
+    grid-template-columns: 92px minmax(0, 1fr) 300px;
+  }
+  .viewer-body.with-variants.without-info {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+  .viewer-body .full-image,
+  .viewer-body .full-image.zoomed {
+    height: 100%;
+    min-height: 0;
+  }
+  .viewer-body .full-image > img,
+  .viewer-body .full-image.has-variants > img {
+    height: 100%;
+    max-height: none;
+  }
+  .viewer-body .full-image.zoomed > img {
+    height: auto;
+  }
+  .viewer-body aside {
+    max-height: none;
+    min-height: 0;
+    box-sizing: border-box;
+  }
+  .group-variants {
+    flex-direction: column;
+    padding: 10px 8px;
+    border-top: 0;
+    border-right: 1px solid #384433;
+    min-height: 0;
+    gap: 8px;
+  }
+  .group-variants span {
+    text-align: center;
+    line-height: 1.5;
+  }
+  .group-variants button {
+    color: #dae5d3;
+  }
+  .album-navigation {
+    display: block;
+    padding: 8px 16px 12px;
+    border-top: 1px solid #384433;
+    background: #171d18;
+  }
+  .strip-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #adbea1;
+  }
+  .strip-heading button {
+    background: none;
+    color: #d9e3d1;
+    border: 0;
+    padding: 5px;
+  }
+  .album-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 5px 0;
+  }
+  .album-strip button {
+    position: relative;
+    padding: 2px;
+    border: 1px solid transparent;
+    background: #263021;
+    color: #e1eadc;
+    flex: 0 0 76px;
+  }
+  .album-strip button.chosen {
+    border-color: #c0d2af;
+    background: #435239;
+  }
+  .album-strip img {
+    width: 70px;
+    height: 48px;
+    object-fit: contain;
+    display: block;
+  }
+  .album-strip span {
+    display: block;
+    font-size: 10px;
+  }
+  @media (max-width: 760px) {
+    .viewer-body,
+    .viewer-body.with-variants,
+    .viewer-body.without-info {
+      height: auto;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .viewer-body.with-variants,
+    .viewer-body.with-variants.without-info {
+      grid-template-columns: 64px minmax(0, 1fr);
+    }
+    .viewer-body .full-image,
+    .viewer-body .full-image.zoomed {
+      height: 54dvh;
+    }
+    .viewer-body.without-info .full-image > img {
+      height: 100%;
+    }
+    .viewer-body .photo-information {
+      grid-column: 1 / -1;
+    }
+    .group-variants {
+      max-height: 54dvh;
+      padding: 6px 3px;
+    }
+    .group-variants img {
+      width: 48px;
+      height: 40px;
+    }
+    .group-variants span {
+      font-size: 10px;
+    }
+    .viewer-toolbar > div {
+      flex-wrap: wrap;
+    }
+    .album-navigation {
+      position: sticky;
+      bottom: 0;
+      padding: 5px 8px;
+      z-index: 2;
+    }
+    .strip-heading {
+      font-size: 10px;
+    }
+  }
+  @media (max-width: 760px) {
+    .viewer-toolbar {
+      position: relative;
+      padding: 12px 42px 8px 12px;
+      gap: 6px;
+    }
+    .viewer-toolbar > span {
+      flex-basis: 100%;
+    }
+    .viewer-toolbar button {
+      font-size: 12px;
+      padding: 6px 7px;
+    }
+    .viewer-toolbar .viewer-close {
+      position: absolute;
+      right: 5px;
+      top: 4px;
+      font-size: 25px;
+    }
   }
 </style>

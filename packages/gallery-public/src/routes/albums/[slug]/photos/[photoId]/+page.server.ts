@@ -12,8 +12,8 @@ export async function load({ params }: { params: { slug: string; photoId: string
     return {
       ...catalog,
       photoId: photo.id,
-      photoTitle: photo.title,
-      photoDescription: photo.description,
+      photoTitle: photo.group ? photo.group.title : photo.title,
+      photoDescription: photo.group ? photo.group.description : photo.description,
       origin: app.origin,
     };
   } catch (e) {

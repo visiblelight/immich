@@ -15,8 +15,8 @@ GRANT CREATE ON SCHEMA gallery TO gallery_view_owner;
 GRANT USAGE ON SCHEMA public TO gallery_view_owner;
 GRANT gallery_view_owner TO gallery_migrator;
 GRANT SELECT (id, "ownerId", type, status, "deletedAt", "isOffline", visibility, "isEdited", width, height,
- "fileCreatedAt", "originalFileName", thumbhash, "updateId") ON public.asset TO gallery_view_owner;
-GRANT SELECT ("assetId", latitude, longitude, city, state, country, description, make, model, "lensModel", "fNumber", "focalLength", iso, "exposureTime")
+ "fileCreatedAt", "localDateTime", "originalFileName", thumbhash, "updateId") ON public.asset TO gallery_view_owner;
+GRANT SELECT ("assetId", latitude, longitude, city, state, country, description, make, model, "lensModel", "fNumber", "focalLength", iso, "exposureTime", "timeZone")
  ON public.asset_exif TO gallery_view_owner;
 GRANT SELECT (id, "assetId", type, path, "isEdited", "updateId") ON public.asset_file TO gallery_view_owner;
 GRANT SELECT (id, "albumName", "deletedAt") ON public.album TO gallery_view_owner;

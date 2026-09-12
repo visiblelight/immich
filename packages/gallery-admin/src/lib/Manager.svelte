@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import { sameAlbumContent } from '@gallery/core';
   import type { AlbumContent, DraftPhoto, GallerySite, GalleryUser, ManagedAlbum, SourcePhoto } from '@gallery/core';
   import './design/admin.css';
   import { MarkdownEditor } from '@gallery/ui';
@@ -18,7 +19,14 @@
   let search = $state('');
   let filter = $state('all');
   let active = $derived(workspaceData.albums.find((a) => a.id === id));
-  let dirty = $derived(!!active && JSON.stringify(content) !== JSON.stringify(active.draft));
+  let dirty = $derived.by(() => {
+    if (!active || !content) return false;
+    try {
+      return !sameAlbumContent(content, active.draft);
+    } catch {
+      return true;
+    }
+  });
   let dialog: HTMLDialogElement;
   let modal = $state('');
   let newTitle = $state('');
@@ -38,6 +46,8 @@
   let sourceBusy = $state(false);
   let requestId = 0;
   let edited = $state<DraftPhoto | null>(null);
+  let photoBaseline = '';
+  let discardPhoto = $state(false);
   let action = $state('publish');
   let siteName = $state(untrack(() => initial.site.name));
   let tagline = $state(untrack(() => initial.site.tagline));
@@ -53,7 +63,7 @@
         ? '已下线'
         : !a.visible
           ? '父级未公开'
-          : a.draftVersion !== a.releaseVersion
+          : (a.hasUnpublishedChanges ?? a.draftVersion !== a.releaseVersion)
             ? '有待发布修改'
             : '已发布';
   const below = (candidate: ManagedAlbum, parent: string, published = false) => {
@@ -155,7 +165,7 @@
     message = '';
   }
   function unload(e: BeforeUnloadEvent) {
-    if (dirty) {
+    if (dirty || (modal === 'photo' && JSON.stringify(edited) !== photoBaseline)) {
       e.preventDefault();
       e.returnValue = '';
     }
@@ -165,7 +175,12 @@
     await tick();
     dialog.showModal();
   }
-  function close() {
+  function close(force = false) {
+    if (busy && modal === 'photo') return;
+    if (!force && modal === 'photo' && JSON.stringify(edited) !== photoBaseline) {
+      discardPhoto = true;
+      return;
+    }
     dialog.close();
     modal = '';
   }
@@ -263,7 +278,30 @@
   }
   function editPhoto(p: DraftPhoto) {
     edited = copy(p);
+    photoBaseline = JSON.stringify(edited);
+    discardPhoto = false;
+    failed = false;
+    message = '';
     void open('photo');
+  }
+  async function saveItem(candidate: AlbumContent, target: string, publish: boolean) {
+    // Keep the complete local draft: refreshing versions must not discard other unsaved edits.
+    await api('item', { ...versions(), target, publish, content: candidate });
+    await refresh();
+    content = candidate;
+    message = publish ? '所选照片／照片组已发布，其他草稿修改仍保留。' : '所选照片／照片组草稿已保存。';
+    failed = false;
+  }
+  async function savePhoto(publish: boolean) {
+    if (!edited || !content) return;
+    await run(async () => {
+      const candidate = copy(content!);
+      candidate.photos = candidate.photos.map((p) => (p.id === edited!.id ? copy(edited!) : p));
+      await saveItem(candidate, edited!.id, publish);
+      photoBaseline = JSON.stringify(edited);
+      dialog.close();
+      modal = '';
+    });
   }
   async function confirmAction() {
     await run(async () => {
@@ -342,7 +380,8 @@
         <div><span>前台可见</span><strong>{workspaceData.albums.filter((a) => a.visible).length}</strong></div>
         <div>
           <span>待发布草稿 / 修改</span><strong
-            >{workspaceData.albums.filter((a) => a.draftVersion !== a.releaseVersion).length}</strong
+            >{workspaceData.albums.filter((a) => a.hasUnpublishedChanges ?? a.draftVersion !== a.releaseVersion)
+              .length}</strong
           >
         </div>
       </div>
@@ -405,7 +444,7 @@
             onclick={() => {
               action = 'publish';
               void open('confirm');
-            }}>{active.status === 'draft' ? '发布相册' : '发布更新'} ↗</button
+            }}>发布相册全部修改 ↗</button
           >
         </div>
       </header>
@@ -438,7 +477,13 @@
               </div>
             </section>
             <section class="panel content-panel">
-              {#key id}<AlbumPhotosEditor bind:content {editPhoto} {pick} />{/key}
+              {#key id}<AlbumPhotosEditor
+                  bind:content
+                  {editPhoto}
+                  {pick}
+                  {saveItem}
+                  canPublish={!!active.visible}
+                />{/key}
             </section>
           {:else if tab === 'story'}<section class="panel content-panel">
               <div class="section-heading">
@@ -648,6 +693,10 @@
   bind:this={dialog}
   class:wide-dialog={modal === 'picker' || modal === 'photo'}
   aria-labelledby="manager-modal"
+  oncancel={(e) => {
+    e.preventDefault();
+    close();
+  }}
   onclose={() => (modal = '')}
 >
   {#if modal}<div class="dialog-heading">
@@ -669,7 +718,7 @@
                       : '恢复公开版本'}
         </h2>
       </div>
-      <button class="close-button" aria-label="关闭弹窗" disabled={busy} onclick={close}>×</button>
+      <button class="close-button" aria-label="关闭弹窗" disabled={busy} onclick={() => close()}>×</button>
     </div>
     {#if failed && message}<p class="error modal-error" role="alert">{message}</p>{/if}
     {#if modal === 'create'}<form
@@ -687,8 +736,9 @@
           ></label
         >
         <div class="dialog-actions">
-          <button type="button" disabled={busy} onclick={close}>取消</button><button class="primary" disabled={busy}
-            >创建并编辑 →</button
+          <button type="button" disabled={busy} onclick={() => close()}>取消</button><button
+            class="primary"
+            disabled={busy}>创建并编辑 →</button
           >
         </div>
       </form>
@@ -778,14 +828,21 @@
           >
         </div>
       </footer>
-    {:else if modal === 'photo' && edited}<div class="photo-editor">
+    {:else if modal === 'photo' && edited}
+      {#if discardPhoto}<div class="discard-edit" role="alert">
+          <p>照片修改尚未保存。</p>
+          <button onclick={() => (discardPhoto = false)}>继续编辑</button><button onclick={() => close(true)}
+            >放弃修改并关闭</button
+          >
+        </div>{/if}
+      <div class="photo-editor">
         <div class="photo-editor-image">
           <img src={media(edited.asset, 'preview')} alt={edited.alt || '照片'} />
           <p>{cache[edited.asset]?.filename ?? 'Immich 来源照片'}</p>
         </div>
         <div class="form-panel">
           <label>照片标题<input maxlength="200" bind:value={edited.title} /></label><MarkdownEditor
-            label={edited.group ? '角度说明' : '照片描述'}
+            label="照片描述"
             bind:value={edited.description}
             maxLength={50000}
             filename="photo.md"
@@ -808,15 +865,11 @@
         </div>
       </div>
       <div class="dialog-actions">
-        <button onclick={close}>取消</button><button
-          class="primary"
-          onclick={() => {
-            const index = content!.photos.findIndex((p) => p.id === edited!.id);
-            content!.photos[index] = copy(edited!);
-            close();
-          }}>应用到草稿</button
-        >
+        <button disabled={busy} onclick={() => close()}>取消</button>
+        <button disabled={busy} onclick={() => savePhoto(false)}>保存草稿</button>
+        <button class="primary" disabled={busy || !active?.visible} onclick={() => savePhoto(true)}>保存并发布</button>
       </div>
+      {#if !active?.visible}<p class="footnote">请先发布相册并确认所有上级已公开；现在可以保存照片草稿。</p>{/if}
     {:else if modal === 'confirm' && active}<div class="dialog-body">
         <h3>{active.draft.title}</h3>
         <p>
@@ -842,7 +895,7 @@
             {action === 'publish' ? '发布时会重新校验照片来源、封面、版本和父级状态。' : '影响范围按公开层级计算。'}
           </p>{/if}
         <div class="dialog-actions">
-          <button disabled={busy} onclick={close}>取消</button><button
+          <button disabled={busy} onclick={() => close()}>取消</button><button
             class:danger={action === 'offline' || action === 'delete'}
             class:primary={action !== 'offline' && action !== 'delete'}
             disabled={busy}

@@ -22,7 +22,7 @@ export async function publicPhotoFeed(
       FROM gallery.published_photo p JOIN gallery.published_album a ON a.album_id=p.album_id
     ), photos AS (
       SELECT *,${sort === 'added' ? sql`first_added_at` : sql`taken_at`} AS sort_date,
-      coalesce(to_char(${sort === 'added' ? sql`first_added_at` : sql`taken_at`} AT TIME ZONE 'UTC','YYYY-MM'),'unknown') AS month
+      coalesce(to_char(${sort === 'added' ? sql`first_added_at` : sql`local_taken_at`} AT TIME ZONE 'UTC','YYYY-MM'),'unknown') AS month
       FROM visible WHERE choice=1
     )`;
       const months = (
@@ -47,6 +47,8 @@ export async function publicPhotoFeed(
         latitude: number | null;
         longitude: number | null;
         taken_at: Date | null;
+        local_taken_at: Date | null;
+        time_zone: string | null;
         first_added_at: Date | null;
         estimated: boolean;
         group_id: string | null;
@@ -69,6 +71,8 @@ export async function publicPhotoFeed(
         latitude: p.latitude,
         longitude: p.longitude,
         takenAt: p.taken_at?.toISOString() ?? null,
+        localTakenAt: p.local_taken_at?.toISOString() ?? null,
+        timeZone: p.time_zone,
         addedAt: p.first_added_at?.toISOString() ?? null,
         addedEstimated: p.estimated,
         albumId: p.album_id,
