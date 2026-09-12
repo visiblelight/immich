@@ -14,6 +14,8 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [沉浸看图 ADR 0009](decisions/0009-immersive-viewer.md) | 简化切换提示、完整照片沉浸查看及说明分区 |
+| [沉浸看图交付记录](delivery/immersive-viewer.md) | 已实现交互、桌面与手机布局验证 |
 | [Immich 图片画质 ADR 0008](decisions/0008-immich-image-quality.md) | 1080p／4K 衍生图引用、无二次压缩及元数据清理 |
 | [Immich 展示图交付记录](delivery/immich-image-quality.md) | 像素与色彩验证、现有来源尺寸及预览入口 |
 | [后台交互 ADR 0007](decisions/0007-admin-navigation-and-inventory.md) | 统一导航、作品统计、相册树及新相册位置默认值 |

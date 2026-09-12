@@ -14,6 +14,7 @@
       initialPage?: number;
     };
   } = $props();
+  let immersive = $state(false);
   function navigatePhoto(photo: DisplayPhoto | null, replace = false) {
     if (!data.active) return;
     const base = `/albums/${data.active.slug}`;
@@ -48,4 +49,5 @@
     initialPhotoId={data.photoId}
     initialPage={data.initialPage ?? 1}
     {navigatePhoto}
+    bind:immersive
   />{/key}

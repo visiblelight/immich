@@ -15,6 +15,7 @@
     navigatePhoto,
     feed,
     navigateBoundary,
+    immersive = $bindable(false),
   }: {
     site: { name: string; tagline: string; contactLinks?: import('../../gallery-core/src/content').ContactLink[] };
     albums: DisplayAlbum[];
@@ -25,6 +26,7 @@
     initialPage?: number;
     navigatePhoto?: (photo: DisplayPhoto | null, replace?: boolean) => void;
     navigateBoundary?: (offset: number) => void;
+    immersive?: boolean;
     feed?: { months: { month: string; count: number }[]; sort: string; month: string; page: number; total: number };
   } = $props();
   let photo = $state<DisplayPhoto | null>(null);
@@ -39,10 +41,16 @@
           viewer?.querySelector(selector)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       });
   });
-  let imageViewport = $state<HTMLDivElement>();
-  let zoom = $state(false),
-    touchX = 0,
-    touchY = 0;
+  let immersiveButton = $state<HTMLButtonElement>();
+  let touchX = 0,
+    touchY = 0,
+    swiped = false;
+  async function setImmersive(value: boolean) {
+    immersive = value;
+    await tick();
+    if (value) viewer?.querySelector<HTMLButtonElement>('.immersive-exit')?.focus({ preventScroll: true });
+    else immersiveButton?.focus({ preventScroll: true });
+  }
   let items = $derived.by(() => {
     const photos = active?.photos ?? [];
     if (feed) return photos;
@@ -115,6 +123,7 @@
   });
   const photoLink = (p: DisplayPhoto) => `/albums/${p.albumSlug || active?.slug}/photos/${p.id}`;
   function closePhoto() {
+    immersive = false;
     photo = null;
     if (initialPhotoId && navigatePhoto) navigatePhoto(null, true);
   }
@@ -129,7 +138,6 @@
   }
   function choose(next: DisplayPhoto | null) {
     if (!next) return;
-    zoom = false;
     if (!preview && navigatePhoto) navigatePhoto(next, true);
     else photo = next;
   }
@@ -151,13 +159,6 @@
   function keys(e: KeyboardEvent) {
     if (!viewer?.open || !e.key.startsWith('Arrow')) return;
     e.preventDefault();
-    if (zoom) {
-      imageViewport?.scrollBy({
-        left: e.key === 'ArrowRight' ? 100 : e.key === 'ArrowLeft' ? -100 : 0,
-        top: e.key === 'ArrowDown' ? 100 : e.key === 'ArrowUp' ? -100 : 0,
-      });
-      return;
-    }
     if (e.key === 'ArrowRight') shift(1);
     if (e.key === 'ArrowLeft') shift(-1);
     if (e.key === 'ArrowDown') angle(1);
@@ -337,15 +338,29 @@
               ><button disabled={(page + 1) * 48 >= items.length} onclick={() => page++}>下一页</button>
             </div>{/if}
         </div>
-        <aside>
-          <div class="desktop-story">{@render story()}</div>
+        <aside class="album-story" aria-label="相册介绍">
+          <div class="desktop-story">
+            <h2 class="story-heading">相册介绍</h2>
+            {@render story()}
+          </div>
           <details class="mobile-story"><summary>相册介绍 · 展开阅读</summary>{@render story()}</details>
         </aside>
       </div>{/if}
   </main>
   <footer>© {new Date().getFullYear()} {site.name}</footer>
 </div>
-<dialog bind:this={viewer} aria-label="照片大图" onclose={closePhoto}>
+<dialog
+  bind:this={viewer}
+  class:immersive
+  aria-label="照片大图"
+  onclose={closePhoto}
+  oncancel={(e) => {
+    if (immersive) {
+      e.preventDefault();
+      void setImmersive(false);
+    }
+  }}
+>
   {#if photo}<div class="viewer-toolbar">
       <span
         >{feed ? '相片' : '相册项目'}
@@ -358,50 +373,58 @@
             >{showVariants ? '收起组内视角' : '展开组内视角'}</button
           >{/if}
         {#if !preview}<a class="photo-permalink" href={photoLink(photo)}>照片直链</a>{/if}
-        <button onclick={() => (zoom = !zoom)}>{zoom ? '适应屏幕' : '放大查看'}</button><button
-          onclick={() => (info = !info)}>{info ? '隐藏信息' : '显示信息'}</button
-        ><button class="viewer-close" aria-label="关闭大图" onclick={() => viewer.close()}>×</button>
+        <button
+          bind:this={immersiveButton}
+          title="隐藏全部界面，点击照片或按 Esc 返回"
+          onclick={() => setImmersive(true)}>沉浸查看</button
+        ><button onclick={() => (info = !info)}>{info ? '隐藏信息' : '显示信息'}</button><button
+          class="viewer-close"
+          aria-label="关闭大图"
+          onclick={() => viewer.close()}>×</button
+        >
       </div>
     </div>
     <div class="viewer-body" class:with-variants={variants.length > 0 && showVariants} class:without-info={!info}>
       {#if variants.length && showVariants}<div class="group-variants" aria-label="组内视角">
-          <span>组内视角<br />↑ ↓ 切换</span><button aria-label="上一个视角" onclick={() => angle(-1)}>↑</button
-          >{#each variants as p, index}<button
+          <span title="使用上下方向键切换">组内视角</span>{#each variants as p, index}<button
               class:chosen={p.id === photo.id}
               aria-label={`查看组内第 ${index + 1} 张`}
               aria-pressed={p.id === photo.id}
               onclick={() => choose(p)}><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
             >{/each}
-          <button aria-label="下一个视角" onclick={() => angle(1)}>↓</button>
         </div>{/if}
       <div
         role="group"
         aria-label="照片画面"
         class="full-image"
         class:has-variants={variants.length > 0}
-        class:zoomed={zoom}
-        bind:this={imageViewport}
         onpointerdown={(e) => {
           touchX = e.clientX;
           touchY = e.clientY;
+          swiped = false;
         }}
         onpointerup={(e) => {
-          if (
-            !zoom &&
-            e.pointerType === 'touch' &&
-            Math.abs(e.clientX - touchX) > 60 &&
-            Math.abs(e.clientY - touchY) < 60
-          )
-            shift(e.clientX < touchX ? 1 : -1);
+          if (e.pointerType !== 'touch') return;
+          const dx = e.clientX - touchX,
+            dy = e.clientY - touchY;
+          if (Math.abs(dx) > 60 && Math.abs(dy) < 60) {
+            swiped = true;
+            shift(dx < 0 ? 1 : -1);
+          } else if (immersive && variants.length > 1 && Math.abs(dy) > 60 && Math.abs(dx) < 60) {
+            swiped = true;
+            angle(dy < 0 ? 1 : -1);
+          }
         }}
       >
         <img src={photo.src} alt={photo.alt || photo.title || '照片'} />
-        <div class="viewer-arrows">
-          <button aria-label="上一个相册项目" onclick={() => shift(-1)}>←</button><button
-            aria-label="下一个相册项目"
-            onclick={() => shift(1)}>→</button
-          >
-        </div>
+        {#if immersive}<button
+            class="immersive-exit"
+            aria-label="退出沉浸模式"
+            title="点击返回，Esc 退出"
+            onclick={() => {
+              if (!swiped) void setImmersive(false);
+            }}
+          ></button>{/if}
       </div>
       {#if info}<aside class="photo-information">
           <section class="work-description">
@@ -464,9 +487,9 @@
     </div>
     <nav class="album-navigation" aria-label={feed ? '当前相片列表' : '同相册项目'}>
       <div class="strip-heading">
-        <button onclick={() => shift(-1)}>← 上一项</button><span
-          >{feed ? '当前相片排序' : '同相册照片与照片组'} · ← → 切换</span
-        ><button onclick={() => shift(1)}>下一项 →</button>
+        <button aria-label="上一项" title="上一项（←）" onclick={() => shift(-1)}>←</button><span
+          >{feed ? '当前相片列表' : '同相册作品'}</span
+        ><button aria-label="下一项" title="下一项（→）" onclick={() => shift(1)}>→</button>
       </div>
       <div class="album-strip">
         {#each items as p, index (p.id)}<button
@@ -614,18 +637,6 @@
     width: 64px;
     height: 48px;
     object-fit: contain;
-  }
-  .full-image.zoomed {
-    overflow: auto;
-    height: calc(100dvh - 180px);
-  }
-  .full-image.zoomed > img {
-    width: 200%;
-    height: auto;
-    max-width: none;
-  }
-  .full-image.zoomed .viewer-arrows {
-    display: none;
   }
   @media (max-width: 760px) {
     .timeline-layout {
@@ -981,24 +992,6 @@
     text-align: right;
     overflow-wrap: anywhere;
   }
-  .viewer-arrows {
-    position: absolute;
-    bottom: 16px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: center;
-    gap: 14px;
-  }
-  .viewer-arrows button {
-    border: 1px solid #778c6677;
-    border-radius: 50%;
-    width: 38px;
-    height: 38px;
-    background: #162112b8;
-    color: white;
-    font-size: 18px;
-  }
   :global(a:focus-visible),
   button:focus-visible {
     outline: 2px solid #789968;
@@ -1083,10 +1076,6 @@
     .viewer-body.without-info .full-image.has-variants > img {
       height: calc(100dvh - 195px);
     }
-    .full-image.zoomed > img {
-      height: auto;
-      max-height: none;
-    }
     .viewer-body aside {
       max-height: none;
       padding: 25px;
@@ -1108,14 +1097,10 @@
       max-height: calc(100dvh - 16px);
     }
   }
-  .viewer-body.without-info .full-image.zoomed > img,
-  .viewer-body .full-image.zoomed > img {
-    height: auto;
-    max-height: none;
-  }
   .viewer-body {
     min-height: 0;
-    height: calc(100dvh - 225px);
+    height: auto;
+    overflow: hidden;
   }
   .viewer-body.with-variants {
     grid-template-columns: 92px minmax(0, 1fr) 300px;
@@ -1123,8 +1108,7 @@
   .viewer-body.with-variants.without-info {
     grid-template-columns: 92px minmax(0, 1fr);
   }
-  .viewer-body .full-image,
-  .viewer-body .full-image.zoomed {
+  .viewer-body .full-image {
     height: 100%;
     min-height: 0;
   }
@@ -1132,9 +1116,6 @@
   .viewer-body .full-image.has-variants > img {
     height: 100%;
     max-height: none;
-  }
-  .viewer-body .full-image.zoomed > img {
-    height: auto;
   }
   .viewer-body aside {
     max-height: none;
@@ -1171,6 +1152,9 @@
     color: #adbea1;
   }
   .strip-heading button {
+    min-width: 40px;
+    min-height: 36px;
+    font-size: 19px;
     background: none;
     color: #d9e3d1;
     border: 0;
@@ -1215,8 +1199,7 @@
     .viewer-body.with-variants.without-info {
       grid-template-columns: 64px minmax(0, 1fr);
     }
-    .viewer-body .full-image,
-    .viewer-body .full-image.zoomed {
+    .viewer-body .full-image {
       height: 54dvh;
     }
     .viewer-body.without-info .full-image > img {
@@ -1268,5 +1251,163 @@
       top: 4px;
       font-size: 25px;
     }
+  }
+
+  /* Separate the reading surface from the image canvas. */
+  .detail {
+    gap: 32px;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    align-items: start;
+  }
+  .album-story {
+    background: #f0f3ed;
+    border: 1px solid #dce3d7;
+    border-radius: 8px;
+    padding: 26px;
+    min-width: 0;
+  }
+  .story-heading {
+    margin: 0 0 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #d6dfd1;
+    color: #6c7c64;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 1px;
+  }
+  dialog[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: calc(100dvh - 32px);
+    overflow: hidden;
+  }
+  .viewer-toolbar {
+    background: #1c231e;
+    border-bottom: 1px solid #343e35;
+  }
+  .viewer-toolbar > div {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .photo-permalink {
+    color: #b9c4b2;
+    padding: 8px 12px;
+    text-decoration: none;
+  }
+  .full-image {
+    background: #0f1411;
+    touch-action: pan-y;
+  }
+  .viewer-body .photo-information {
+    background: #232c25;
+    border-left: 1px solid #3c483e;
+    padding: 30px 26px;
+  }
+  .work-description {
+    padding-bottom: 28px;
+  }
+  .album-navigation {
+    background: #1c231e;
+  }
+  .group-variants {
+    background: #1c231e;
+  }
+  @media (max-width: 1100px) and (min-width: 761px) {
+    .detail {
+      grid-template-columns: minmax(0, 1fr) 290px;
+      gap: 24px;
+    }
+    .album-story {
+      padding: 22px;
+    }
+  }
+  @media (max-width: 760px) {
+    .detail {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 28px;
+    }
+    .detail .album-story {
+      padding: 20px;
+      border: 1px solid #dce3d7;
+    }
+    .mobile-story summary {
+      padding-bottom: 0;
+    }
+    .mobile-story[open] summary {
+      padding-bottom: 20px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid #d6dfd1;
+    }
+    dialog[open] {
+      display: block;
+      height: auto;
+      overflow: auto;
+    }
+    .viewer-body {
+      overflow: visible;
+    }
+    .viewer-body .photo-information {
+      border-left: 0;
+      border-top: 1px solid #3c483e;
+      padding: 24px;
+    }
+    .photo-permalink {
+      margin-right: 0;
+      padding: 6px 7px;
+    }
+  }
+  :global(html:has(dialog[aria-label='照片大图'][open])) {
+    overflow: hidden;
+  }
+  /* One complete image, no crop, controls, description or thumbnails. */
+  dialog.immersive[open] {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    background: #0b0f0c;
+    overflow: hidden;
+  }
+  dialog.immersive .viewer-toolbar,
+  dialog.immersive .group-variants,
+  dialog.immersive .photo-information,
+  dialog.immersive .album-navigation {
+    display: none;
+  }
+  dialog.immersive .viewer-body {
+    display: block;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  dialog.immersive .full-image {
+    height: 100%;
+    touch-action: none;
+    background: #0b0f0c;
+  }
+  dialog.immersive .full-image > img {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: contain;
+  }
+  .immersive-exit {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: default;
+  }
+  .immersive-exit:focus-visible {
+    outline-offset: -4px;
   }
 </style>

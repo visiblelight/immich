@@ -3,6 +3,7 @@
   import type { DisplayPhoto, DisplayAlbum } from '@gallery/core';
   import { goto } from '$app/navigation';
   let { data } = $props();
+  let immersive = $state(false);
   let active = $derived<DisplayAlbum>({
     id: 'timeline',
     slug: '',
@@ -48,4 +49,5 @@
     initialPhotoId={data.photoId}
     {navigatePhoto}
     {navigateBoundary}
+    bind:immersive
   />{/key}
