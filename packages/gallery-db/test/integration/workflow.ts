@@ -160,8 +160,10 @@ export async function workflow(
   assert.ok((await sharp(fixture).metadata()).exif);
   const output = await sanitizeImage(fixture, 'thumbnail');
   const metadata = await sharp(output).metadata();
-  assert.equal(metadata.format, 'webp');
-  assert.equal(metadata.width, 600);
+  assert.equal(metadata.format, 'jpeg');
+  assert.equal(metadata.width, 1200);
+  assert.equal(metadata.height, 800);
+  assert.deepEqual(metadata.icc, (await sharp(fixture).metadata()).icc);
   assert.equal(metadata.exif, undefined);
   assert.equal(metadata.xmp, undefined);
   assert.equal(metadata.iptc, undefined);

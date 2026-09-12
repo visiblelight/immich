@@ -204,7 +204,8 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal(image.status, 200);
     const metadata = await sharp(Buffer.from(await image.arrayBuffer())).metadata();
     assert.equal(metadata.exif, undefined);
-    assert.equal(metadata.format, 'webp');
+    assert.equal(metadata.format, 'jpeg');
+    assert.equal(image.headers.get('content-type'), 'image/jpeg');
     assert.equal(image.headers.get('cache-control'), 'no-store');
     await api('save', { ...(await version()), content: { ...content, summary: 'Unpublished summary' } });
     assert.doesNotMatch(await fetch(url).then((r) => r.text()), /Unpublished summary/);

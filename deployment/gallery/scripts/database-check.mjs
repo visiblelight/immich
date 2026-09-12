@@ -28,7 +28,9 @@ try {
   let ready = false;
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
-      execFileSync('docker', ['exec', config.name, 'pg_isready', '-U', 'postgres', '-d', 'gallery_test'], {
+      // The image's temporary bootstrap server only listens on a Unix socket.
+      // Wait for the final TCP listener so schema import cannot race its restart.
+      execFileSync('docker', ['exec', config.name, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'gallery_test'], {
         stdio: 'pipe',
       });
       ready = true;

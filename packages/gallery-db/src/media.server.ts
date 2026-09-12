@@ -4,6 +4,8 @@ import { open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { sql, type Kysely } from 'kysely';
 import sharp from 'sharp';
+import { stripImageMetadata } from './image-metadata.server.ts';
+export { imageContentType } from './image-metadata.server.ts';
 
 export type MediaVariant = 'preview' | 'thumbnail';
 export interface MediaRoot {
@@ -66,8 +68,10 @@ async function encodingSlot() {
     else encoding--;
   };
 }
-/** Bounded re-encoding without EXIF/XMP/IPTC/GPS; originals are never served. */
+/** Keep Immich's dimensions, compressed pixels and colour profile; remove private metadata. */
 export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promise<Buffer> {
+  if (!['thumbnail', 'preview'].includes(variant) || bytes.length > MAX_CACHE)
+    throw new Error('Media unavailable');
   const key = variant + ':' + createHash('sha256').update(bytes).digest('hex');
   const cached = sanitized.get(key);
   if (cached) {
@@ -82,7 +86,7 @@ export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promi
   const work = (async () => {
     const release = await encodingSlot();
     try {
-      const result = await encodeImage(bytes, variant);
+      const result = await prepareImage(bytes);
       if (result.length <= MAX_CACHE) {
         sanitized.set(key, result);
         cacheBytes += result.length;
@@ -105,21 +109,24 @@ export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promi
     pendingBytes -= bytes.length;
   }
 }
-async function encodeImage(bytes: Buffer, variant: MediaVariant): Promise<Buffer> {
-  return sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' })
-    .rotate()
-    .resize({
-      width: variant === 'thumbnail' ? 600 : 2560,
-      height: variant === 'thumbnail' ? 600 : 2560,
-      fit: 'inside',
-      withoutEnlargement: true,
-    })
-    .webp({ quality: variant === 'thumbnail' ? 78 : 88 })
-    .toBuffer();
+async function prepareImage(bytes: Buffer): Promise<Buffer> {
+  const options = { limitInputPixels: 100_000_000, failOn: 'error' as const };
+  const metadata = await sharp(bytes, options).metadata();
+  // Immich applies orientation when generating derivatives. Refuse unexpected
+  // unnormalised sources rather than rotating/re-encoding or displaying them wrong.
+  if ((metadata.orientation ?? 1) !== 1 || (metadata.pages ?? 1) !== 1) throw new Error('Invalid derivative');
+  const result = stripImageMetadata(bytes);
+  await sharp(result, options).stats(); // Validate the whole compressed stream without an output encoder.
+  return result;
 }
 const inside = (root: string, file: string) => {
   const relative = path.relative(root, file);
-  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  return (
+    relative !== '' &&
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
 };
 
 /** Only a trusted derived-image root can be mapped; original directories are never a fallback. */
@@ -143,7 +150,7 @@ export async function resolveDerivedPath(sourcePath: string, root: MediaRoot): P
   return actual;
 }
 
-/** Internal pipeline input, never an HTTP response. Phase E strips metadata and resizes.
+/** Internal pipeline input, never an HTTP response. Strip metadata before responding.
  * Every call reauthorizes in the DB before any filesystem or future cache access.
  */
 export async function readPublishedDerivative(
@@ -156,7 +163,9 @@ export async function readPublishedDerivative(
   if (variant !== 'preview' && variant !== 'thumbnail') throw new Error('Media unavailable');
   const { rows } = await sql<MediaRow>`SELECT asset_id, is_edited, asset_update_id,
     preview_id, preview_path, preview_update_id, thumbnail_id, thumbnail_path, thumbnail_update_id
-    FROM gallery.published_media WHERE album_id = ${albumId}::uuid AND photo_id = ${photoId}::uuid`.execute(db);
+    FROM gallery.published_media WHERE album_id = ${albumId}::uuid AND photo_id = ${photoId}::uuid`.execute(
+    db,
+  );
   const media = rows[0];
   if (!media) throw new Error('Media unavailable');
   const filePath = await resolveDerivedPath(media[`${variant}_path`], root);

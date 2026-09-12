@@ -1,4 +1,4 @@
-import { readPublishedDerivative, sanitizeImage } from '@gallery/db/server';
+import { readPublishedDerivative, sanitizeImage, imageContentType } from '@gallery/db/server';
 import { isUuid } from '@gallery/core';
 import { getRuntime } from '$lib/server/runtime';
 import type { RequestHandler } from '@sveltejs/kit';
@@ -15,10 +15,18 @@ export const GET: RequestHandler = async ({ params, url }) => {
       variant as 'thumbnail' | 'preview',
       app.root,
     );
-    return new Response(new Uint8Array(await sanitizeImage(media.bytes, variant as 'thumbnail' | 'preview')), {
-      headers: { 'content-type': 'image/webp', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+    const output = await sanitizeImage(media.bytes, variant as 'thumbnail' | 'preview');
+    return new Response(new Uint8Array(output), {
+      headers: {
+        'content-type': imageContentType(output),
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      },
     });
   } catch {
-    return new Response(null, { status: 404, headers: { 'cache-control': 'no-store' } });
+    return new Response(null, {
+      status: 404,
+      headers: { 'cache-control': 'no-store' },
+    });
   }
 };

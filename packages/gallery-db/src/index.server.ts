@@ -28,4 +28,4 @@ export * from './feed.server.ts';
 export * from './runtime.server.ts';
 export * from './visited.server.ts';
 export * from './map-settings.server.ts';
-export { readSourceDerivative, sanitizeImage } from './media.server.ts';
+export { readSourceDerivative, sanitizeImage, imageContentType } from './media.server.ts';
