@@ -54,7 +54,7 @@ async function verify(name, designPreview = false) {
     assert.equal(page.status, 503, 'unconfigured service must not expose a working gallery/admin page');
     await page.text();
     if (name === 'public') {
-      for (const path of ['/design', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
+      for (const path of ['/design', '/design/visited', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
         const preview = await fetch(`${origin}${path}`);
         assert.equal(preview.status, designPreview ? 200 : 404, `preview gate: ${path}`);
         if (designPreview) {
