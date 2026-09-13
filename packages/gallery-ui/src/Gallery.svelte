@@ -2,6 +2,8 @@
   import { tick, untrack } from 'svelte';
   import { captureTime } from '../../gallery-core/src/capture-time';
   import Markdown from './Markdown.svelte';
+  import PublicHeader from './PublicHeader.svelte';
+  let filtersOpen = $state(false);
   import { documentMarkdown } from '../../gallery-core/src/markdown';
   import type { DisplayAlbum, DisplayPhoto } from '../../gallery-core/src/content';
   let {
@@ -17,7 +19,11 @@
     navigateBoundary,
     immersive = $bindable(false),
   }: {
-    site: { name: string; tagline: string; contactLinks?: import('../../gallery-core/src/content').ContactLink[] };
+    site: {
+      name: string;
+      tagline: string;
+      contactLinks?: import('../../gallery-core/src/content').ContactLink[];
+    };
     albums: DisplayAlbum[];
     active?: DisplayAlbum | null;
     preview?: boolean;
@@ -40,7 +46,8 @@
   let photo = $state<DisplayPhoto | null>(null);
   let viewer: HTMLDialogElement;
   let showVariants = $state(true);
-  const photoTitle = (p: DisplayPhoto) => (p.group ? p.group.title || '未命名照片组' : p.title || '未命名照片');
+  const photoTitle = (p: DisplayPhoto) =>
+    p.group ? p.group.title || '未命名照片组' : p.title || '未命名照片';
   $effect(() => {
     const selectedId = photo?.id;
     if (selectedId)
@@ -70,7 +77,9 @@
         seen.add(id);
         return true;
       })
-      .map((p) => (p.group ? (photos.find((x) => x.id === p.group!.cover && x.group?.id === p.group!.id) ?? p) : p));
+      .map((p) =>
+        p.group ? (photos.find((x) => x.id === p.group!.cover && x.group?.id === p.group!.id) ?? p) : p,
+      );
   });
   let variants = $derived(
     photo?.group && !feed ? (active?.photos ?? []).filter((p) => p.group?.id === photo?.group?.id) : [],
@@ -79,12 +88,20 @@
     items.findIndex((x) => x.id === p.id || (!feed && p.group && x.group?.id === p.group.id));
   const date = (value?: string | null) =>
     value
-      ? new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(
-          new Date(value),
-        )
+      ? new Intl.DateTimeFormat('zh-CN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          timeZone: 'UTC',
+        }).format(new Date(value))
       : '日期未知';
   let tagSearch = $state('');
-  const feedLink = (page: number, month = feed?.month ?? '', sort = feed?.sort ?? 'taken', tags = feed?.tags ?? []) => {
+  const feedLink = (
+    page: number,
+    month = feed?.month ?? '',
+    sort = feed?.sort ?? 'taken',
+    tags = feed?.tags ?? [],
+  ) => {
     const q = new URLSearchParams({ sort, month, page: String(page) });
     for (const tag of tags) q.append('tag', tag);
     return `/photos?${q}`;
@@ -94,11 +111,15 @@
       1,
       feed?.month,
       feed?.sort,
-      (feed?.tags ?? []).includes(id) ? (feed?.tags ?? []).filter((t) => t !== id) : [...(feed?.tags ?? []), id],
+      (feed?.tags ?? []).includes(id)
+        ? (feed?.tags ?? []).filter((t) => t !== id)
+        : [...(feed?.tags ?? []), id],
     );
 
   let info = $state(true);
-  let page = $state(untrack(() => Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1))));
+  let page = $state(
+    untrack(() => Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1))),
+  );
   let pageAlbum = $state<string | null>(null);
   let albumPage = $state(0);
   $effect(() => {
@@ -190,27 +211,23 @@
 {#if preview}<div class="preview-notice">
     草稿预览 · 仅管理员可见 · 当前显示已保存内容 <a href="/albums">返回工作台 →</a>
   </div>{/if}
-<div class="gallery">
-  <header>
-    <a class="brand" href="/albums">{site.name}</a>
-    <nav aria-label="主导航">
-      <a class:chosen={!about && !feed} href="/albums">相册</a>{#if !preview}<a class:chosen={!!feed} href="/photos"
-          >相片</a
-        ><a href="/visited">去过</a><a class:chosen={about} href="/about">关于</a>{/if}
-    </nav>
-  </header>
+<div class="gallery public-site">
+  <PublicHeader name={site.name} active={about ? 'about' : feed ? 'photos' : 'albums'} {preview} />
   {#snippet albumPagination()}
     {#if children.length > 24}<div class="pagination">
         <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页相册</button><span
           >{albumPage + 1} / {Math.ceil(children.length / 24)}</span
-        ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}>下一页相册</button>
+        ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}
+          >下一页相册</button
+        >
       </div>{/if}
   {/snippet}
   <main>
     {#if about}<article class="about">
-        <p class="kicker">ABOUT</p>
         <h1>在路上，也在日常里</h1>
-        <p>{site.tagline || '这里收藏旅行中的风景，也记录日常里不经意的光。'}</p>
+        <p>
+          {site.tagline || '这里收藏旅行中的风景，也记录日常里不经意的光。'}
+        </p>
         <h2>关于这个相册</h2>
         <p>有些地方值得再去一次，有些瞬间值得慢慢回看。把照片整理成相册，把走过的路写成文字，便有了这里。</p>
         <p>愿这些照片，也能让你停留片刻。</p>
@@ -222,44 +239,71 @@
           </ul>{/if}
       </article>
     {:else if feed}<div class="heading feed-heading">
-        <div>
-          <p class="kicker">PHOTOGRAPHS</p>
-          <h1>相片</h1>
-          <p>{feed.total} 张 · {feed.sort === 'taken' ? '按拍摄时间' : '按首次加入 Gallery 时间'}</p>
-        </div>
-        <label
-          >排序<select
-            aria-label="相片排序"
-            value={feed.sort}
-            onchange={(e) => {
-              window.location.href = feedLink(1, '', e.currentTarget.value);
-            }}><option value="taken">拍摄时间 · 从新到旧</option><option value="added">最近加入 Gallery</option></select
-          ></label
+        <h1>相片 <small>{feed.total} 张</small></h1>
+        <button
+          class="filter-toggle"
+          aria-expanded={filtersOpen}
+          aria-controls="photo-filters"
+          onclick={() => (filtersOpen = !filtersOpen)}
+          >筛选{feed.tags?.length ? ` · ${feed.tags.length} 个标签` : ''}{feed.month
+            ? ' · ' + feed.month
+            : ''}</button
         >
       </div>
-      <div class="photo-tag-filter">
-        <details>
-          <summary>按标签筛选{feed.tags?.length ? ` · 已选 ${feed.tags.length}` : ''}</summary>
-          <input aria-label="搜索照片标签" placeholder="搜索标签" bind:value={tagSearch} />
-          <div class="tag-options">
-            {#each (feed.availableTags ?? [])
-              .filter((t) => t.name.toLocaleLowerCase().includes(tagSearch.trim().toLocaleLowerCase()))
-              .slice(0, 50) as tag}<a class:selected={feed.tags?.includes(tag.id)} href={toggleTag(tag.id)}
-                >{tag.name}<small>{tag.count}</small></a
-              >{/each}
-          </div>
-          {#if !feed.availableTags?.length}<p>暂无公开标签。</p>{/if}
-          <p>选择多个标签时，显示同时包含这些标签的照片。</p>
-        </details>
-        {#if feed.tags?.length}<div class="selected-tags">
-            {#each feed.tags as id}<a
-                href={toggleTag(id)}
-                aria-label={`移除筛选 ${feed.availableTags?.find((t) => t.id === id)?.name ?? '已失效标签'}`}
-                >{feed.availableTags?.find((t) => t.id === id)?.name ?? '已失效标签'} ×</a
-              >{/each}<a class="clear-tags" href={feedLink(1, feed.month, feed.sort, [])}>清空标签</a>
-          </div>{/if}
-      </div>
       <div class="timeline-layout">
+        <aside id="photo-filters" class="photo-filters" class:expanded={filtersOpen} aria-label="照片筛选">
+          <section class="sort-options">
+            <h2>排序</h2>
+            <nav aria-label="相片排序">
+              <a class:chosen={feed.sort === 'taken'} href={feedLink(1, '', 'taken')}>拍摄时间</a>
+              <a class:chosen={feed.sort === 'added'} href={feedLink(1, '', 'added')}>最近加入</a>
+            </nav>
+          </section>
+          <section class="timeline">
+            <label
+              >跳转年月<select
+                aria-label="跳转年月"
+                value={feed.month}
+                onchange={(e) => {
+                  window.location.href = feedLink(1, e.currentTarget.value);
+                }}
+                ><option value="">全部时间</option>{#each feed.months as m}<option value={m.month}
+                    >{m.month === 'unknown' ? '日期未知' : m.month} · {m.count}</option
+                  >{/each}</select
+              ></label
+            >
+            <nav aria-label="照片时间轴">
+              <a class:chosen={!feed.month} href={feedLink(1, '')}>全部</a>{#each feed.months as m}<a
+                  class:chosen={feed.month === m.month}
+                  href={feedLink(1, m.month)}
+                  >{m.month === 'unknown' ? '日期未知' : m.month}<small>{m.count}</small></a
+                >{/each}
+            </nav>
+          </section>
+          <div class="photo-tag-filter">
+            <section class="tag-section">
+              <h2>标签</h2>
+              <input aria-label="搜索照片标签" placeholder="搜索标签" bind:value={tagSearch} />
+              <div class="tag-options">
+                {#each (feed.availableTags ?? [])
+                  .filter((t) => t.name.toLocaleLowerCase().includes(tagSearch.trim().toLocaleLowerCase()))
+                  .slice(0, 50) as tag}<a
+                    class:selected={feed.tags?.includes(tag.id)}
+                    href={toggleTag(tag.id)}>{tag.name}<small>{tag.count}</small></a
+                  >{/each}
+              </div>
+              {#if !feed.availableTags?.length}<p>暂无公开标签。</p>{/if}
+              <p>选择多个标签时，显示同时包含这些标签的照片。</p>
+            </section>
+            {#if feed.tags?.length}<div class="selected-tags">
+                {#each feed.tags as id}<a
+                    href={toggleTag(id)}
+                    aria-label={`移除筛选 ${feed.availableTags?.find((t) => t.id === id)?.name ?? '已失效标签'}`}
+                    >{feed.availableTags?.find((t) => t.id === id)?.name ?? '已失效标签'} ×</a
+                  >{/each}<a class="clear-tags" href={feedLink(1, feed.month, feed.sort, [])}>清空标签</a>
+              </div>{/if}
+          </div>
+        </aside>
         <div class="timeline-photos">
           {#each items as p, index (p.id)}{@const month =
               (feed.sort === 'added' ? p.addedAt : p.localTakenAt)?.slice(0, 7) || 'unknown'}
@@ -285,43 +329,27 @@
             >{#if feed.page * 48 < feed.total}<a href={feedLink(feed.page + 1)}>下一页</a>{/if}
           </div>
         </div>
-        <aside class="timeline">
-          <label
-            >跳转年月<select
-              aria-label="跳转年月"
-              value={feed.month}
-              onchange={(e) => {
-                window.location.href = feedLink(1, e.currentTarget.value);
-              }}
-              ><option value="">全部时间</option>{#each feed.months as m}<option value={m.month}
-                  >{m.month === 'unknown' ? '日期未知' : m.month} · {m.count}</option
-                >{/each}</select
-            ></label
-          >
-          <nav aria-label="照片时间轴">
-            <a class:chosen={!feed.month} href={feedLink(1, '')}>全部</a>{#each feed.months as m}<a
-                class:chosen={feed.month === m.month}
-                href={feedLink(1, m.month)}>{m.month === 'unknown' ? '日期未知' : m.month}<small>{m.count}</small></a
-              >{/each}
-          </nav>
-        </aside>
       </div>
     {:else if !active}<div class="heading">
-        <p class="kicker">COLLECTIONS</p>
-        <h1>相册</h1>
-        <p>{site.tagline}</p>
+        <h1>相册 <small>{children.length} 本</small></h1>
       </div>
       <div class="album-grid">
-        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a class="album-card" href={link(album)}
+        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
+            class="album-card"
+            href={link(album)}
             >{#if album.cover}<img
                 src={album.cover}
                 alt={album.title}
                 loading="lazy"
                 width="600"
                 height="450"
-              />{:else}<div class="empty-cover">{album.title.slice(0, 1)}</div>{/if}
+              />{:else}<div class="empty-cover">
+                {album.title.slice(0, 1)}
+              </div>{/if}
             <h2>{album.title}</h2>
-            <p>{album.count} 张照片{albums.some((a) => a.parent === album.id) ? ' · 含子相册' : ''}</p></a
+            <p>
+              {album.count} 张照片{albums.some((a) => a.parent === album.id) ? ' · 含子相册' : ''}
+            </p></a
           >{/each}
       </div>
       {@render albumPagination()}
@@ -330,13 +358,17 @@
           <p>发布后的作品会在这里出现。</p>
         </div>{/if}
     {:else}<div class="breadcrumbs">
-        <a href="/albums">相册</a>{#each crumbs as parent}<span>/</span><a href={link(parent)}>{parent.title}</a>{/each}
+        <a href="/albums">相册</a>{#each crumbs as parent}<span>/</span><a href={link(parent)}
+            >{parent.title}</a
+          >{/each}
       </div>
       <h1>{active.title}</h1>
       <div class="detail">
         <div class="images">
-          {#if children.length}<h2 class="section-title">子相册 <span>{children.length}</span></h2>
-            <div class="children-grid">
+          {#if children.length}<h2 class="section-title">
+              子相册 <span>{children.length}</span>
+            </h2>
+            <div class="children-grid" class:compact-children={active.photos.length > 0}>
               {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
                   class="album-card"
                   href={link(album)}
@@ -346,13 +378,17 @@
                       loading="lazy"
                       width="600"
                       height="450"
-                    />{:else}<div class="empty-cover">{album.title.slice(0, 1)}</div>{/if}
+                    />{:else}<div class="empty-cover">
+                      {album.title.slice(0, 1)}
+                    </div>{/if}
                   <h2>{album.title}</h2>
                   <p>{album.count} 张照片</p></a
                 >{/each}
             </div>
             {@render albumPagination()}{/if}
-          <h2 class="section-title">照片 <span>{active.photos.length}</span></h2>
+          {#if active.photos.length}<h2 class="section-title">
+              照片 <span>{active.photos.length}</span>
+            </h2>{/if}
           <div class="photos-grid">
             {#each items.slice(page * 48, (page + 1) * 48) as p}<button
                 id={`photo-${p.id}`}
@@ -366,12 +402,12 @@
                   width="600"
                   height="450"
                 />{#if p.group}<span class="stack-label"
-                    >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group.title ||
-                      '照片组'}</span
+                    >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group
+                      .title || '照片组'}</span
                   >{:else if p.title}<span>{p.title}</span>{/if}</button
               >{/each}
           </div>
-          {#if !active.photos.length}<p class="empty">
+          {#if !active.photos.length && !children.length}<p class="empty">
               本册暂无直接照片{children.length ? '，可以继续浏览子相册。' : '。'}
             </p>{/if}{#if items.length > 48}<div class="pagination">
               <button disabled={page === 0} onclick={() => page--}>上一页</button><span
@@ -384,7 +420,9 @@
             <h2 class="story-heading">相册介绍</h2>
             {@render story()}
           </div>
-          <details class="mobile-story"><summary>相册介绍 · 展开阅读</summary>{@render story()}</details>
+          <details class="mobile-story">
+            <summary>相册介绍 · 展开阅读</summary>{@render story()}
+          </details>
         </aside>
       </div>{/if}
   </main>
@@ -413,7 +451,7 @@
         {#if variants.length}<button onclick={() => (showVariants = !showVariants)}
             >{showVariants ? '收起组内视角' : '展开组内视角'}</button
           >{/if}
-        {#if !preview}<a class="photo-permalink" href={photoLink(photo)}>照片直链</a>{/if}
+
         <button
           bind:this={immersiveButton}
           title="隐藏全部界面，点击照片或按 Esc 返回"
@@ -425,13 +463,18 @@
         >
       </div>
     </div>
-    <div class="viewer-body" class:with-variants={variants.length > 0 && showVariants} class:without-info={!info}>
+    <div
+      class="viewer-body"
+      class:with-variants={variants.length > 0 && showVariants}
+      class:without-info={!info}
+    >
       {#if variants.length && showVariants}<div class="group-variants" aria-label="组内视角">
           <span title="使用上下方向键切换">组内视角</span>{#each variants as p, index}<button
               class:chosen={p.id === photo.id}
               aria-label={`查看组内第 ${index + 1} 张`}
               aria-pressed={p.id === photo.id}
-              onclick={() => choose(p)}><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
+              onclick={() => choose(p)}
+              ><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
             >{/each}
         </div>{/if}
       <div
@@ -471,7 +514,8 @@
           <section class="work-description">
             <h2>{photoTitle(photo)}</h2>
             {#if photo.tags?.length}<nav class="photo-tags" aria-label="照片标签">
-                {#each photo.tags as tag}<a href={`/photos?${new URLSearchParams({ tag: tag.id })}`}>{tag.name}</a
+                {#each photo.tags as tag}<a href={`/photos?${new URLSearchParams({ tag: tag.id })}`}
+                    >{tag.name}</a
                   >{/each}
               </nav>{/if}
             {#if photo.group}<Markdown text={photo.group.description} />{:else if photo.description}<Markdown
@@ -479,23 +523,30 @@
               />{/if}
           </section>
           <section class="capture-facts">
-            <p><span>{captureTime(photo).label}</span><strong>{captureTime(photo).value}</strong></p>
+            <p>
+              <span>{captureTime(photo).label}</span><strong>{captureTime(photo).value}</strong>
+            </p>
             {#if feed?.sort === 'added' && photo.addedAt}<p>
                 <span>加入 Gallery</span><strong
                   >{date(photo.addedAt)}{photo.addedEstimated ? '（历史估算）' : ''}</strong
                 >
               </p>{/if}
-            {#if photo.latitude !== null && photo.longitude !== null}<details>
-                <summary>拍摄位置</summary>
-                <p class="coordinates">{photo.latitude.toFixed(4)}, {photo.longitude.toFixed(4)}</p>
-              </details>{/if}
+            {#if photo.latitude !== null && photo.longitude !== null}<section class="location-facts">
+                <h3>拍摄位置</h3>
+                <p class="coordinates">
+                  {photo.latitude.toFixed(4)}, {photo.longitude.toFixed(4)}
+                </p>
+              </section>{/if}
           </section>
-          {#if photo.exif && Object.values(photo.exif).some((v) => v !== null && v !== '')}<details
+          {#if photo.exif && Object.entries(photo.exif).some(([key, v]) => ['make', 'model', 'lensModel', 'fNumber', 'focalLength', 'iso', 'exposureTime'].includes(key) && v !== null && v !== '')}<section
               class="camera-details"
             >
-              <summary>拍摄参数</summary>
+              <h3>拍摄参数</h3>
               <dl>
-                {#each Object.entries(photo.exif).filter(([key, value]) => ['make', 'model', 'lensModel', 'fNumber', 'focalLength', 'iso', 'exposureTime'].includes(key) && value !== null && value !== '') as [key, value]}<div
+                {#each ['make', 'model', 'lensModel', 'focalLength', 'fNumber', 'exposureTime', 'iso']
+                  .map((key) => [key, photo!.exif![key]] as const)
+                  .filter(([, value]) => value !== null && value !== undefined && value !== '') as [key, value]}<div
+                    class:equipment={['make', 'model', 'lensModel'].includes(key)}
                   >
                     <dt>
                       {(
@@ -521,11 +572,12 @@
                     </dd>
                   </div>{/each}
               </dl>
-            </details>{/if}
+            </section>{/if}
           {#if photo.occurrences?.length}<section class="photo-context">
               <h3>所在相册</h3>
               {#each photo.occurrences as occurrence}<a
-                  href={`/albums/${occurrence.albumSlug}/photos/${occurrence.photoId}`}>{occurrence.albumTitle} →</a
+                  href={`/albums/${occurrence.albumSlug}/photos/${occurrence.photoId}`}
+                  >{occurrence.albumTitle} →</a
                 >{/each}{#if photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
             </section>{/if}
         </aside>{/if}
@@ -542,7 +594,8 @@
             aria-current={itemIndex(photo) === index ? 'true' : undefined}
             aria-label={`查看第 ${index + 1} 项：${photoTitle(p)}`}
             onclick={() => choose(p)}
-            ><img loading="lazy" src={p.thumbnail} alt="" /><span>{index + 1}{p.group && !feed ? ' · 组' : ''}</span
+            ><img loading="lazy" src={p.thumbnail} alt="" /><span
+              >{index + 1}{p.group && !feed ? ' · 组' : ''}</span
             ></button
           >{/each}
       </div>
@@ -641,8 +694,8 @@
     border-block: 1px solid #384433;
     padding: 18px 0;
   }
-  .camera-details summary,
-  .capture-facts summary {
+  .camera-details h3,
+  .capture-facts h3 {
     cursor: pointer;
     font-size: 13px;
   }
@@ -713,43 +766,20 @@
     .viewer-body {
       min-height: 0;
     }
-    nav {
-      gap: 16px !important;
-    }
   }
 
-  :global(body) {
-    margin: 0;
-    background: #fafbf9;
-    color: #2f3731;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
-  }
-  .photo-permalink {
-    color: inherit;
-    margin-right: 1rem;
-  }
   .gallery {
+    box-sizing: border-box;
     max-width: 1680px;
     margin: auto;
     padding: 0 5%;
   }
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 24px;
-    padding: 32px 0;
-    border-bottom: 1px solid #e4e7e0;
-  }
+
   a {
     color: inherit;
     text-decoration: none;
   }
-  .brand {
-    font-family: Georgia, 'Songti SC', serif;
-    font-size: 26px;
-    font-weight: 650;
-  }
+
   nav {
     display: flex;
     gap: 30px;
@@ -773,15 +803,7 @@
     margin: 0 0 28px;
     overflow-wrap: anywhere;
   }
-  .heading p {
-    color: #899281;
-    margin: 0 0 25px;
-    font-size: 15px;
-  }
-  .kicker {
-    font-size: 12px !important;
-    letter-spacing: 2px;
-  }
+
   .album-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1056,19 +1078,11 @@
     }
   }
   @media (max-width: 760px) {
-    .photo-permalink {
-      color: inherit;
-      margin-right: 1rem;
-    }
     .gallery {
+      box-sizing: border-box;
       padding: 0 22px;
     }
-    header {
-      padding: 22px 0;
-    }
-    .brand {
-      font-size: 23px;
-    }
+
     nav {
       gap: 23px;
       font-size: 13px;
@@ -1335,11 +1349,7 @@
     align-items: center;
     gap: 2px;
   }
-  .photo-permalink {
-    color: #b9c4b2;
-    padding: 8px 12px;
-    text-decoration: none;
-  }
+
   .full-image {
     background: #0f1411;
     touch-action: pan-y;
@@ -1396,10 +1406,6 @@
       border-left: 0;
       border-top: 1px solid #3c483e;
       padding: 24px;
-    }
-    .photo-permalink {
-      margin-right: 0;
-      padding: 6px 7px;
     }
   }
   :global(html:has(dialog[aria-label='照片大图'][open])) {
@@ -1459,16 +1465,7 @@
     margin: 0 0 28px;
     font-size: 13px;
   }
-  .photo-tag-filter details {
-    border: 1px solid #dce3d7;
-    padding: 14px 18px;
-    border-radius: 6px;
-    background: #f0f3ed;
-    max-width: 650px;
-  }
-  .photo-tag-filter summary {
-    cursor: pointer;
-  }
+
   .photo-tag-filter input {
     width: 100%;
     box-sizing: border-box;
@@ -1518,5 +1515,292 @@
     border-color: #4b604c;
     color: #dcebd5;
     font-size: 12px;
+  }
+
+  main {
+    padding: 28px 0 48px;
+  }
+  h1 {
+    font-size: 25px;
+    line-height: 1.35;
+    margin: 0 0 24px;
+  }
+  h1 small {
+    font-size: 13px;
+    color: #7c8678;
+    font-weight: 400;
+    margin-left: 10px;
+    white-space: nowrap;
+  }
+  .heading {
+    margin-bottom: 24px;
+  }
+  .heading h1 {
+    margin: 0;
+  }
+  .feed-heading {
+    align-items: center;
+  }
+  .timeline-layout {
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+  .photo-filters {
+    position: sticky;
+    top: 24px;
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    padding-right: 8px;
+  }
+  .photo-filters h2 {
+    font-size: 12px;
+    font-weight: 500;
+    color: #7b8576;
+    margin: 0 0 12px;
+  }
+  .photo-filters > section,
+  .photo-tag-filter {
+    margin: 0 0 28px;
+  }
+  .sort-options nav {
+    display: flex;
+    gap: 4px;
+    background: #eff2ec;
+    padding: 4px;
+    border-radius: 6px;
+  }
+  .sort-options a {
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+    padding: 8px 4px;
+    border: 0;
+    border-radius: 4px;
+  }
+  .sort-options a.chosen {
+    background: white;
+    color: #344d3d;
+    box-shadow: 0 1px 3px #24362812;
+  }
+  .timeline {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .timeline label {
+    font-size: 12px;
+    color: #7b8576;
+  }
+  .timeline nav {
+    gap: 0;
+  }
+  .month-heading {
+    margin: 0;
+    font-size: 15px;
+  }
+  .timeline-photos {
+    gap: 20px 16px;
+  }
+  .photo-tag-filter {
+    width: auto;
+    max-width: none;
+  }
+  .photo-tag-filter p {
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .tag-options {
+    max-height: 240px;
+    overflow-y: auto;
+    gap: 6px;
+  }
+  .tag-options a {
+    font-size: 12px;
+    padding: 6px 9px;
+  }
+  .filter-toggle {
+    display: none;
+  }
+  select {
+    appearance: none;
+    font: inherit;
+    box-sizing: border-box;
+    width: 100%;
+    border-radius: 5px;
+    padding: 10px 36px 10px 12px;
+    background: white
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23727e70' stroke-width='1.5'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")
+      no-repeat right 12px center;
+  }
+  select:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible {
+    outline: 2px solid #64826a;
+    outline-offset: 3px;
+  }
+  .breadcrumbs {
+    margin-bottom: 12px;
+  }
+  .compact-children {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .compact-children .album-card {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: center;
+    padding: 8px 14px 8px 8px;
+    border: 1px solid #e4e8df;
+    border-radius: 6px;
+  }
+  .compact-children img,
+  .compact-children .empty-cover {
+    grid-row: span 2;
+    width: 54px;
+    height: 44px;
+  }
+  .compact-children h2 {
+    font-size: 14px;
+    margin: 0;
+  }
+  .compact-children p {
+    font-size: 11px;
+  }
+  .compact-children + .section-title {
+    margin-top: 0;
+  }
+  .section-title {
+    margin-bottom: 14px;
+  }
+  .viewer-toolbar {
+    background: transparent;
+    border: 0;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .viewer-body .photo-information {
+    background: #202821;
+    border: 0;
+    border-radius: 8px;
+    padding: 24px;
+    margin-left: 16px;
+  }
+  .full-image {
+    border: 0;
+  }
+  .work-description {
+    padding-bottom: 20px;
+  }
+  .capture-facts {
+    padding: 20px 0 0;
+    border: 0;
+  }
+  .capture-facts p {
+    margin: 0 0 16px;
+  }
+  .camera-details {
+    border: 0;
+    padding-top: 8px;
+    margin-top: 0;
+  }
+  .camera-details h3,
+  .location-facts h3 {
+    font-size: 11px;
+    font-weight: 400;
+    color: #9aa992;
+    margin: 0 0 8px;
+  }
+  .camera-details dl {
+    font-size: 12px;
+    margin: 0;
+  }
+  .camera-details dl > div {
+    padding: 5px 0;
+  }
+  .album-navigation {
+    border: 0;
+    background: transparent;
+    padding-top: 12px;
+  }
+  @media (max-width: 1000px) and (min-width: 761px) {
+    .timeline-photos {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .timeline-layout {
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 24px;
+    }
+  }
+  @media (max-width: 760px) {
+    main {
+      padding-top: 22px;
+    }
+    .timeline-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+    .photo-filters {
+      display: none;
+      position: static;
+      max-height: none;
+      padding: 16px;
+      background: #f0f3ed;
+      border-radius: 8px;
+    }
+    .photo-filters.expanded {
+      display: block;
+    }
+    .filter-toggle {
+      display: block;
+      padding: 8px 12px;
+      border: 1px solid #dce2d6;
+      border-radius: 5px;
+      background: transparent;
+      font-size: 12px;
+    }
+    .timeline-photos {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .viewer-body .photo-information {
+      margin: 12px 0 0;
+      padding: 20px;
+    }
+  }
+  @media (max-width: 600px) {
+    .gallery {
+      padding: 0 18px;
+    }
+  }
+
+  .viewer-body .photo-information {
+    scrollbar-width: thin;
+    scrollbar-color: #52604f transparent;
+  }
+  .camera-details dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+  }
+  .camera-details dl > div {
+    border: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0;
+  }
+  .camera-details dl > .equipment {
+    grid-column: 1/-1;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+  .camera-details dd {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
 </style>

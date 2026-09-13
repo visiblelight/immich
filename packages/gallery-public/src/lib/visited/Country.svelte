@@ -9,7 +9,8 @@
     bounds,
     providers,
     visitId,
-  }: { country: VisitedCountry; bounds: MapViewport; providers: Provider[]; visitId: string | null } = $props();
+  }: { country: VisitedCountry; bounds: MapViewport; providers: Provider[]; visitId: string | null } =
+    $props();
   let container: HTMLDivElement, map: PhotoMap | undefined;
   let provider = $state(''),
     message = $state(''),
@@ -44,7 +45,10 @@
     return {
       longitude: ((((bounds.west + span / 2 + 180) % 360) + 360) % 360) - 180,
       latitude: (bounds.north + bounds.south) / 2,
-      zoom: Math.max(1, Math.min(12, Math.log2(280 / Math.max(span, (bounds.north - bounds.south) * 1.5, 0.05)))),
+      zoom: Math.max(
+        1,
+        Math.min(12, Math.log2(280 / Math.max(span, (bounds.north - bounds.south) * 1.5, 0.05))),
+      ),
     };
   }
   function remember(view: View) {
@@ -63,7 +67,8 @@
     if (!response.ok) throw new Error(data.message);
     return data as { clusters: PhotoCluster[]; photos: MapPhoto[]; total: number };
   }
-  const rangeParams = (v: MapViewport) => new URLSearchParams(Object.entries(v).map(([k, n]) => [k, String(n)]));
+  const rangeParams = (v: MapViewport) =>
+    new URLSearchParams(Object.entries(v).map(([k, n]) => [k, String(n)]));
   async function refresh() {
     const current = map,
       seq = revision;
@@ -159,7 +164,9 @@
     lastUrl = location.pathname + location.search;
     const q = new URLSearchParams(location.search);
     const p =
-      providers.find((p) => p.provider === q.get('provider')) ?? providers.find((p) => p.isDefault) ?? providers[0];
+      providers.find((p) => p.provider === q.get('provider')) ??
+      providers.find((p) => p.isDefault) ??
+      providers[0];
     if (p) void start(p.provider);
     else {
       loading = false;
@@ -244,7 +251,7 @@
   }
   h1 {
     font-weight: 500;
-    font-size: 34px;
+    font-size: 25px;
     margin: 16px 0 8px;
   }
   .heading p {

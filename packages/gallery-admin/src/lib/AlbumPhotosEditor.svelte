@@ -56,7 +56,12 @@
     scope = $state(''),
     dragging = $state(false),
     previewOrder = $state<string[]>([]);
-  let ghost = $state<{ src: string; title: string; x: number; y: number } | null>(null);
+  let ghost = $state<{
+    src: string;
+    title: string;
+    x: number;
+    y: number;
+  } | null>(null);
   let root: HTMLElement;
   let pointerId = -1,
     startX = 0,
@@ -73,13 +78,18 @@
   let baseItems = $derived(albumPhotoItems(content.photos));
   let selectedPhotos = $derived(content.photos.filter((p) => !p.group && selected.includes(p.id)));
   let items = $derived(
-    dragging && !scope ? previewOrder.map((key) => baseItems.find((p) => photoItemKey(p) === key)!) : baseItems,
+    dragging && !scope
+      ? previewOrder.map((key) => baseItems.find((p) => photoItemKey(p) === key)!)
+      : baseItems,
   );
   const members = (id: string) => working().photos.filter((p) => p.group === id);
   const shownMembers = (id: string) =>
-    dragging && scope === id ? previewOrder.map((key) => members(id).find((p) => p.id === key)!) : members(id);
+    dragging && scope === id
+      ? previewOrder.map((key) => members(id).find((p) => p.id === key)!)
+      : members(id);
   const group = (id: string) => (working().groups ?? []).find((g) => g.id === id);
-  const cover = (p: DraftPhoto) => (p.group ? (members(p.group).find((x) => x.id === group(p.group!)?.cover) ?? p) : p);
+  const cover = (p: DraftPhoto) =>
+    p.group ? (members(p.group).find((x) => x.id === group(p.group!)?.cover) ?? p) : p;
   const motionDuration = () =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
   function normalize() {
@@ -101,7 +111,9 @@
     notice = '';
   }
   function preservedDescription(g: PhotoGroup, p: DraftPhoto) {
-    return [g.title ? `## ${literalMarkdown(g.title)}` : '', g.description, p.description].filter(Boolean).join('\n\n');
+    return [g.title ? `## ${literalMarkdown(g.title)}` : '', g.description, p.description]
+      .filter(Boolean)
+      .join('\n\n');
   }
   function canPreserve(g: PhotoGroup, photos: DraftPhoto[]) {
     notice = photos.some((p) => preservedDescription(g, p).length > 50000)
@@ -152,7 +164,8 @@
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     if (pointerId >= 0)
-      for (const el of [root, groupDialog]) if (el?.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+      for (const el of [root, groupDialog])
+        if (el?.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
     pointerId = -1;
     dragKey = '';
     dragging = false;
@@ -186,7 +199,8 @@
     slots.forEach((r, index) => {
       const y = r.y - offset;
       // Fixed slots avoid animated cards repeatedly swapping underneath the pointer.
-      if (lastX < r.x - 14 || lastX > r.x + r.width + 14 || lastY < y - 14 || lastY > y + r.height + 14) return;
+      if (lastX < r.x - 14 || lastX > r.x + r.width + 14 || lastY < y - 14 || lastY > y + r.height + 14)
+        return;
       const d = Math.hypot(lastX - r.x - r.width / 2, lastY - y - r.height / 2);
       if (d < distance) {
         target = index;
@@ -288,6 +302,16 @@
       saving = false;
     }
   }
+  function closeMenus(target?: EventTarget | null) {
+    let closed = false;
+    root?.querySelectorAll<HTMLDetailsElement>('.collection-menu[open]').forEach((menu) => {
+      if (!(target instanceof Node) || !menu.contains(target)) {
+        menu.open = false;
+        closed = true;
+      }
+    });
+    return closed;
+  }
   function clickPhoto(p: DraftPhoto, groupId = '') {
     if (performance.now() < suppressClickUntil) return;
     if (groupId) void openGroup(groupId);
@@ -302,10 +326,15 @@
       e.returnValue = '';
     }
   }}
+  onpointerdown={(e) => closeMenus(e.target)}
+  onclick={(e) => {
+    if (e.target instanceof Element && e.target.closest('.collection-actions button')) closeMenus();
+  }}
   onpointermove={pointer}
   onpointerup={drop}
   onpointercancel={cancelDrag}
   onkeydown={(e) => {
+    if (e.key === 'Escape' && closeMenus()) e.preventDefault();
     if (e.key === 'Escape' && dragKey) {
       e.preventDefault();
       suppressClickUntil = performance.now() + 250;
@@ -314,19 +343,21 @@
   }}
 />
 <section class="album-photo-editor" bind:this={root} class:is-dragging={dragging}>
-  <p class="order-notice" role="status" aria-live="polite">{notice || '排序和分组先保存草稿，发布后更新前台。'}</p>
+  <p class="order-notice" role="status" aria-live="polite">{notice}</p>
   <div class="section-heading">
     <div>
       <h2>本册照片 <small>{content.photos.length}</small></h2>
-      <p class="muted">拖动照片或手柄排序；手机上拖动手柄。多选照片可组成一组。</p>
+      <p class="muted">拖动排序，点击编辑；多选可组成照片组。</p>
     </div>
     <button class="primary" onclick={pick}>＋ 从 Immich 选片</button>
   </div>
-  <div class="selection-bar">
-    <span>已选择 {selectedPhotos.length} 张</span><button disabled={selectedPhotos.length < 2} onclick={makeGroup}
-      >组成照片组</button
-    ><button disabled={!selectedPhotos.length} onclick={() => (selected = [])}>清除选择</button>
-  </div>
+  {#if selectedPhotos.length}<div class="selection-bar">
+      <span>已选择 {selectedPhotos.length} 张</span><button
+        disabled={selectedPhotos.length < 2}
+        onclick={makeGroup}>组成照片组</button
+      ><button disabled={!selectedPhotos.length} onclick={() => (selected = [])}>清除选择</button>
+    </div>
+  {/if}
   {#if selectedPhotos.length}<div class="selection-preview" aria-label="已选照片">
       {#each selectedPhotos as p (p.id)}<img
           src={media(p)}
@@ -362,8 +393,10 @@
                 aria-label={`选择照片 ${index + 1}`}
                 checked={selected.includes(p.id)}
                 onchange={(e) =>
-                  (selected = e.currentTarget.checked ? [...selected, p.id] : selected.filter((id) => id !== p.id))}
-              />选择</label
+                  (selected = e.currentTarget.checked
+                    ? [...selected, p.id]
+                    : selected.filter((id) => id !== p.id))}
+              /></label
             >{/if}<small>{index + 1}{g ? ` · 照片组 ${members(g.id).length} 张` : ''}</small>
         </div>
         <button
@@ -381,17 +414,20 @@
         <button class="collection-caption" onclick={() => clickPhoto(p, g?.id)}
           ><strong>{g?.title || p.title || (g ? '编辑照片组' : '添加照片标题')}</strong></button
         >
-        <div class="collection-actions">
-          <button aria-label={`前移项目 ${index + 1}`} disabled={index === 0} onclick={() => arrow(key, -1)}>←</button
-          ><button
-            aria-label={`后移项目 ${index + 1}`}
-            disabled={index === items.length - 1}
-            onclick={() => arrow(key, 1)}>→</button
-          ><button class="text-action" onclick={() => (content.cover = cover(p).asset)}>设为封面</button>{#if !g}<button
-              aria-label={`移除照片 ${index + 1}`}
-              onclick={() => remove(p)}>×</button
-            >{/if}
-        </div>
+        <details class="collection-menu">
+          <summary aria-label="照片操作">•••</summary>
+          <div class="collection-actions">
+            <button aria-label={`前移项目 ${index + 1}`} disabled={index === 0} onclick={() => arrow(key, -1)}
+              >前移</button
+            ><button
+              aria-label={`后移项目 ${index + 1}`}
+              disabled={index === items.length - 1}
+              onclick={() => arrow(key, 1)}>后移</button
+            ><button class="text-action" onclick={() => (content.cover = cover(p).asset)}>设为封面</button
+            >{#if !g}<button aria-label={`移除照片 ${index + 1}`} onclick={() => remove(p)}>移除照片</button
+              >{/if}
+          </div>
+        </details>
       </article>
     {/each}
   </div>
@@ -416,8 +452,8 @@
       <div class="group-body">
         {#if discardGroup}<div class="discard-edit" role="alert">
             <p>照片组修改尚未保存。</p>
-            <button onclick={() => (discardGroup = false)}>继续编辑</button><button onclick={() => closeGroup(true)}
-              >放弃修改并关闭</button
+            <button onclick={() => (discardGroup = false)}>继续编辑</button><button
+              onclick={() => closeGroup(true)}>放弃修改并关闭</button
             >
           </div>{/if}
         {#if groupError}<p class="error" role="alert">{groupError}</p>{/if}
@@ -426,7 +462,7 @@
           </p>{/if}
         {#each (groupDraft.groups ?? []).filter((g) => g.id === editing) as g}<section class="group-panel">
             <div class="section-heading">
-              <h2>编辑照片组 · {members(g.id).length} 张</h2>
+              <span class="muted">{members(g.id).length} 张照片 · 拖动调整组内顺序</span>
             </div>
             <div class="collection-grid">
               {#each shownMembers(g.id) as p, index (p.id)}<article
@@ -457,27 +493,31 @@
                     onclick={() => (memberEditing = memberEditing === p.id ? '' : p.id)}
                     ><img draggable="false" src={media(p)} alt={p.alt || p.title || '编辑成员设置'} /></button
                   >
-                  <div class="collection-actions">
-                    <button
-                      disabled={index === 0}
-                      aria-label={`前移组内照片 ${index + 1}`}
-                      onclick={() => arrow(p.id, -1, g.id)}>←</button
-                    ><button
-                      disabled={index === members(g.id).length - 1}
-                      aria-label={`后移组内照片 ${index + 1}`}
-                      onclick={() => arrow(p.id, 1, g.id)}>→</button
-                    ><button onclick={() => (g.cover = p.id)}>组封面</button><button onclick={() => detach(p)}
-                      >移出组</button
-                    >
-                  </div>
+                  <details class="collection-menu">
+                    <summary aria-label="照片操作">•••</summary>
+                    <div class="collection-actions">
+                      <button
+                        disabled={index === 0}
+                        aria-label={`前移组内照片 ${index + 1}`}
+                        onclick={() => arrow(p.id, -1, g.id)}>前移</button
+                      ><button
+                        disabled={index === members(g.id).length - 1}
+                        aria-label={`后移组内照片 ${index + 1}`}
+                        onclick={() => arrow(p.id, 1, g.id)}>后移</button
+                      ><button onclick={() => (g.cover = p.id)}>组封面</button><button
+                        onclick={() => detach(p)}>移出组</button
+                      >
+                    </div>
+                  </details>
                   {#if memberEditing === p.id}<div class="member-settings">
                       <TagPicker bind:value={p.tags} {tags} {createTag} />
                       <label>画面描述（无障碍）<input maxlength="500" bind:value={p.alt} /></label>
                       <label
                         >位置公开方式<select bind:value={p.location}
-                          ><option value="inherit">跟随相册</option><option value="hidden">隐藏</option><option
-                            value="approximate">近似位置</option
-                          ><option value="exact">精确位置（受相册限制）</option></select
+                          ><option value="inherit">跟随相册</option><option value="hidden">隐藏</option
+                          ><option value="approximate">近似位置</option><option value="exact"
+                            >精确位置（受相册限制）</option
+                          ></select
                         ></label
                       >
                     </div>{/if}
@@ -514,7 +554,9 @@
               maxLength={10000}
               filename="photo-group.md"
             />
-            <p class="muted">访客只看到组标题与共用说明。点击成员调整无障碍和位置设置；每张照片保留独立的拍摄参数。</p>
+            <p class="muted">
+              访客只看到组标题与共用说明。点击成员调整无障碍和位置设置；每张照片保留独立的拍摄参数。
+            </p>
             <button class="dissolve" onclick={() => (isNewGroup ? closeGroup() : dissolve(g.id))}
               >{isNewGroup ? '取消分组' : '解散照片组（保留说明）'}</button
             >
@@ -854,6 +896,143 @@
     }
     .collection-actions button {
       min-height: 38px;
+    }
+  }
+
+  .order-notice:empty {
+    display: none;
+  }
+  .collection-card {
+    overflow: visible;
+  }
+  .collection-image {
+    border-radius: 8px;
+  }
+  .collection-top {
+    position: absolute;
+    inset: 8px 8px auto;
+    z-index: 1;
+    min-height: 32px;
+    padding: 2px 4px;
+    border-radius: 5px;
+    color: #26382b;
+    background: #fffffff0;
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .collection-card:hover .collection-top,
+  .collection-card:focus-within .collection-top,
+  .selected-card .collection-top {
+    opacity: 1;
+  }
+  .cover-badge {
+    top: auto;
+    bottom: 10px;
+    left: 10px;
+  }
+  .collection-caption {
+    padding: 12px 50px 12px 12px;
+  }
+  .collection-menu {
+    position: absolute;
+    bottom: 6px;
+    right: 8px;
+    z-index: 2;
+  }
+  .collection-menu[open] {
+    z-index: 4;
+  }
+  .collection-menu summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 5px;
+    font-size: 13px;
+    color: #5f705f;
+  }
+  .collection-menu summary::-webkit-details-marker {
+    display: none;
+  }
+  .collection-menu summary:hover {
+    background: #eef2ea;
+  }
+  .collection-actions {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    min-width: 132px;
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid #dfe5d8;
+    border-radius: 6px;
+    box-shadow: 0 6px 24px #20352120;
+    background: white;
+  }
+  .collection-actions button {
+    width: 100%;
+    text-align: left;
+    margin: 0;
+    background: transparent;
+  }
+  .collection-actions button:hover {
+    background: #edf2e9;
+  }
+  .collection-actions .text-action {
+    margin-left: 0;
+  }
+  .collection-menu summary:focus-visible {
+    outline: 2px solid #638267;
+    outline-offset: 2px;
+  }
+  .group-panel {
+    margin-top: 0;
+    border-top: 0;
+    padding-top: 0;
+  }
+  .group-panel > .collection-grid {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    margin-bottom: 24px;
+  }
+  .group-panel .collection-card {
+    padding-bottom: 36px;
+  }
+  .group-panel .section-heading {
+    margin-bottom: 12px;
+  }
+  .group-panel > label {
+    display: block;
+    margin: 20px 0;
+  }
+  .group-panel > label select,
+  .group-panel > label input {
+    margin-top: 8px;
+  }
+  .group-footer {
+    padding: 12px 24px;
+  }
+  .group-footer p {
+    margin-bottom: 8px;
+  }
+  @media (hover: none) {
+    .collection-top {
+      opacity: 1;
+    }
+  }
+
+  .group-panel > .collection-grid {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    overflow-x: auto;
+    padding: 4px 4px 12px;
+  }
+  .group-panel .collection-card {
+    flex: 0 0 190px;
+  }
+  @media (max-width: 600px) {
+    .group-panel .collection-card {
+      flex-basis: 150px;
     }
   }
 </style>

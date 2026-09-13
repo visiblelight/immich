@@ -3,7 +3,14 @@
   import { goto, beforeNavigate } from '$app/navigation';
   import AdminSidebar from './AdminSidebar.svelte';
   import { sameAlbumContent, galleryInventory, albumPhotoCounts, albumTreeRows } from '@gallery/core';
-  import type { AlbumContent, DraftPhoto, GallerySite, GalleryUser, ManagedAlbum, SourcePhoto } from '@gallery/core';
+  import type {
+    AlbumContent,
+    DraftPhoto,
+    GallerySite,
+    GalleryUser,
+    ManagedAlbum,
+    SourcePhoto,
+  } from '@gallery/core';
   import './design/admin.css';
   import { MarkdownEditor } from '@gallery/ui';
   import TagPicker from './TagPicker.svelte';
@@ -125,7 +132,11 @@
       `/api/${path}`,
       body === undefined
         ? undefined
-        : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+        : {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          },
     );
     const type = r.headers.get('content-type') ?? '';
     const result = type.includes('application/json') ? await r.json() : { message: await r.text() };
@@ -166,7 +177,8 @@
         (siteName !== workspaceData.site.name ||
           tagline !== workspaceData.site.tagline ||
           JSON.stringify(contactLinks) !== JSON.stringify(workspaceData.site.contactLinks ?? []))) ||
-      (page === 'account' && (displayName !== workspaceData.user.displayName || !!oldPassword || !!newPassword)),
+      (page === 'account' &&
+        (displayName !== workspaceData.user.displayName || !!oldPassword || !!newPassword)),
   );
   function abandon() {
     return !unsaved || window.confirm('有尚未保存的修改。是否放弃这些修改？');
@@ -369,11 +381,18 @@
 
 <svelte:window onbeforeunload={unload} />
 <svelte:head>
-  <title>{page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'} · {workspaceData.site.name}</title
+  <title
+    >{page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'} · {workspaceData.site
+      .name}</title
   >
 </svelte:head>
 <div class="workspace live-workspace">
-  <AdminSidebar active={page} user={workspaceData.user} publicOrigin={workspaceData.publicOrigin} onNavigate={nav} />
+  <AdminSidebar
+    active={page}
+    user={workspaceData.user}
+    publicOrigin={workspaceData.publicOrigin}
+    onNavigate={nav}
+  />
   <main class="main">
     <div class="topline">
       <span>工作台 / {page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'}</span><a
@@ -387,7 +406,6 @@
       </div>{/if}
     {#if page === 'albums' && !active}<header class="page-heading">
         <div>
-          <p class="eyebrow">YOUR COLLECTIONS</p>
           <h1>相册</h1>
           <p class="muted">从照片到故事，整理每一段值得分享的记忆。</p>
         </div>
@@ -399,8 +417,8 @@
         <div><span>照片组</span><strong>{inventory.groups}</strong></div>
       </div>
       <p class="inventory-note">
-        按当前草稿统计，照片跨相册去重，包含组内照片。前台可见 {workspaceData.albums.filter((a) => a.visible).length} 个相册
-        · 待发布草稿 / 修改 {workspaceData.albums.filter(
+        按当前草稿统计，照片跨相册去重，包含组内照片。前台可见 {workspaceData.albums.filter((a) => a.visible)
+          .length} 个相册 · 待发布草稿 / 修改 {workspaceData.albums.filter(
           (a) => a.hasUnpublishedChanges ?? a.draftVersion !== a.releaseVersion,
         ).length} 个
       </p>
@@ -415,7 +433,9 @@
           <input aria-label="搜索相册" class="search" bind:value={search} placeholder="搜索相册名称…" />
         </div>
         <div class="album-table">
-          <div class="table-head"><span>相册名称</span><span>内容</span><span>发布状态</span><span>操作</span></div>
+          <div class="table-head">
+            <span>相册名称</span><span>内容</span><span>发布状态</span><span>操作</span>
+          </div>
           {#each rows as row}{@const a = row.album}
             <div class="album-row" class:ancestor-context={row.context}>
               <div class="album-tree-name" style:--album-depth={Math.min(row.depth, 5)}>
@@ -427,10 +447,12 @@
                     onclick={() => toggleAlbum(a.id)}>{row.expanded ? '▾' : '▸'}</button
                   >{:else}<span class="tree-leaf" aria-hidden="true">{row.depth ? '└' : ''}</span>{/if}
                 <button class="album-name" onclick={() => select(a)}
-                  >{#if a.draft.cover}<img src={media(a.draft.cover)} alt="" />{:else}<span class="cover-empty">▦</span
+                  >{#if a.draft.cover}<img src={media(a.draft.cover)} alt="" />{:else}<span
+                      class="cover-empty">▦</span
                     >{/if}<span
                     ><strong>{a.draft.title || '未命名相册'}</strong><small
-                      >{workspaceData.albums.find((p) => p.id === a.draft.parent)?.draft.title ?? '顶级相册'}</small
+                      >{workspaceData.albums.find((p) => p.id === a.draft.parent)?.draft.title ??
+                        '顶级相册'}</small
                     ></span
                   ></button
                 >
@@ -444,7 +466,9 @@
                 onclick={() => select(a)}>编辑 →</button
               >
             </div>{/each}{#if !rows.length}<div class="empty large">
-              <h3>{workspaceData.albums.length ? '没有符合条件的相册' : '创建你的第一本相册'}</h3>
+              <h3>
+                {workspaceData.albums.length ? '没有符合条件的相册' : '创建你的第一本相册'}
+              </h3>
               <p>从 Immich 选片，写下故事，再发布到 Gallery。</p>
             </div>{/if}
         </div>
@@ -463,7 +487,9 @@
               (a) => a.draft.parent === id,
             ).length} 个子相册
           </p>
-          <p class="muted">{dirty ? '有尚未保存的修改' : `草稿已保存 · 版本 ${active.draftVersion}`}</p>
+          <p class="muted">
+            {dirty ? '有尚未保存的修改' : `草稿已保存 · 版本 ${active.draftVersion}`}
+          </p>
         </div>
         <div class="actions">
           <button disabled={busy || !dirty} onclick={save}>保存草稿</button><a
@@ -484,33 +510,64 @@
         </div>
       </header>
       {#if dirty}<p class="footnote">请先保存，再预览或发布。切换相册前会提醒保留修改。</p>{/if}
+      <details class="publication-summary">
+        <summary>发布概况 · {active.visible ? '前台可见' : '前台不可见'}</summary>
+        <section class="panel">
+          <p class="eyebrow">发布概况</p>
+          <h3>{active.status === 'draft' ? '还在酝酿中' : '已有公开版本'}</h3>
+          <p class="muted">草稿修改在再次发布后才会更新前台。</p>
+          <dl>
+            <div>
+              <dt>照片数量</dt>
+              <dd>{content.photos.length} 张</dd>
+            </div>
+            <div>
+              <dt>前台访问</dt>
+              <dd>{active.visible ? '可见' : '不可见'}</dd>
+            </div>
+          </dl>
+          {#if active.status !== 'draft'}<a
+              class="button-link wide"
+              href={`${workspaceData.publicOrigin}/albums/${active.draft.slug}`}
+              target="_blank"
+              rel="noreferrer">查看前台效果 ↗</a
+            ><button
+              class="quiet wide"
+              disabled={busy}
+              onclick={() => {
+                action = active!.status === 'offline' ? 'restore' : 'offline';
+                void open('confirm');
+              }}>{active.status === 'offline' ? '恢复公开版本' : '下线相册'}</button
+            >{/if}<button
+            class="quiet wide"
+            disabled={busy}
+            onclick={() => {
+              if (abandon())
+                void run(async () => {
+                  await refresh();
+                  message = '已重新载入服务器上的草稿。';
+                });
+            }}>重新载入草稿</button
+          >
+          {#if active.status === 'draft'}<button
+              class="quiet wide"
+              disabled={busy}
+              onclick={() => {
+                action = 'delete';
+                void open('confirm');
+              }}>删除草稿相册</button
+            >{/if}
+        </section>
+      </details>
       <div class="editor-tabs">
-        {#each [['photos', `照片与子相册 (${content.photos.length})`], ['story', '相册介绍'], ['settings', '基本设置']] as [value, label]}<button
+        {#each [['photos', `照片 (${content.photos.length})`], ['children', `子相册 (${workspaceData.albums.filter((a) => a.draft.parent === id).length})`], ['story', '相册介绍'], ['settings', '基本设置']] as [value, label]}<button
             class:chosen={tab === value}
             onclick={() => (tab = value!)}>{label}</button
           >{/each}
       </div>
       <div class="editor-layout">
         <section class="editor-body">
-          {#if tab === 'photos'}<section class="panel content-panel">
-              <div class="section-heading">
-                <div>
-                  <h2>子相册</h2>
-                  <p class="muted">本册可以同时收录子相册与直接照片。</p>
-                </div>
-                <button class="quiet" onclick={() => create(id)}>＋ 新建子相册</button>
-              </div>
-              <div class="child-list">
-                {#each workspaceData.albums.filter((a) => a.draft.parent === id) as child}<button
-                    onclick={() => select(child)}
-                    ><span>▦</span><span><strong>{child.draft.title}</strong><small>{status(child)}</small></span><span
-                      >→</span
-                    ></button
-                  >{/each}{#if !workspaceData.albums.some((a) => a.draft.parent === id)}<p class="muted compact-empty">
-                    还没有子相册。
-                  </p>{/if}
-              </div>
-            </section>
+          {#if tab === 'photos'}
             <section class="panel content-panel">
               {#key id}<AlbumPhotosEditor
                   bind:content
@@ -522,6 +579,27 @@
                   canPublish={!!active.visible}
                 />{/key}
             </section>
+          {:else if tab === 'children'}<section class="panel content-panel">
+              <div class="section-heading">
+                <div>
+                  <h2>子相册</h2>
+                  <p class="muted">本册可以同时收录子相册与直接照片。</p>
+                </div>
+                <button class="quiet" onclick={() => create(id)}>＋ 新建子相册</button>
+              </div>
+              <div class="child-list">
+                {#each workspaceData.albums.filter((a) => a.draft.parent === id) as child}<button
+                    onclick={() => select(child)}
+                    ><span>▦</span><span
+                      ><strong>{child.draft.title}</strong><small>{status(child)}</small></span
+                    ><span>→</span></button
+                  >{/each}{#if !workspaceData.albums.some((a) => a.draft.parent === id)}<p
+                    class="muted compact-empty"
+                  >
+                    还没有子相册。
+                  </p>{/if}
+              </div>
+            </section>
           {:else if tab === 'story'}<section class="panel content-panel">
               <div class="section-heading">
                 <div>
@@ -530,7 +608,11 @@
                 </div>
                 <span class="badge">文字内容</span>
               </div>
-              <MarkdownEditor label="相册正文" bind:value={content.markdown} filename={`${content.slug}.md`} />
+              <MarkdownEditor
+                label="相册正文"
+                bind:value={content.markdown}
+                filename={`${content.slug}.md`}
+              />
               <details style="margin-top:20px">
                 <summary>可选摘要 · 用于列表与分享</summary><label
                   >摘要<textarea rows="2" maxlength="2000" bind:value={content.summary}></textarea></label
@@ -553,8 +635,8 @@
               ><label
                 >所属父相册<select bind:value={content.parent}
                   ><option value="">无，作为顶级相册</option
-                  >{#each workspaceData.albums.filter((a) => a.id !== id && !below(a, id)) as a}<option value={a.id}
-                      >{a.draft.title}</option
+                  >{#each workspaceData.albums.filter((a) => a.id !== id && !below(a, id)) as a}<option
+                      value={a.id}>{a.draft.title}</option
                     >{/each}</select
                 ></label
               ><label
@@ -563,105 +645,66 @@
                 ></label
               ><label
                 >封面照片<select bind:value={content.cover}
-                  ><option value="">暂不设置封面</option>{#each content.photos as p, index}<option value={p.asset}
-                      >{p.title || `本册照片 ${index + 1}`}</option
+                  ><option value="">暂不设置封面</option>{#each content.photos as p, index}<option
+                      value={p.asset}>{p.title || `本册照片 ${index + 1}`}</option
                     >{/each}{#each workspaceData.albums.filter((a) => a.visible && below(a, id, true)) as child}{#each child.draft.photos.filter((p) => !content!.photos.some((q) => q.asset === p.asset)) as p}<option
                         value={p.asset}>{child.draft.title} / {p.title || '照片'}（发布时校验）</option
                       >{/each}{/each}</select
                 ></label
               ><label
                 >本册位置公开方式<select bind:value={content.location}
-                  ><option value="hidden">隐藏位置</option><option value="approximate">近似位置</option><option
-                    value="exact">精确位置（新相册默认）</option
-                  ></select
+                  ><option value="hidden">隐藏位置</option><option value="approximate">近似位置</option
+                  ><option value="exact">精确位置（新相册默认）</option></select
                 ><small>照片可以进一步收紧精度，不能突破本册设置。GPS 跟随 Immich 更新。</small></label
               ><label class="checkbox-label"
                 ><input type="checkbox" bind:checked={content.showExif} /> 展示相机与镜头 EXIF 参数</label
               >
             </section>{/if}
         </section>
-        <aside class="context-panel">
-          <section class="panel">
-            <p class="eyebrow">发布概况</p>
-            <h3>{active.status === 'draft' ? '还在酝酿中' : '已有公开版本'}</h3>
-            <p class="muted">草稿修改在再次发布后才会更新前台。</p>
-            <dl>
-              <div>
-                <dt>照片数量</dt>
-                <dd>{content.photos.length} 张</dd>
-              </div>
-              <div>
-                <dt>前台访问</dt>
-                <dd>{active.visible ? '可见' : '不可见'}</dd>
-              </div>
-            </dl>
-            {#if active.status !== 'draft'}<a
-                class="button-link wide"
-                href={`${workspaceData.publicOrigin}/albums/${active.draft.slug}`}
-                target="_blank"
-                rel="noreferrer">查看前台效果 ↗</a
-              ><button
-                class="quiet wide"
-                disabled={busy}
-                onclick={() => {
-                  action = active!.status === 'offline' ? 'restore' : 'offline';
-                  void open('confirm');
-                }}>{active.status === 'offline' ? '恢复公开版本' : '下线相册'}</button
-              >{/if}<button
-              class="quiet wide"
-              disabled={busy}
-              onclick={() => {
-                if (abandon())
-                  void run(async () => {
-                    await refresh();
-                    message = '已重新载入服务器上的草稿。';
-                  });
-              }}>重新载入草稿</button
-            >
-            {#if active.status === 'draft'}<button
-                class="quiet wide"
-                disabled={busy}
-                onclick={() => {
-                  action = 'delete';
-                  void open('confirm');
-                }}>删除草稿相册</button
-              >{/if}
-          </section>
-        </aside>
       </div>
     {:else if page === 'settings'}<header class="page-heading">
         <div>
-          <p class="eyebrow">SITE PREFERENCES</p>
           <h1>站点设置</h1>
         </div>
       </header>
       <section class="panel content-panel form-panel settings-form">
         <label>站点名称<input bind:value={siteName} maxlength="100" /></label><label
           >站点简介<textarea bind:value={tagline} maxlength="2000" rows="3"></textarea></label
-        ><button
-          class="primary"
-          disabled={busy}
-          onclick={() =>
-            run(async () => {
-              await api('site', { name: siteName, tagline, contactLinks, version: workspaceData.site.version });
-              await refresh();
-              message = '站点设置已应用到前台。';
-            })}>保存并应用</button
         >
-        <h2>联系链接</h2>
-        {#each contactLinks as contact, i}<div class="form-panel">
-            <label>链接名称 {i + 1}<input bind:value={contact.label} maxlength="100" /></label><label
-              >链接地址 {i + 1}<input
-                bind:value={contact.url}
-                placeholder="https:// 或 mailto:"
-                maxlength="2000"
-              /></label
-            ><button onclick={() => contactLinks.splice(i, 1)}>移除链接 {i + 1}</button>
-          </div>{/each}
-        <button disabled={contactLinks.length >= 10} onclick={() => contactLinks.push({ label: '', url: '' })}
-          >添加联系链接</button
-        >
-        <p class="muted">填写后使用上方“保存并应用”，前台关于页随之更新。</p>
+        <section class="contact-section">
+          <h2>联系链接</h2>
+          {#each contactLinks as contact, i}<div class="contact-row">
+              <label>链接名称 {i + 1}<input bind:value={contact.label} maxlength="100" /></label><label
+                >链接地址 {i + 1}<input
+                  bind:value={contact.url}
+                  placeholder="https:// 或 mailto:"
+                  maxlength="2000"
+                /></label
+              ><button onclick={() => contactLinks.splice(i, 1)}>移除链接 {i + 1}</button>
+            </div>{/each}
+          <button
+            disabled={contactLinks.length >= 10}
+            onclick={() => contactLinks.push({ label: '', url: '' })}>添加联系链接</button
+          >
+        </section>
+        <div class="settings-actions">
+          <button
+            class="primary"
+            disabled={busy}
+            onclick={() =>
+              run(async () => {
+                await api('site', {
+                  name: siteName,
+                  tagline,
+                  contactLinks,
+                  version: workspaceData.site.version,
+                });
+                await refresh();
+                message = '站点设置已应用到前台。';
+              })}>保存并应用</button
+          >
+          <p class="muted">保存站点信息与联系链接，并更新前台。</p>
+        </div>
         <hr />
         <h2>页面与域名</h2>
         <p class="muted">前台导航：相册 / 相片 / 去过 / 关于。关于页当前为静态文章，文章选篇后续加入。</p>
@@ -671,9 +714,10 @@
       </section>
     {:else}<header class="page-heading">
         <div>
-          <p class="eyebrow">YOUR ACCOUNT</p>
           <h1>个人账号</h1>
-          <p class="muted">{workspaceData.user.displayName} · {workspaceData.user.email}</p>
+          <p class="muted">
+            {workspaceData.user.displayName} · {workspaceData.user.email}
+          </p>
         </div>
       </header>
       <section class="panel content-panel form-panel settings-form">
@@ -702,7 +746,12 @@
           }}
         >
           <label
-            >当前密码<input type="password" autocomplete="current-password" bind:value={oldPassword} required /></label
+            >当前密码<input
+              type="password"
+              autocomplete="current-password"
+              bind:value={oldPassword}
+              required
+            /></label
           ><label
             >新密码<input
               type="password"
@@ -738,7 +787,6 @@
 >
   {#if modal}<div class="dialog-heading">
       <div>
-        <p class="eyebrow">GALLERY STUDIO</p>
         <h2 id="manager-modal">
           {modal === 'create'
             ? '新建相册'
@@ -757,7 +805,9 @@
       </div>
       <button class="close-button" aria-label="关闭弹窗" disabled={busy} onclick={() => close()}>×</button>
     </div>
-    {#if failed && message}<p class="error modal-error" role="alert">{message}</p>{/if}
+    {#if failed && message}<p class="error modal-error" role="alert">
+        {message}
+      </p>{/if}
     {#if modal === 'create'}<form
         class="dialog-body form-panel"
         onsubmit={(e) => {
@@ -811,7 +861,8 @@
             <input aria-label="搜索文件名" placeholder="搜索文件名…" bind:value={sourceSearch} /><select
               aria-label="按标签筛选"
               bind:value={sourceTag}
-              ><option value="">全部标签</option>{#each sourceTags as tag}<option value={tag.id}>{tag.name}</option
+              ><option value="">全部标签</option>{#each sourceTags as tag}<option value={tag.id}
+                  >{tag.name}</option
                 >{/each}</select
             ><label class="date-filter">拍摄日期起<input type="date" bind:value={since} /></label><button
               disabled={sourceBusy}>应用筛选</button
@@ -821,7 +872,9 @@
             {sourceBusy ? '正在读取图库…' : `${sourceAssets.length} 张照片 · 已在本册的照片不会重复添加`}
           </p>
           <div class="asset-grid">
-            {#each sourceAssets as asset}{@const added = content?.photos.some((p) => p.asset === asset.id)}<button
+            {#each sourceAssets as asset}{@const added = content?.photos.some(
+                (p) => p.asset === asset.id,
+              )}<button
                 class="asset-card"
                 class:selected={selected.some((a) => a.id === asset.id)}
                 aria-pressed={selected.some((a) => a.id === asset.id)}
@@ -856,7 +909,9 @@
         </section>
       </div>
       <footer class="picker-footer">
-        <div><strong>已选 {selected.length} 张</strong><small>将加入「{content?.title}」</small></div>
+        <div>
+          <strong>已选 {selected.length} 张</strong><small>将加入「{content?.title}」</small>
+        </div>
         <div class="actions">
           <button onclick={() => (selected = [])} disabled={!selected.length}>清空选择</button><button
             class="primary"
@@ -905,9 +960,13 @@
       <div class="dialog-actions">
         <button disabled={busy} onclick={() => close()}>取消</button>
         <button disabled={busy} onclick={() => savePhoto(false)}>保存草稿</button>
-        <button class="primary" disabled={busy || !active?.visible} onclick={() => savePhoto(true)}>保存并发布</button>
+        <button class="primary" disabled={busy || !active?.visible} onclick={() => savePhoto(true)}
+          >保存并发布</button
+        >
       </div>
-      {#if !active?.visible}<p class="footnote">请先发布相册并确认所有上级已公开；现在可以保存照片草稿。</p>{/if}
+      {#if !active?.visible}<p class="footnote">
+          请先发布相册并确认所有上级已公开；现在可以保存照片草稿。
+        </p>{/if}
     {:else if modal === 'confirm' && active}<div class="dialog-body">
         <h3>{active.draft.title}</h3>
         <p>
@@ -930,7 +989,9 @@
               <p>单独下线的子相册保持下线。</p>{/if}
           </div>
           <p class="muted">
-            {action === 'publish' ? '发布时会重新校验照片来源、封面、版本和父级状态。' : '影响范围按公开层级计算。'}
+            {action === 'publish'
+              ? '发布时会重新校验照片来源、封面、版本和父级状态。'
+              : '影响范围按公开层级计算。'}
           </p>{/if}
         <div class="dialog-actions">
           <button disabled={busy} onclick={() => close()}>取消</button><button

@@ -6,7 +6,11 @@
     countries: visited,
     total,
     unassigned = 0,
-  }: { countries: VisitedCountry[]; total: number; unassigned?: number } = $props();
+  }: {
+    countries: VisitedCountry[];
+    total: number;
+    unassigned?: number;
+  } = $props();
   type WorldCountry = (typeof world.countries)[number];
   const mapSize = world;
   let svg: SVGSVGElement;
@@ -16,7 +20,12 @@
     viewport = $state({ x: 0, y: 0, w: world.width, h: world.height }),
     drag = $state(false);
   let pointers = new Map<number, { x: number; y: number }>(),
-    gesture: { x: number; y: number; distance: number; viewport: typeof viewport } | null = null,
+    gesture: {
+      x: number;
+      y: number;
+      distance: number;
+      viewport: typeof viewport;
+    } | null = null,
     moved = false,
     lastPointer = 'mouse';
   let stats = $derived(new Map(visited.map((c) => [c.id, c])));
@@ -37,7 +46,12 @@
   function zoom(factor: number) {
     const w = Math.max(180, Math.min(mapSize.width, viewport.w * factor));
     const h = (w * mapSize.height) / mapSize.width;
-    viewport = bounded({ x: viewport.x + (viewport.w - w) / 2, y: viewport.y + (viewport.h - h) / 2, w, h });
+    viewport = bounded({
+      x: viewport.x + (viewport.w - w) / 2,
+      y: viewport.y + (viewport.h - h) / 2,
+      w,
+      h,
+    });
     hovered = null;
   }
   function focusCaucasus() {
@@ -48,7 +62,11 @@
     const points = [...pointers.values()];
     const a = points[0]!,
       b = points[1] ?? a;
-    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y) };
+    return {
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      distance: Math.hypot(a.x - b.x, a.y - b.y),
+    };
   }
   function pointerDown(event: PointerEvent) {
     if (event.button !== 0) return;
@@ -140,12 +158,11 @@
 
 <section class="heading">
   <div>
-    <p class="eyebrow">PLACES & MEMORIES</p>
     <h1>去过</h1>
-    <p>在世界上，留下几束光。</p>
   </div>
   <div class="numbers">
-    <strong>{visited.length}</strong> 个国家 <span>·</span> <strong>{total}</strong> 张有公开位置的照片
+    <strong>{visited.length}</strong> 个国家 <span>·</span>
+    <strong>{total}</strong> 张有公开位置的照片
   </div>
 </section>
 <div class="map" class:drag>
@@ -212,10 +229,13 @@
         writing-mode={sea.vertical ? 'vertical-rl' : 'horizontal-tb'}>{sea.name}</text
       >{/each}
   </svg>
-  <div class="legend"><i></i> 去过 <i class="empty"></i> 尚未留下照片 <span>拖动 · 双指缩放</span></div>
+  <div class="legend">
+    <i></i> 去过 <i class="empty"></i> 尚未留下照片 <span>拖动 · 双指缩放</span>
+  </div>
 </div>
 <p class="note">
-  根据已公开照片的拍摄时间整理，日期不代表出入境记录。{#if unassigned}另有 {unassigned} 张照片的位置暂无法明确归属国家。{/if}
+  根据已公开照片的拍摄时间整理，日期不代表出入境记录。{#if unassigned}另有 {unassigned}
+    张照片的位置暂无法明确归属国家。{/if}
 </p>
 <section class="list">
   <div class="list-heading">
@@ -263,15 +283,7 @@
     font-weight: 500;
     margin: 8px 0;
   }
-  .heading p {
-    color: #71766c;
-    margin: 8px 0;
-  }
-  .eyebrow {
-    font-size: 10px;
-    letter-spacing: 2px;
-    color: #7b8377;
-  }
+
   .numbers {
     font-size: 12px;
     color: #71766c;
@@ -515,6 +527,31 @@
     .tools {
       right: 8px;
       top: 8px;
+    }
+  }
+
+  .heading {
+    margin: 28px 0 24px;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .heading h1 {
+    font-size: 25px;
+    line-height: 1.35;
+    margin: 0;
+    font-weight: 550;
+  }
+  .numbers strong {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  @media (max-width: 600px) {
+    .heading {
+      margin-top: 22px;
+    }
+    .heading h1 {
+      font-size: 25px;
     }
   }
 </style>

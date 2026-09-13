@@ -2300,3 +2300,178 @@ dialog.wide-dialog {
     align-items: flex-start;
   }
 }
+
+/* Shared visual rhythm for the live management interface. */
+html {
+  scrollbar-gutter: stable;
+}
+.live-workspace {
+  --field-gap: 20px;
+  --section-gap: 28px;
+}
+.live-workspace .page-heading {
+  margin: 28px 0 24px;
+}
+.live-workspace h1 {
+  font-size: 27px;
+  line-height: 1.35;
+}
+.live-workspace .editor-heading {
+  margin: 16px 0;
+  gap: 20px;
+}
+.live-workspace .editor-heading p {
+  margin: 6px 0;
+}
+.live-workspace .editor-layout {
+  display: block;
+}
+.live-workspace .editor-body {
+  min-width: 0;
+  width: 100%;
+}
+.live-workspace .editor-tabs {
+  gap: 24px;
+  margin: 16px 0 24px;
+  overflow-x: auto;
+}
+.live-workspace .editor-tabs button {
+  white-space: nowrap;
+  flex: none;
+}
+.live-workspace .publication-summary {
+  margin: 12px 0;
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+.live-workspace .publication-summary > summary {
+  color: #697963;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 8px 0;
+}
+.live-workspace .publication-summary > .panel {
+  padding: 20px;
+  width: min(400px, calc(100vw - 90px));
+  box-sizing: border-box;
+}
+.live-workspace .publication-summary h3 {
+  margin: 0 0 12px;
+}
+.live-workspace .publication-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+.live-workspace .publication-summary .wide {
+  margin-top: 10px;
+}
+.live-workspace .content-panel h2 {
+  margin: 0 0 16px;
+}
+.live-workspace .settings-form > label {
+  margin: 0 0 24px;
+}
+.live-workspace .contact-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #e4e9df;
+}
+.live-workspace .contact-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+.live-workspace .contact-row label {
+  margin: 0;
+  min-width: 0;
+}
+.live-workspace .contact-row input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.live-workspace .contact-row button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.live-workspace .settings-actions {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #e4e9df;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.live-workspace .settings-actions p {
+  margin: 0;
+}
+.live-workspace select,
+.live-workspace .map-admin select {
+  appearance: none;
+  padding: 11px 38px 11px 12px;
+  background: white
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23727e70' stroke-width='1.5'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  border-radius: 6px;
+}
+.live-workspace :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid #628169;
+  outline-offset: 3px;
+}
+.live-workspace .map-admin h1 {
+  margin: 28px 0 16px;
+}
+.live-workspace .map-admin button {
+  font: inherit;
+  border-radius: 6px;
+}
+.live-workspace .tags-page article .actions button {
+  background: #f0f3ed;
+  color: #425c44;
+}
+@media (max-width: 780px) {
+  .live-workspace .editor-heading {
+    display: block;
+  }
+  .live-workspace .editor-heading .actions {
+    margin-top: 16px;
+  }
+  .live-workspace .editor-tabs {
+    gap: 18px;
+  }
+  .live-workspace .contact-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e4e9df;
+  }
+  .live-workspace .contact-row button {
+    justify-self: start;
+  }
+}
+
+.live-workspace .editor-heading h1 {
+  margin: 0;
+}
+@media (max-width: 780px) {
+  .live-workspace .topline {
+    margin-bottom: 20px;
+  }
+  .live-workspace .back {
+    margin-bottom: 0;
+  }
+  .live-workspace .editor-heading {
+    margin: 12px 0;
+  }
+  .live-workspace .publication-summary {
+    margin: 4px 0;
+  }
+  .live-workspace .editor-tabs {
+    margin-top: 8px;
+    margin-bottom: 16px;
+  }
+}
