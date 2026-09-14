@@ -54,7 +54,7 @@ async function verify(name, designPreview = false) {
     assert.equal(page.status, 503, 'unconfigured service must not expose a working gallery/admin page');
     await page.text();
     if (name === 'public') {
-      for (const path of ['/design', '/design/visited', '/design/visited/world', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
+      for (const path of ['/design/records', '/design/records/a-road-through-georgia', '/design/records/a-little-time-for-nothing', '/design/records/about', '/design', '/design/visited', '/design/visited/world', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
         const preview = await fetch(`${origin}${path}`);
         assert.equal(preview.status, designPreview ? 200 : 404, `preview gate: ${path}`);
         if (designPreview) {
@@ -73,13 +73,15 @@ async function verify(name, designPreview = false) {
       }
     }
     if (name === 'admin') {
-      const preview = await fetch(`${origin}/design`);
-      assert.equal(preview.status, designPreview ? 200 : 404);
-      if (designPreview) {
-        assert.equal(preview.headers.get('cache-control'), 'no-store');
-        assert.equal(preview.headers.get('x-robots-tag'), 'noindex, nofollow');
+      for (const path of ['/design', '/design/articles']) {
+        const preview = await fetch(`${origin}${path}`);
+        assert.equal(preview.status, designPreview ? 200 : 404);
+        if (designPreview) {
+          assert.equal(preview.headers.get('cache-control'), 'no-store');
+          assert.equal(preview.headers.get('x-robots-tag'), 'noindex, nofollow');
+        }
+        await preview.text();
       }
-      await preview.text();
     }
     console.log(`PASS gallery-${name} (design=${designPreview}): production build starts, liveness 200, readiness/root 503`);
   } finally {

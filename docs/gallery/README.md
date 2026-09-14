@@ -14,6 +14,9 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [记录与富文本 ADR 0012](decisions/0012-records-and-rich-text.md) | 已确认的文章、双来源插图、关于选篇与发布边界 |
+| [文章数据设计](architecture/articles.md) | 拟新增表、内容协议和素材权限；尚未迁移 |
+| [记录模块交付](delivery/articles.md) | 样例、视觉评审与业务交付分阶段跟踪 |
 | [内容优先视觉 ADR 0011](decisions/0011-content-first-visual-layout.md) | 已确认的导航统一、筛选侧栏、照片编辑与说明布局 |
 | [内容优先视觉交付](delivery/content-first-visual-layout.md) | 本轮实现与浏览器验证 |
 | [统一照片与标签 ADR 0010](decisions/0010-shared-photos-and-tags.md) | 全站共用照片资料、独立发布、标签管理与检索 |

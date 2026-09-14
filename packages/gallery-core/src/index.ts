@@ -18,3 +18,5 @@ export * from './capture-time.ts';
 export * from './visits.ts';
 export * from './visited.ts';
 export * from './admin-albums.ts';
+
+export * from './article.ts';

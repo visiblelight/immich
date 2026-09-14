@@ -1,17 +1,30 @@
 <script lang="ts">
   let {
     name,
-    active = 'albums',
+    active = "albums",
     preview = false,
-  }: { name: string; active?: string; preview?: boolean } = $props();
+    recordsHref,
+    aboutHref = "/about",
+  }: {
+    name: string;
+    active?: string;
+    preview?: boolean;
+    recordsHref?: string;
+    aboutHref?: string;
+  } = $props();
 </script>
 
-<header class="public-header">
+<header class="public-header" class:with-records={!!recordsHref}>
   <a class="brand" href="/albums">{name}</a>
   <nav aria-label="主导航">
-    {#each [['albums', '相册'], ['photos', '相片'], ['visited', '去过'], ['about', '关于']] as [id, label]}
-      {#if !preview || id === 'albums'}<a href={`/${id}`} aria-current={active === id ? 'page' : undefined}
-          >{label}</a
+    {#each [["albums", "相册"], ["photos", "相片"], ["visited", "去过"], ...(recordsHref ? [["records", "记录"]] : []), ["about", "关于"]] as [id, label]}
+      {#if !preview || id === "albums"}<a
+          href={id === "records"
+            ? recordsHref
+            : id === "about"
+              ? aboutHref
+              : `/${id}`}
+          aria-current={active === id ? "page" : undefined}>{label}</a
         >{/if}
     {/each}
   </nav>
@@ -25,7 +38,8 @@
     margin: 0;
     background: #fafbf9;
     color: #2f3731;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
   }
   .public-header {
     height: 80px;
@@ -41,7 +55,7 @@
     text-decoration: none;
   }
   .brand {
-    font-family: Georgia, 'Songti SC', serif;
+    font-family: Georgia, "Songti SC", serif;
     font-size: 24px;
     font-weight: 650;
     white-space: nowrap;
@@ -84,11 +98,17 @@
     nav {
       gap: 18px;
     }
+    .with-records nav {
+      gap: 12px;
+    }
     nav a {
       font-size: 13px;
     }
   }
   @media (max-width: 360px) {
+    .with-records nav {
+      gap: 9px;
+    }
     nav {
       gap: 12px;
     }

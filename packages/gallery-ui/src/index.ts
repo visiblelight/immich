@@ -4,3 +4,5 @@ export { default as Markdown } from './Markdown.svelte';
 export { default as MarkdownEditor } from './MarkdownEditor.svelte';
 
 export { default as PublicHeader } from './PublicHeader.svelte';
+
+export { default as ArticleReader } from './articles/ArticleReader.svelte';

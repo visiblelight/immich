@@ -13,7 +13,10 @@
   "dependencies": {
     "@gallery/core": "workspace:*",
     "@gallery/db": "workspace:*",
-    "@gallery/ui": "workspace:*"
+    "@gallery/ui": "workspace:*",
+    "@tiptap/core": "3.31.3",
+    "@tiptap/pm": "3.31.3",
+    "@tiptap/starter-kit": "3.31.3"
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "5.5.7",
