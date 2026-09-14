@@ -5,10 +5,11 @@
 ## 入口与初始账号
 
 - 管理后台：http://localhost:3101/albums（未登录转 /login）。
-- 公开相册：http://127.0.0.1:3100/albums；全站相片 /photos；关于页 /about；根路径转相册。
+- 公开相册：http://127.0.0.1:3100/albums；全站相片 /photos；记录 /records；关于页 /about；根路径转相册。
 - Immich 开发后台：http://127.0.0.1:3000；API 端口 2283。
 - 独立 Gallery 管理员邮箱 `admin@gallery.local`，随机初始密码仅在本机 `.gallery-local/runtime/initial-admin.txt`。文件权限 0600，不提交 Git；登录后可在个人账号里改密。不要复用 Immich 密码。
-- `/design` 仍是示例原型，保存和发布只影响页面内存；实际操作必须进入 `/albums`。
+- 后台文章：http://localhost:3101/articles，支持富文本、图库选片、独立插图、草稿保存和发布。
+- `/design` 仍是独立示例原型；实际操作进入 `/albums` 或 `/articles`，文章样例 IndexedDB 不导入正式数据库。
 
 后台登录和写入会校验浏览器 Origin 与 `GALLERY_ADMIN_ORIGIN` 完全一致。当前后台入口为 `http://localhost:3101/login`；旧的 `127.0.0.1:3101` 业务页面 GET/HEAD 自动跳转到配置入口，POST 不重定向。原因是实际 Chrome 在 IP 回环地址上发送的 Origin 丢失了端口；使用 localhost 避开该行为，仍保留完整协议、主机与端口校验。前台仍使用 `http://127.0.0.1:3100/albums`。不要关闭来源检查或只比较主机名。
 
@@ -71,3 +72,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:test:db /absolute/path/immich-sche
 当数据库迁移尚未批准应用到开发图库时，可以用 `GALLERY_BUILD_SUBDIR=shared-candidate` 运行 `gallery:build`，产物写入两个应用的 `build/shared-candidate`，不会覆盖正在运行的 `build`。同一环境变量用于 `gallery:smoke` 和 `gallery:test:db` 的生产 HTTP 验证。子目录仅允许小写字母、数字、连字符；默认未设置时沿用原有构建路径。
 
 运行中的 Node 进程仍持有旧服务端模块；不要在未迁移的开发数据库上重启新源码版本。候选验证通过且迁移选择确认后，先备份，暂停前后台写入，执行新增迁移，再按默认路径构建和重启前后台。
+
+## 记录与文章素材（2026-09-14）
+
+本地已应用 0008，前后台环境中的 `GALLERY_ARTICLE_MEDIA_ROOT` 指向 `.gallery-local/article-media`，后台 `BODY_SIZE_LIMIT=12M`。额外插图只归 Gallery 管理，必须与数据库一起备份。文章编辑自动保存草稿，显式发布才更新前台；“关于页面”选篇位于站点设置及文章列表。详细验收、限制和回退说明见 [记录模块交付](../delivery/articles.md)。

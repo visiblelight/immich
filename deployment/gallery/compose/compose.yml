@@ -13,7 +13,8 @@ x-gallery: &gallery
   security_opt: [no-new-privileges:true]
   networks: [immich]
   volumes:
-    - type: bind
+    - &gallery-thumbs
+      type: bind
       source: ${GALLERY_THUMBS_PATH:?Set the host Immich thumbs directory}
       target: /media/thumbs
       read_only: true
@@ -29,7 +30,16 @@ services:
       ORIGIN: ${GALLERY_PUBLIC_ORIGIN:?Set canonical public origin}
       GALLERY_PUBLIC_ORIGIN: ${GALLERY_PUBLIC_ORIGIN}
       GALLERY_MEDIA_MOUNTED_ROOT: /media/thumbs
+      GALLERY_ARTICLE_MEDIA_ROOT: /media/articles
       GALLERY_DESIGN_PREVIEW: '0'
+    volumes:
+      - *gallery-thumbs
+      - type: bind
+        source: ${GALLERY_ARTICLE_MEDIA_PATH:?Set the Gallery article media directory}
+        target: /media/articles
+        read_only: true
+        bind:
+          create_host_path: false
     ports: ['127.0.0.1:${GALLERY_PUBLIC_PORT:-3200}:3000']
     command: [node, packages/gallery-public/build/index.js]
   admin:
@@ -42,7 +52,16 @@ services:
       GALLERY_ADMIN_ORIGIN: ${GALLERY_ADMIN_ORIGIN}
       GALLERY_PUBLIC_ORIGIN: ${GALLERY_PUBLIC_ORIGIN}
       GALLERY_MEDIA_MOUNTED_ROOT: /media/thumbs
+      GALLERY_ARTICLE_MEDIA_ROOT: /media/articles
       GALLERY_DESIGN_PREVIEW: '0'
+      BODY_SIZE_LIMIT: 12M
+    volumes:
+      - *gallery-thumbs
+      - type: bind
+        source: ${GALLERY_ARTICLE_MEDIA_PATH:?Set the Gallery article media directory}
+        target: /media/articles
+        bind:
+          create_host_path: false
     ports: ['127.0.0.1:${GALLERY_ADMIN_PORT:-3201}:3000']
     command: [node, packages/gallery-admin/build/index.js]
 networks:

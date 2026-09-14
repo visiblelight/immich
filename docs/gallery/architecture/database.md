@@ -420,3 +420,7 @@ published_photo 保持原有资格、层级、隐私检查，统一文字和 EXI
 ## 文章模块扩展（未迁移）
 
 ADR 0012 已确认。拟新增文章、发布版本、独立素材及引用关系，详见 [文章数据设计](articles.md)。本阶段仅内容协议与视觉样例；这些表尚未存在于开发数据库。后续迁移与本字典同时更新。
+
+### 0008：独立富文本文章
+
+迁移 `0008_articles.sql` 新增 article、article_release、article_media、article_photo_ref、article_media_ref、article_album_ref，以及 site.about_article_id。正文和编辑设置合为 content JSONB（title、summary、date、document、cover、listed、albums），article.version 同时作为草稿乐观锁和发布前置条件。发布版本 source_version 唯一，内容不可更新；引用以 release_id 是否为空区分草稿及历史版本，部分唯一索引约束节点；发布引用禁止删除。素材只在文件准备完成后插入，数据库行全部可用，不保留 processing 行；临时目录用于原子归档与故障回收。匿名角色只读五个 security_barrier 公开视图，不获得基础表权限。完整说明见 articles.md。实施中，开发库迁移状态见交付记录。

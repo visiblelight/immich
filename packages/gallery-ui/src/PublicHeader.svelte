@@ -3,7 +3,7 @@
     name,
     active = "albums",
     preview = false,
-    recordsHref,
+    recordsHref = '/records',
     aboutHref = "/about",
   }: {
     name: string;

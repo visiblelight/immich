@@ -1,6 +1,17 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { GalleryError, ensure, uuid } from '@gallery/core';
 import {
+  listArticles,
+  getArticle,
+  createArticle,
+  saveArticle,
+  publishArticle,
+  offlineArticle,
+  deleteArticle,
+  articleMediaOptions,
+  aboutArticleSettings,
+  saveAboutArticle,
+  deleteArticleMedia,
   adminState,
   adminTags,
   saveTag,
@@ -24,7 +35,11 @@ import {
 } from '@gallery/db/server';
 import { getRuntime } from '$lib/server/runtime';
 async function body(request: Request): Promise<Record<string, unknown>> {
-  ensure(request.headers.get('content-type')?.split(';')[0] === 'application/json', '请使用 JSON 请求。', 415);
+  ensure(
+    request.headers.get('content-type')?.split(';')[0] === 'application/json',
+    '请使用 JSON 请求。',
+    415,
+  );
   const reader = request.body?.getReader();
   ensure(reader, '请求内容为空。');
   let bytes = 0;
@@ -71,6 +86,26 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
     if (params.action === 'map-settings') return json(await adminMapSettings(app.db, app.mapSecretKey));
     if (params.action === 'visits')
       return json(await adminVisited(app.db, url.searchParams.get('country') ?? undefined));
+    if (params.action === 'articles')
+      return json(
+        await listArticles(
+          app.db,
+          url.searchParams.get('q') ?? '',
+          Number(url.searchParams.get('page') ?? 1),
+          url.searchParams.get('status') ?? '',
+        ),
+      );
+    if (params.action === 'article-media')
+      return json(
+        await articleMediaOptions(
+          app.db,
+          url.searchParams.get('kind') === 'upload' ? 'upload' : 'photo',
+          url.searchParams.get('q') ?? '',
+          url.searchParams.get('album') ?? '',
+          Number(url.searchParams.get('page') ?? 1),
+        ),
+      );
+    if (params.action === 'article-about') return json(await aboutArticleSettings(app.db));
     if (params.action === 'tags') return json(await adminTags(app.db));
     if (params.action === 'source') return json(await picker(app.db, url.searchParams));
     throw new GalleryError(404, '接口不存在。');
@@ -96,6 +131,22 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
     ensure(locals.user, '请先登录。', 401);
     const user = locals.user;
     switch (params.action) {
+      case 'article-create':
+        return json({ id: await createArticle(app.db, user) });
+      case 'article-save':
+        return json(await saveArticle(app.db, user, input));
+      case 'article-publish':
+        return json(await publishArticle(app.db, user, input, app.root, app.articleMediaRoot));
+      case 'article-offline':
+        return json(await offlineArticle(app.db, input));
+      case 'article-delete':
+        await deleteArticle(app.db, input);
+        return json({ ok: true });
+      case 'article-about':
+        return json(await saveAboutArticle(app.db, input));
+      case 'article-media-delete':
+        await deleteArticleMedia(app.db, app.articleMediaRoot, uuid(input.id));
+        return json({ ok: true });
       case 'logout':
         await logout(app.db, cookies.get('gallery_admin_session') ?? '');
         cookies.delete('gallery_admin_session', { path: '/' });
@@ -133,7 +184,7 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
         await deleteVisit(app.db, user, input);
         break;
       case 'tag-save':
-        return json({id: await saveTag(app.db, user, input)});
+        return json({ id: await saveTag(app.db, user, input) });
       case 'site':
         await saveSite(app.db, user, input);
         break;

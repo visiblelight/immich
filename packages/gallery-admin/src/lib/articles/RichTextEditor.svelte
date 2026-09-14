@@ -10,11 +10,13 @@
   } from "@gallery/core";
   import "@gallery/ui/article-style.css";
   let {
+    editable = true,
     document,
     resolveImage,
     onChange,
     onInsertImage,
   }: {
+    editable?: boolean;
     document: ArticleDocument;
     resolveImage: ArticleImageResolver;
     onChange: (document: ArticleDocument) => void;
@@ -32,6 +34,10 @@
       .insertContent([...nodes, { type: "paragraph" }])
       .run();
   }
+  $effect(() => {
+    if (editorState.editor && editorState.editor.isEditable !== editable)
+      editorState.editor.setEditable(editable, false);
+  });
   function setLink() {
     if (link && !articleLink(link)) {
       linkError = "请输入有效的 http、https 或邮件链接";

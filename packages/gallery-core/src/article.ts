@@ -21,8 +21,7 @@ export type ArticleImage = {
 export type ArticleImageResolver = (node: ArticleNode) => ArticleImage | null;
 
 export function articleLink(value: unknown): string | null {
-  if (typeof value !== 'string' || /[\u0000-\u0020\u007f\\]/.test(value))
-    return null;
+  if (typeof value !== 'string' || /[\u0000-\u0020\u007f\\]/.test(value)) return null;
   if (/^\/(?!\/)/.test(value) || /^#[a-z0-9_-]+$/i.test(value)) return value;
   try {
     const url = new URL(value);
@@ -37,8 +36,7 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
   if (new TextEncoder().encode(JSON.stringify(input) ?? '').length > 1_000_000)
     throw new Error('文章内容过大');
   const root = input as ArticleDocument;
-  if (root?.schemaVersion !== 1 || root.doc?.type !== 'doc')
-    throw new Error('文章格式无效');
+  if (root?.schemaVersion !== 1 || root.doc?.type !== 'doc') throw new Error('文章格式无效');
   let count = 0;
   const block = new Set([
     'paragraph',
@@ -49,11 +47,7 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
     'horizontalRule',
     'galleryImage',
   ]);
-  function visit(
-    value: ArticleNode,
-    depth: number,
-    parent: string,
-  ): ArticleNode {
+  function visit(value: ArticleNode, depth: number, parent: string): ArticleNode {
     if (++count > 10000 || depth > 20 || !value || typeof value !== 'object')
       throw new Error('文章结构过于复杂');
     const type = value.type;
@@ -69,28 +63,21 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
     if (!valid) throw new Error('文章包含不支持的内容');
     const out: ArticleNode = { type };
     if (type === 'text') {
-      if (typeof value.text !== 'string' || !value.text.length)
-        throw new Error('文字内容无效');
+      if (typeof value.text !== 'string' || !value.text.length) throw new Error('文字内容无效');
       out.text = value.text;
       if (value.marks)
         out.marks = value.marks.map((mark) => {
-          if (mark.type === 'bold' || mark.type === 'italic')
-            return { type: mark.type };
+          if (mark.type === 'bold' || mark.type === 'italic') return { type: mark.type };
           const href = mark.type === 'link' && articleLink(mark.attrs?.href);
           if (!href) throw new Error('文章链接无效');
           return { type: 'link', attrs: { href } };
         });
     } else if (type === 'heading') {
-      if (![2, 3].includes(Number(value.attrs?.level)))
-        throw new Error('标题级别无效');
+      if (![2, 3].includes(Number(value.attrs?.level))) throw new Error('标题级别无效');
       out.attrs = { level: Number(value.attrs!.level) };
     } else if (type === 'orderedList') {
       const start = value.attrs?.start ?? 1;
-      if (
-        !Number.isInteger(start) ||
-        Number(start) < 1 ||
-        Number(start) > 10000
-      )
+      if (!Number.isInteger(start) || Number(start) < 1 || Number(start) > 10000)
         throw new Error('列表序号无效');
       out.attrs = { start };
     } else if (type === 'galleryImage') {
@@ -101,10 +88,7 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
         !/^[a-zA-Z0-9-]{1,80}$/.test(ref)
       )
         throw new Error('图片引用无效');
-      if (
-        kind === 'photo' &&
-        (typeof album !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(album))
-      )
+      if (kind === 'photo' && (typeof album !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(album)))
         throw new Error('图片缺少来源相册');
       out.attrs = {
         kind: String(kind),
@@ -113,20 +97,13 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
       };
     }
     if (value.content !== undefined) {
-      if (
-        !Array.isArray(value.content) ||
-        ['text', 'hardBreak', 'horizontalRule'].includes(type)
-      )
+      if (!Array.isArray(value.content) || ['text', 'hardBreak', 'horizontalRule'].includes(type))
         throw new Error('文章结构无效');
       out.content = value.content.map((node) => visit(node, depth + 1, type));
     }
-    if (
-      ['bulletList', 'orderedList', 'listItem', 'blockquote'].includes(type) &&
-      !out.content?.length
-    )
+    if (['bulletList', 'orderedList', 'listItem', 'blockquote'].includes(type) && !out.content?.length)
       throw new Error('内容块不能为空');
-    if (type === 'listItem' && out.content?.[0]?.type !== 'paragraph')
-      throw new Error('列表项需以段落开始');
+    if (type === 'listItem' && out.content?.[0]?.type !== 'paragraph') throw new Error('列表项需以段落开始');
     return out;
   }
   return { schemaVersion: 1, doc: visit(root.doc, 0, 'root') };
@@ -150,19 +127,10 @@ export function articleHeadings(document: ArticleDocument) {
   return headings;
 }
 const escape = (s: string) =>
-  s.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
-        c
-      ]!,
-  );
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** Resolver must authorize refs first. No URL from persisted image attributes is rendered. */
-export function renderArticle(
-  document: ArticleDocument,
-  resolve: ArticleImageResolver,
-): string {
+export function renderArticle(document: ArticleDocument, resolve: ArticleImageResolver): string {
   const clean = validateArticleDocument(document);
   let heading = 0;
   let image = 0;
@@ -191,8 +159,7 @@ export function renderArticle(
       if (!resolved)
         return `<figure><div class="article-image-unavailable">图片暂不可用</div>${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`;
       // Resolved URLs are server-generated; additionally reject active URL schemes.
-      const mediaUrl = (url: string) =>
-        !!articleLink(url) || /^blob:https?:\/\//.test(url);
+      const mediaUrl = (url: string) => !!articleLink(url) || /^blob:https?:\/\//.test(url);
       if (!mediaUrl(resolved.src) || !mediaUrl(resolved.preview))
         return '<figure><div class="article-image-unavailable">图片暂不可用</div></figure>';
       return `<figure><button type="button" class="article-image" data-article-image="${index}" aria-label="沉浸查看：${escape(resolved.alt)}"><img src="${escape(resolved.src)}" alt="${escape(resolved.alt)}" ${resolved.width && resolved.height && Number.isSafeInteger(resolved.width) && Number.isSafeInteger(resolved.height) ? `width="${resolved.width}" height="${resolved.height}"` : ''} loading="lazy" decoding="async"></button>${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`;
@@ -209,4 +176,42 @@ export function renderArticle(
     return `<${tag}${node.type === 'orderedList' ? ` start="${node.attrs?.start ?? 1}"` : ''}>${children()}</${tag}>`;
   }
   return render(clean.doc);
+}
+
+export interface ArticleContent {
+  title: string;
+  summary: string;
+  date: string;
+  document: ArticleDocument;
+  cover: ArticleNode | null;
+  listed: boolean;
+  albums: string[];
+}
+export interface ManagedArticle extends ArticleContent {
+  id: string;
+  slug: string;
+  version: string;
+  status: 'draft' | 'published' | 'offline';
+  hasChanges: boolean;
+}
+export interface ArticleMediaOption extends ArticleImage {
+  id: string;
+  ref: string;
+  kind: 'photo' | 'upload';
+  album?: string;
+  albumTitle?: string;
+  usage?: number;
+  title: string;
+}
+export const articleImageKey = (node: ArticleNode) =>
+  `${node.attrs?.kind}:${node.attrs?.album ?? ''}:${node.attrs?.ref}`;
+export function articleImages(content: ArticleContent): { key: string; node: ArticleNode }[] {
+  const result: { key: string; node: ArticleNode }[] = [];
+  function visit(node: ArticleNode, key: string) {
+    if (node.type === 'galleryImage') result.push({ key, node });
+    node.content?.forEach((child, index) => visit(child, `${key}.${index}`));
+  }
+  visit(content.document.doc, 'body');
+  if (content.cover) result.push({ key: 'cover', node: content.cover });
+  return result;
 }

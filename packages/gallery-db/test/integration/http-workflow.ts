@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import sharp from 'sharp';
@@ -32,7 +32,11 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     const cwd = fileURLToPath(new URL(`../../../gallery-${service}/`, import.meta.url));
     const child = spawn(
       process.execPath,
-      [process.env.GALLERY_BUILD_SUBDIR ? `build/${process.env.GALLERY_BUILD_SUBDIR}/index.js` : 'build/index.js'],
+      [
+        process.env.GALLERY_BUILD_SUBDIR
+          ? `build/${process.env.GALLERY_BUILD_SUBDIR}/index.js`
+          : 'build/index.js',
+      ],
       {
         cwd,
         env: {
@@ -43,6 +47,8 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
           GALLERY_PUBLIC_ORIGIN: origins.public,
           GALLERY_MEDIA_SOURCE_ROOT: '/data/thumbs',
           GALLERY_MEDIA_MOUNTED_ROOT: mediaRoot,
+          GALLERY_ARTICLE_MEDIA_ROOT: mediaRoot + '/article-uploads',
+          BODY_SIZE_LIMIT: '12M',
           GALLERY_DESIGN_PREVIEW: '0',
           HOST: '127.0.0.1',
           PORT: String(ports[service]),
@@ -96,7 +102,9 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
   try {
     let admin = await start('admin');
     let pub = await start('public');
-    const oldLink = await fetch(`http://127.0.0.1:${ports.admin}/login?from=old-link`, { redirect: 'manual' });
+    const oldLink = await fetch(`http://127.0.0.1:${ports.admin}/login?from=old-link`, {
+      redirect: 'manual',
+    });
     assert.equal(oldLink.status, 307);
     assert.equal(oldLink.headers.get('location'), `${origins.admin}/login?from=old-link`);
     const wrongHost = await fetch(`${origins.admin}/login`, {
@@ -107,7 +115,10 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal((await fetch(`${origins.admin}/albums`, { redirect: 'manual' })).status, 303);
     await api('source', undefined, 401);
     assert.equal((await fetch(`${origins.admin}/media/source/${asset}`)).status, 401);
-    const signed = await api('login', { email: 'gallery@example.invalid', password: 'replacement-synthetic-password' });
+    const signed = await api('login', {
+      email: 'gallery@example.invalid',
+      password: 'replacement-synthetic-password',
+    });
     cookie = signed.headers.get('set-cookie')!.split(';')[0]!;
     assert.match(signed.headers.get('set-cookie')!, /HttpOnly/i);
     assert.match(signed.headers.get('set-cookie')!, /SameSite=Strict/i);
@@ -157,7 +168,10 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     const site = (await current()).site;
     await api('site', { ...site, contactLinks: [{ label: 'Contact', url: 'mailto:photo@example.invalid' }] });
     assert.equal((await current()).site.contactLinks[0].url, 'mailto:photo@example.invalid');
-    assert.match(await fetch(`${origins.public}/about`).then((r) => r.text()), /mailto:photo@example.invalid/);
+    assert.match(
+      await fetch(`${origins.public}/about`).then((r) => r.text()),
+      /mailto:photo@example.invalid/,
+    );
     await api('site', { ...site, contactLinks: [{ label: 'Bad', url: 'javascript:alert(1)' }] }, 400);
 
     const created = await api('create', {
@@ -184,8 +198,9 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
         {
           id: randomUUID(),
           asset,
-          photoVersion: (await (await api('source')).json()).assets.find((p: { id: string }) => p.id === asset)
-            ?.galleryPhoto?.photoVersion,
+          photoVersion: (await (await api('source')).json()).assets.find(
+            (p: { id: string }) => p.id === asset,
+          )?.galleryPhoto?.photoVersion,
           title: 'HTTP published photo',
           description: 'Own description',
           alt: 'Synthetic image',
@@ -216,7 +231,10 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     content.photos = (await version()).content.photos;
     await api('save', { ...(await version()), content: { ...content, summary: 'Unpublished summary' } });
     assert.doesNotMatch(await fetch(url).then((r) => r.text()), /Unpublished summary/);
-    assert.equal((await fetch(`${origins.admin}/preview/${created.id}`, { headers: { cookie } })).status, 200);
+    assert.equal(
+      (await fetch(`${origins.admin}/preview/${created.id}`, { headers: { cookie } })).status,
+      200,
+    );
     assert.equal((await fetch(`${origins.public}/media/${created.id}/${randomUUID()}`)).status, 404);
     await api('availability', { ...(await version()), action: 'offline' });
     assert.equal((await fetch(url)).status, 404);
@@ -294,6 +312,126 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     await api('availability', { ...(await version()), action: 'offline' });
     assert.equal((await fetch(mediaUrls[0]!)).status, 404); // Warm encoding cache cannot bypass authorization.
     await api('availability', { ...(await version()), action: 'restore' });
+    // Article HTTP loop: no seed data leaks to production, all routes use real runtime roles.
+    const articleId = (await (await api('article-create', {})).json()).id;
+    let articleVersion = '1';
+    const articleContent = {
+      title: 'HTTP article',
+      summary: 'A journey',
+      date: '2025-06-01',
+      listed: true,
+      albums: [],
+      cover: null,
+      document: {
+        schemaVersion: 1,
+        doc: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Public article body' }] }],
+        },
+      },
+    };
+    let articleResult = await (
+      await api('article-save', {
+        id: articleId,
+        version: articleVersion,
+        slug: 'http-article',
+        content: articleContent,
+      })
+    ).json();
+    articleVersion = articleResult.version;
+    assert.equal((await fetch(`${origins.public}/records/http-article`)).status, 404);
+    await api(
+      'article-save',
+      { id: articleId, version: '1', slug: 'http-article', content: articleContent },
+      409,
+    );
+    const uploadImage = await sharp(randomBytes(900 * 900 * 3), {
+      raw: { width: 900, height: 900, channels: 3 },
+    })
+      .jpeg({ quality: 95 })
+      .toBuffer();
+    assert.ok(uploadImage.length > 512 * 1024);
+    const requestUpload = (headers: Record<string, string>, body: Buffer<ArrayBuffer> = uploadImage) =>
+      fetch(`${origins.admin}/api/article-upload`, {
+        method: 'POST',
+        headers: { 'content-type': 'image/jpeg', 'x-file-name': 'sample.jpg', ...headers },
+        body,
+      });
+    // Authentication rejects before reading the body. Keep rejected requests small
+    // and consume their responses before reusing the HTTP connection.
+    const anonymousUpload = await requestUpload({ origin: origins.admin }, Buffer.from('unauthorized'));
+    assert.equal(anonymousUpload.status, 401);
+    await anonymousUpload.arrayBuffer();
+    const crossOriginUpload = await requestUpload(
+      { cookie, origin: 'https://unrelated.example' },
+      Buffer.from('cross-origin'),
+    );
+    assert.equal(crossOriginUpload.status, 403);
+    await crossOriginUpload.arrayBuffer();
+    const uploaded = await requestUpload({ cookie, origin: origins.admin });
+    assert.equal(uploaded.status, 200);
+    const material = await uploaded.json();
+    const contentWithImage = {
+      ...articleContent,
+      cover: { type: 'galleryImage', attrs: { kind: 'upload', ref: material.id } },
+      document: {
+        schemaVersion: 1,
+        doc: {
+          type: 'doc',
+          content: [
+            ...articleContent.document.doc.content,
+            { type: 'galleryImage', attrs: { kind: 'upload', ref: material.id }, content: [] },
+          ],
+        },
+      },
+    };
+    articleResult = await (
+      await api('article-save', {
+        id: articleId,
+        version: articleVersion,
+        slug: 'http-article',
+        content: contentWithImage,
+      })
+    ).json();
+    articleVersion = articleResult.version;
+    const articleMediaUrl = `${origins.public}/media/articles/${articleId}/${material.id}?variant=preview`;
+    assert.equal((await fetch(articleMediaUrl)).status, 404);
+    articleResult = await (await api('article-publish', { id: articleId, version: articleVersion })).json();
+    articleVersion = articleResult.version;
+    assert.equal((await fetch(articleMediaUrl)).status, 200);
+    assert.match(
+      await fetch(`${origins.public}/records/http-article`).then((r) => r.text()),
+      /Public article body/,
+    );
+    assert.match(await fetch(`${origins.public}/records`).then((r) => r.text()), /HTTP article/);
+    assert.equal(
+      (await fetch(`${origins.admin}/articles/${articleId}`, { headers: { cookie } })).status,
+      200,
+    );
+    const about = await (await api('article-about')).json();
+    await api('article-about', { id: articleId, version: about.version });
+    await api('article-offline', { id: articleId, version: articleVersion }, 409);
+    assert.match(await fetch(`${origins.public}/about`).then((r) => r.text()), /Public article body/);
+    articleResult = await (
+      await api('article-save', {
+        id: articleId,
+        version: articleVersion,
+        slug: 'http-article',
+        content: { ...contentWithImage, title: 'Draft-only title' },
+      })
+    ).json();
+    articleVersion = articleResult.version;
+    assert.ok(!(await fetch(`${origins.public}/about`).then((r) => r.text())).includes('Draft-only title'));
+    const aboutAfter = await (await api('article-about')).json();
+    await api('article-about', { id: '', version: aboutAfter.version });
+    articleResult = await (await api('article-offline', { id: articleId, version: articleVersion })).json();
+    articleVersion = articleResult.version;
+    assert.equal((await fetch(articleMediaUrl)).status, 404);
+    articleResult = await (await api('article-publish', { id: articleId, version: articleVersion })).json();
+    assert.equal((await fetch(articleMediaUrl)).status, 200);
+    console.log(
+      'Article HTTP: authenticated upload >512KB, drafts, optimistic conflict, publication, about binding and media revocation passed.',
+    );
     await api('logout', {});
     await api('state', undefined, 401);
   } finally {

@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, cp, mkdtemp, rm } from 'node:fs/promises';
 import pg from 'pg';
-import { createDatabase, publicCatalog, readPublishedDerivative, sanitizeImage } from '../../src/index.server.ts';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import {
+  createDatabase,
+  publicCatalog,
+  readPublishedDerivative,
+  sanitizeImage,
+  publicArticle,
+  readArticleMedia,
+} from '../../src/index.server.ts';
 
 /** Full database recovery in a second database inside the labelled disposable test container. */
 export async function recovery(
@@ -12,9 +21,13 @@ export async function recovery(
 ) {
   assert.ok(config.name.startsWith('gallery-db-check-'));
   assert.equal(
-    execFileSync('docker', ['inspect', config.name, '--format', '{{index .Config.Labels "gallery.isolation"}}'], {
-      encoding: 'utf8',
-    }).trim(),
+    execFileSync(
+      'docker',
+      ['inspect', config.name, '--format', '{{index .Config.Labels "gallery.isolation"}}'],
+      {
+        encoding: 'utf8',
+      },
+    ).trim(),
     'true',
   );
   const source = new pg.Client({ connectionString: config.ownerUrl });
@@ -26,6 +39,10 @@ export async function recovery(
     (SELECT count(*) FROM gallery.album_release) releases,
     (SELECT count(*) FROM gallery.album_release_photo) photos,
     (SELECT count(*) FROM gallery."user") users,
+    (SELECT count(*) FROM gallery.article) articles,
+    (SELECT count(*) FROM gallery.article_release) article_releases,
+    (SELECT md5(string_agg(id::text||content::text,',' ORDER BY id)) FROM gallery.article_release) article_content,
+    (SELECT count(*) FROM gallery.article_media_ref) article_media_refs,
     (SELECT count(*) FROM gallery.photo) shared_photos,
     (SELECT count(*) FROM gallery.photo_release) photo_releases,
     (SELECT count(*) FROM gallery.photo_tag) draft_tags,
@@ -34,9 +51,13 @@ export async function recovery(
     (SELECT md5(string_agg(id::text||':'||description_document::text,',' ORDER BY id)) FROM gallery.album_release) content`)
     ).rows[0];
   const expected = await snapshot(source);
-  const dump = execFileSync('docker', ['exec', config.name, 'pg_dump', '-U', 'postgres', '-d', 'gallery_test', '-Fc'], {
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  const dump = execFileSync(
+    'docker',
+    ['exec', config.name, 'pg_dump', '-U', 'postgres', '-d', 'gallery_test', '-Fc'],
+    {
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
   execFileSync('docker', ['exec', config.name, 'createdb', '-U', 'postgres', 'gallery_restore']);
   execFileSync(
     'docker',
@@ -69,6 +90,18 @@ export async function recovery(
       mountedRoot: mediaRoot,
     });
     assert.ok((await sanitizeImage(media.bytes, 'thumbnail')).length > 0);
+    const copiedMedia = await mkdtemp(path.join(tmpdir(), 'gallery-article-restore-'));
+    try {
+      await cp(path.join(mediaRoot, 'article-uploads'), copiedMedia, { recursive: true });
+      const article = await publicArticle(db, 'http-article');
+      const material = (Object.values(article.images) as { kind: string; ref: string }[]).find(
+        (p) => p.kind === 'upload',
+      )!;
+      assert.ok(material);
+      assert.ok((await readArticleMedia(db, copiedMedia, material.ref, 'preview', article.id)).length);
+    } finally {
+      await rm(copiedMedia, { recursive: true, force: true });
+    }
     await writeFile(
       new URL('../../../../.gallery-local/phase-b/recovery.json', import.meta.url),
       JSON.stringify(
@@ -80,6 +113,7 @@ export async function recovery(
           counts: expected,
           oldSessionsRevoked: true,
           mediaVerified: true,
+          articleMediaCopyVerified: true,
         },
         null,
         2,

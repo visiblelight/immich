@@ -6,7 +6,7 @@
     user,
     publicOrigin,
     onNavigate,
-    articles = false,
+    articles = true,
   }: {
     active: string;
     user: GalleryUser;

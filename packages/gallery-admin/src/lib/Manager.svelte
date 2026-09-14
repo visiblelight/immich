@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AboutArticle from './articles/AboutArticle.svelte';
   import { tick, untrack } from 'svelte';
   import { goto, beforeNavigate } from '$app/navigation';
   import AdminSidebar from './AdminSidebar.svelte';
@@ -668,6 +669,7 @@
         </div>
       </header>
       <section class="panel content-panel form-panel settings-form">
+        <AboutArticle/>
         <label>站点名称<input bind:value={siteName} maxlength="100" /></label><label
           >站点简介<textarea bind:value={tagline} maxlength="2000" rows="3"></textarea></label
         >
