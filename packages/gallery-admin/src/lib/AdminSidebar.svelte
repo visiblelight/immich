@@ -17,7 +17,7 @@
   const entries = $derived([
     ["albums", "▦", "相册"],
     ...(articles ? [["articles", "≡", "文章"]] : []),
-    ["tags", "#", "标签"],
+    ["tags", "#", "照片标签"],
     ["visits", "◎", "到访记录"],
     ["maps", "⌘", "地图设置"],
     ["settings", "⚙", "站点设置"],

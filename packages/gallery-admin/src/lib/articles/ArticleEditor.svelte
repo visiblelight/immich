@@ -4,6 +4,7 @@
   import { ArticleReader } from '@gallery/ui';
   import {
     articleImageKey,
+    articleTime,
     type ManagedArticle,
     type ArticleMediaOption,
     type GalleryUser,
@@ -119,6 +120,8 @@
       article.version = result.version;
       article.status = result.status;
       article.hasChanges = result.hasChanges;
+      article.firstPublishedAt = result.firstPublishedAt;
+      article.publishedAt = result.publishedAt;
       message = '文章已发布，前台已更新。';
     } catch (e) {
       message = (e as Error).message;
@@ -342,6 +345,11 @@
       </section>
       {#if settings && !focus}<aside class="article-settings">
           <h2>文章设置</h2>
+          {#if article.firstPublishedAt}<p class="hint">
+              首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(
+                article.publishedAt!,
+              )}<br />北京时间 UTC+8，发布后自动记录。
+            </p>{:else}<p class="hint">尚未发布。首次发布与最近更新时间由系统自动记录。</p>{/if}
           <label
             >摘要<textarea
               rows="4"
@@ -351,7 +359,7 @@
               disabled={busy}
             ></textarea></label
           ><label
-            >发表日期<input type="date" bind:value={article.date} onchange={changed} disabled={busy} /></label
+            >写作日期<input type="date" bind:value={article.date} onchange={changed} disabled={busy} /></label
           ><label
             >文章链接<input
               bind:value={article.slug}

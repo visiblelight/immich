@@ -45,3 +45,9 @@ article 与 article_release 的正文设置存于 content JSONB，字段为 titl
 article_photo_ref.photo_id 指向 gallery.photo.immich_asset_id，另记录明确的 Gallery 来源 album_id；不与 Immich 表建外键。release_id 为空的引用跟随最新草稿，非空则属于不可变历史版本，触发器阻止删除。独立素材只保留去除元数据后的两份 WebP（最大边 1600／3840，不放大），文件准备期间尚无数据库行；异常残留按维护手册检查。
 
 site.about_article_version 与原 site.version 分离；关于选篇不会使站点名称／联系链接表单产生无关版本冲突。public 只读 published_article、published_article_media、published_article_photo、published_article_album、published_about_article 五个视图。所有匿名素材读取都以当前文章发布成员为条件；草稿和历史版本不授权。
+
+## ADR 0013 扩展
+
+正文新增 table/tableRow/tableCell/tableHeader、taskList/taskItem、codeBlock、imagePlaceholder；mark 增加 underline/strike/highlight/code。表格最多 100 行、20 列，校验跨度、矩形完整性及列宽；任务 checked 只接受布尔值；代码按纯文字转义。图片占位仅保存简短 alt，不保存外链 URL，不构成媒体授权。统一字体与单色高亮，外部任意 CSS 不落库。
+
+0009 给公开文章和关于视图追加首次发布时刻；后台直接聚合首条发布记录，最新时刻沿用当前 release.published_at。公开列表按首次发布倒序。date 保留为作者的写作日期；首次发布与最近更新不能手填，不随草稿保存变化。前后台时间格式统一标注北京时间 UTC+8。关于选篇只在站点设置操作，文章列表仅保留当前关于文章的标记。

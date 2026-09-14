@@ -14,6 +14,8 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [富文本扩展 ADR 0013](decisions/0013-rich-content-and-publication-times.md) | 表格、清单、粘贴兼容与真实发布时间 |
+| [富文本扩展交付](delivery/rich-content.md) | 实际开发、验证与使用变化 |
 | [记录与富文本 ADR 0012](decisions/0012-records-and-rich-text.md) | 已确认的文章、双来源插图、关于选篇与发布边界 |
 | [文章数据设计](architecture/articles.md) | 0008 实际结构、内容协议和素材权限 |
 | [记录模块交付](delivery/articles.md) | 已认可样例、真实业务与本地验收分阶段跟踪 |

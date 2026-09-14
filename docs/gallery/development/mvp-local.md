@@ -75,4 +75,6 @@ sh deployment/gallery/scripts/pnpm.sh gallery:test:db /absolute/path/immich-sche
 
 ## 记录与文章素材（2026-09-14）
 
-本地已应用 0008，前后台环境中的 `GALLERY_ARTICLE_MEDIA_ROOT` 指向 `.gallery-local/article-media`，后台 `BODY_SIZE_LIMIT=12M`。额外插图只归 Gallery 管理，必须与数据库一起备份。文章编辑自动保存草稿，显式发布才更新前台；“关于页面”选篇位于站点设置及文章列表。详细验收、限制和回退说明见 [记录模块交付](../delivery/articles.md)。
+本地已应用 0008，前后台环境中的 `GALLERY_ARTICLE_MEDIA_ROOT` 指向 `.gallery-local/article-media`，后台 `BODY_SIZE_LIMIT=12M`。额外插图只归 Gallery 管理，必须与数据库一起备份。文章编辑自动保存草稿，显式发布才更新前台；“关于页面”选篇仅位于站点设置。详细验收、限制和回退说明见 [记录模块交付](../delivery/articles.md)。
+
+0009 已增加实际首次发布时刻，富文本已支持表格、任务清单和更多文字格式，见 [富文本扩展交付](../delivery/rich-content.md)。首次发布与最近更新由系统记录，手填日期为写作日期。

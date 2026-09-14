@@ -32,7 +32,7 @@ export async function assertDatabaseCompatibility(db: Kysely<unknown>, service: 
   await sql`SELECT preview_id, preview_path, preview_update_id, thumbnail_id, thumbnail_path,
     thumbnail_update_id FROM gallery.published_media LIMIT 0`.execute(db);
   await sql`SELECT id,name,photo_count FROM gallery.published_tag LIMIT 0`.execute(db);
-  await sql`SELECT id,slug,release_id,content FROM gallery.published_article LIMIT 0`.execute(db);
+  await sql`SELECT id,slug,release_id,content,first_published_at FROM gallery.published_article LIMIT 0`.execute(db);
   await sql`SELECT article_id,id,storage_key FROM gallery.published_article_media LIMIT 0`.execute(db);
   if (service === 'gallery-admin') {
     await sql`SELECT id,version,content FROM gallery.article LIMIT 0`.execute(db);

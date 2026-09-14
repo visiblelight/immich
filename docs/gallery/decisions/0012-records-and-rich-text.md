@@ -28,3 +28,5 @@
 3. 备份后应用开发库迁移、真实闭环与移动端验收。
 
 参考：[Tiptap Svelte](https://tiptap.dev/docs/editor/getting-started/install/svelte)、[结构化内容存储](https://tiptap.dev/docs/editor/core-concepts/persistence)。不使用 Tiptap 云服务；编辑器仅加载于后台编辑页。
+
+2026-09-14 补充：用户已确认 ADR 0013 的表格、任务清单、更多文字格式及粘贴处理；关于配置集中到站点设置，实际发布时间从 release 记录派生。首期基础格式限制由该 ADR 扩展，原文保留作为阶段历史。

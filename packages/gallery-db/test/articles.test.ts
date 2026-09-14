@@ -17,10 +17,7 @@ const paragraph = (text: string): ArticleNode => ({
   content: [{ type: 'text', text }],
 });
 test('article text and link attributes are escaped; active URL protocols are rejected', () => {
-  const html = renderArticle(
-    doc(paragraph('<img src=x onerror=alert(1)>')),
-    () => null,
-  );
+  const html = renderArticle(doc(paragraph('<img src=x onerror=alert(1)>')), () => null);
   assert.ok(html.includes('&lt;img'));
   assert.ok(!html.includes('<img'));
   for (const value of [
@@ -31,10 +28,7 @@ test('article text and link attributes are escaped; active URL protocols are rej
     'java\nscript:alert(1)',
   ])
     assert.equal(articleLink(value), null);
-  assert.equal(
-    articleLink('https://example.com/path?q=1'),
-    'https://example.com/path?q=1',
-  );
+  assert.equal(articleLink('https://example.com/path?q=1'), 'https://example.com/path?q=1');
   const linked = doc({
     type: 'paragraph',
     content: [
@@ -72,11 +66,7 @@ test('image content keeps references, discards client paths, and requires an alb
   const html = renderArticle(clean, () => null);
   assert.ok(html.includes('图片暂不可用'));
   assert.ok(!html.includes('private.test'));
-  assert.throws(() =>
-    validateArticleDocument(
-      doc({ ...image, attrs: { kind: 'photo', ref: 'photo-1' } }),
-    ),
-  );
+  assert.throws(() => validateArticleDocument(doc({ ...image, attrs: { kind: 'photo', ref: 'photo-1' } })));
   assert.ok(
     renderArticle(clean, () => ({
       src: '/media/authorized',
@@ -109,22 +99,107 @@ test('headings and pure text have stable reader structure without requiring phot
   );
 });
 test('malformed, oversized and deeply nested rich text is rejected', () => {
-  assert.throws(() =>
-    validateArticleDocument(doc({ type: 'script', text: 'x' })),
+  assert.throws(() => validateArticleDocument(doc({ type: 'script', text: 'x' })));
+  assert.throws(() => validateArticleDocument(doc({ type: 'heading', attrs: { level: 1 } })));
+  assert.throws(() => validateArticleDocument(doc(paragraph('a'.repeat(1_000_001)))));
+  assert.throws(() => validateArticleDocument(doc({ type: 'paragraph', content: [paragraph('nested')] })));
+  let nested = paragraph('text');
+  for (let i = 0; i < 25; i++) nested = { type: 'blockquote', content: [nested] };
+  assert.throws(() => validateArticleDocument(doc(nested)));
+});
+
+test('tables, nested task state and rich marks survive validation and render safely', () => {
+  const cell = (label: string, colspan = 1): ArticleNode => ({
+    type: 'tableCell',
+    attrs: { colspan, rowspan: 1 },
+    content: [paragraph(label)],
+  });
+  const source = doc(
+    {
+      type: 'table',
+      content: [
+        { type: 'tableRow', content: [cell('Merged <script>', 2)] },
+        { type: 'tableRow', content: [cell('Rome'), cell('€100')] },
+      ],
+    },
+    {
+      type: 'taskList',
+      content: [
+        {
+          type: 'taskItem',
+          attrs: { checked: true },
+          content: [
+            paragraph('Passport'),
+            {
+              type: 'taskList',
+              content: [{ type: 'taskItem', attrs: { checked: false }, content: [paragraph('Insurance')] }],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      type: 'codeBlock',
+      attrs: { language: 'html' },
+      content: [{ type: 'text', text: '<script>\n  literal code' }],
+    },
+    {
+      type: 'paragraph',
+      content: [
+        {
+          type: 'text',
+          text: 'Emphasis',
+          marks: [{ type: 'highlight' }, { type: 'strike' }, { type: 'underline' }, { type: 'code' }],
+        },
+      ],
+    },
+    { type: 'imagePlaceholder', attrs: { alt: 'Missing <photo>', src: 'https://private.example/image' } },
   );
+  const clean = validateArticleDocument(source);
+  assert.deepEqual(validateArticleDocument(clean), clean);
+  const html = renderArticle(clean, () => null);
+  for (const fragment of [
+    'colspan="2"',
+    'data-checked="true"',
+    'data-checked="false"',
+    '<mark>',
+    '<s>',
+    '<u>',
+    '<code>',
+    '&lt;script&gt;\n  literal code',
+    '图片待补充',
+  ])
+    assert.ok(html.includes(fragment), fragment);
+  assert.ok(!html.includes('<script>'));
+  assert.ok(!html.includes('private.example'));
+  assert.ok(!html.includes('<input'));
+});
+test('invalid table spans, ragged rows and task states fail closed', () => {
+  const cell = (colspan: number, rowspan = 1): ArticleNode => ({
+    type: 'tableCell',
+    attrs: { colspan, rowspan },
+    content: [paragraph('x')],
+  });
+  const table = (...rows: ArticleNode[][]) =>
+    doc({ type: 'table', content: rows.map((content) => ({ type: 'tableRow', content })) });
+  for (const invalid of [
+    table([cell(21)]),
+    table([cell(1, 2)]),
+    table([cell(2)], [cell(1)]),
+    table([cell(1), cell(1, 2)], [cell(2)]),
+  ])
+    assert.throws(() => validateArticleDocument(invalid));
   assert.throws(() =>
-    validateArticleDocument(doc({ type: 'heading', attrs: { level: 1 } })),
-  );
-  assert.throws(() =>
-    validateArticleDocument(doc(paragraph('a'.repeat(1_000_001)))),
+    validateArticleDocument(
+      doc({
+        type: 'taskList',
+        content: [{ type: 'taskItem', attrs: { checked: 'false' }, content: [paragraph('x')] }],
+      }),
+    ),
   );
   assert.throws(() =>
     validateArticleDocument(
-      doc({ type: 'paragraph', content: [paragraph('nested')] }),
+      doc({ type: 'codeBlock', content: [{ type: 'text', text: 'x', marks: [{ type: 'bold' }] }] }),
     ),
   );
-  let nested = paragraph('text');
-  for (let i = 0; i < 25; i++)
-    nested = { type: 'blockquote', content: [nested] };
-  assert.throws(() => validateArticleDocument(doc(nested)));
 });

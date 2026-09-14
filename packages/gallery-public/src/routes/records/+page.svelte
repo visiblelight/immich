@@ -1,6 +1,6 @@
 <script lang="ts">
   import { PublicHeader } from '@gallery/ui';
-  import { articleImageKey } from '@gallery/core';
+  import { articleImageKey, articleTime } from '@gallery/core';
   let { data } = $props();
 </script>
 
@@ -18,7 +18,14 @@
         ? article.images[articleImageKey(article.cover)]
         : null}<a class="record" class:no-cover={!cover} href={'/records/' + article.slug}
         ><div>
-          <time datetime={article.date}>{article.date.replaceAll('-', '.')}</time>
+          <div class="record-times">
+            <time datetime={article.firstPublishedAt} title="北京时间 UTC+8"
+              >发布于 {articleTime(article.firstPublishedAt)}</time
+            >{#if article.publishedAt !== article.firstPublishedAt}<time
+                datetime={article.publishedAt}
+                title="北京时间 UTC+8">更新于 {articleTime(article.publishedAt)}</time
+              >{/if}
+          </div>
           <h2>{article.title}</h2>
           <p>{article.summary}</p>
           <span class="read">阅读全文 ↗</span>
@@ -33,6 +40,11 @@
 </div>
 
 <style>
+  .record-times {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+  }
   .records-site {
     padding: 0 4vw;
   }

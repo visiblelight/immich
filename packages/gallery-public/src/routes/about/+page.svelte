@@ -8,6 +8,8 @@
 {#if data.article}<div class="public-site" style="padding:0 4vw">
     <PublicHeader name={data.site.name} active="about" /><ArticleReader
       title={data.article.title}
+      firstPublishedAt={data.article.firstPublishedAt}
+      publishedAt={data.article.publishedAt}
       document={data.article.document}
       resolveImage={(node: ArticleNode) => data.article!.images[articleImageKey(node)] ?? null}
     />

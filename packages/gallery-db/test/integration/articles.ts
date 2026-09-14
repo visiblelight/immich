@@ -64,6 +64,7 @@ export async function articles(
     await assert.rejects(sql`SELECT * FROM gallery.article`.execute(pub));
     const id = await createArticle(db, user);
     let a = await getArticle(db, id);
+    assert.equal(a.firstPublishedAt, null);
     a.title = 'A formal journey';
     a.summary = 'Public summary';
     a.document = {
@@ -72,6 +73,22 @@ export async function articles(
         type: 'doc',
         content: [
           text('Published text'),
+          {
+            type: 'table',
+            content: [
+              {
+                type: 'tableRow',
+                content: [
+                  { type: 'tableHeader', attrs: { colspan: 1, rowspan: 1 }, content: [text('Rome')] },
+                ],
+              },
+            ],
+          },
+          {
+            type: 'taskList',
+            content: [{ type: 'taskItem', attrs: { checked: true }, content: [text('Passport')] }],
+          },
+          { type: 'codeBlock', content: [{ type: 'text', text: 'day 1\n  Rome' }] },
           {
             type: 'galleryImage',
             attrs: { kind: 'upload', ref: upload.id },
@@ -85,7 +102,13 @@ export async function articles(
     await assert.rejects(deleteArticleMedia(db, dir, upload.id), /引用/);
     await assert.rejects(saveArticle(db, user, { id, version: '1', slug: a.slug, content: a }), /其他页面/);
     a = await publishArticle(db, user, { id, version: a.version }, root, dir);
-    assert.equal((await publicArticle(pub, a.slug)).title, a.title);
+    const firstPublished = a.firstPublishedAt;
+    assert.ok(firstPublished);
+    assert.equal(a.publishedAt, firstPublished);
+    const initialPublic = await publicArticle(pub, a.slug);
+    assert.equal(initialPublic.title, a.title);
+    assert.equal(initialPublic.firstPublishedAt, firstPublished);
+    assert.deepEqual(initialPublic.document, a.document);
     assert.ok((await publicArticles(pub)).articles.some((x) => x.id === id));
     assert.ok((await readArticleMedia(pub, dir, upload.id, 'preview', id)).length);
     let settings = await aboutArticleSettings(db);
@@ -109,6 +132,8 @@ export async function articles(
     assert.equal((await publicArticle(pub, '', true)).title, 'A formal journey');
     await assert.rejects(publishArticle(db, user, { id, version: stale.version }, root, dir), /版本/);
     a = await publishArticle(db, user, { id, version: a.version }, root, dir);
+    assert.equal(a.firstPublishedAt, firstPublished);
+    assert.ok(a.publishedAt! >= firstPublished!);
     assert.equal((await publicArticle(pub, '', true)).title, a.title);
     settings = await aboutArticleSettings(db);
     await saveAboutArticle(db, { id: '', version: settings.version });

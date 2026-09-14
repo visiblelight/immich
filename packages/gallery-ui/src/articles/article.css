@@ -1,7 +1,6 @@
 .article-prose {
   color: #354039;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
   font-size: 17px;
   line-height: 1.95;
   overflow-wrap: anywhere;
@@ -90,4 +89,109 @@
   .article-prose h2 {
     font-size: 22px;
   }
+}
+
+.article-prose mark {
+  color: inherit;
+  background: #f6e8ab;
+  padding: 0.08em 0.15em;
+  border-radius: 3px;
+}
+.article-prose s {
+  color: #7a8177;
+}
+.article-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: #eef1eb;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+.article-prose pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  background: #26342d;
+  color: #e9eee7;
+  padding: 20px;
+  border-radius: 8px;
+  line-height: 1.7;
+  margin: 24px 0;
+}
+.article-prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+.article-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  margin: 20px 0;
+  font-size: 0.9em;
+}
+.article-prose th,
+.article-prose td {
+  border: 1px solid #dce3d7;
+  min-width: 40px;
+  padding: 10px 14px;
+  vertical-align: top;
+  text-align: left;
+}
+.article-prose th {
+  background: #f0f4eb;
+  font-weight: 600;
+}
+.article-prose td p,
+.article-prose th p {
+  margin: 0;
+}
+.article-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 24px 0;
+}
+.article-table-scroll table {
+  min-width: 560px;
+  margin: 0;
+  table-layout: auto;
+}
+.article-prose ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+.article-prose li[data-type='taskItem'] {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 9px 0;
+}
+.article-prose li[data-type='taskItem'] > div {
+  flex: 1;
+  min-width: 0;
+}
+.article-prose li[data-type='taskItem'] > label {
+  flex: 0 0 auto;
+  padding-top: 0.2em;
+}
+.article-prose li[data-type='taskItem'] input {
+  width: 16px;
+  height: 16px;
+  accent-color: #52764f;
+}
+.article-task-check {
+  color: #52764f;
+  flex: 0 0 auto;
+  line-height: 1.95;
+}
+.article-prose li[data-checked='true'] > div > p {
+  color: #7a8177;
+  text-decoration: line-through;
+}
+.article-prose li[data-type='taskItem'] > div > p {
+  margin: 0;
+}
+.article-prose .tableWrapper {
+  overflow-x: auto;
 }

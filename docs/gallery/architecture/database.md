@@ -424,3 +424,7 @@ ADR 0012 已确认。拟新增文章、发布版本、独立素材及引用关�
 ### 0008：独立富文本文章
 
 迁移 `0008_articles.sql` 新增 article、article_release、article_media、article_photo_ref、article_media_ref、article_album_ref，以及 site.about_article_id。正文和编辑设置合为 content JSONB（title、summary、date、document、cover、listed、albums），article.version 同时作为草稿乐观锁和发布前置条件。发布版本 source_version 唯一，内容不可更新；引用以 release_id 是否为空区分草稿及历史版本，部分唯一索引约束节点；发布引用禁止删除。素材只在文件准备完成后插入，数据库行全部可用，不保留 processing 行；临时目录用于原子归档与故障回收。匿名角色只读五个 security_barrier 公开视图，不获得基础表权限。完整说明见 articles.md。实施中，开发库迁移状态见交付记录。
+
+## 0009：文章实际发布时间
+
+`published_article` 与 `published_about_article` 追加 `first_published_at timestamptz`，由该文章不可变发布记录的最早 `published_at` 聚合；原 `published_at` 仍表示当前版本的发布时间。仅当前公开文章可通过视图读取。后台列表和编辑页读取同样的发布记录，未发布返回空值。没有新表、没有改写已有文章、没有修改 Immich 结构。正文 JSON 扩展遵循 ADR 0013：表格及单元格跨度／列宽、嵌套任务及布尔状态、文字 mark、代码块和图片占位；具体白名单与容量边界由 core 校验。旧 schemaVersion 1 文档兼容读取。

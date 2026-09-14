@@ -15,7 +15,8 @@
   <div class="back"><a href="/records">← 全部记录</a></div>
   <ArticleReader
     title={data.article.title}
-    date={data.article.date}
+    firstPublishedAt={data.article.firstPublishedAt}
+    publishedAt={data.article.publishedAt}
     document={data.article.document}
     resolveImage={(node: ArticleNode) => data.article.images[articleImageKey(node)] ?? null}
     related={data.article.related}

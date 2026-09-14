@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { articleTime } from '@gallery/core';
   import { goto } from '$app/navigation';
   import AdminSidebar from '$lib/AdminSidebar.svelte';
-  import AboutArticle from '$lib/articles/AboutArticle.svelte';
   import { articleRequest } from '$lib/articles/api';
   import '$lib/design/admin.css';
   let { data } = $props();
@@ -49,7 +49,17 @@
               {article.title || '未命名文章'}{#if data.about.id === article.id}<small>关于页</small>{/if}
             </h2>
             <p>{article.summary || '尚未填写摘要'}</p>
-            <span>{article.date}</span>
+            <div class="publication-times">
+              {#if article.firstPublishedAt}<span
+                  >首次发布 <time datetime={article.firstPublishedAt} title="北京时间 UTC+8"
+                    >{articleTime(article.firstPublishedAt)}</time
+                  ></span
+                ><span
+                  >最近更新 <time datetime={article.publishedAt!} title="北京时间 UTC+8"
+                    >{articleTime(article.publishedAt!)}</time
+                  ></span
+                >{:else}<span>尚未发布</span>{/if}
+            </div>
           </div>
           <span class="status"
             >{{ draft: '草稿', published: '已发布', offline: '已下线' }[article.status]}{article.status ===
@@ -78,11 +88,15 @@
             (data.page + 1)}>下一页 →</a
         >{/if}
     </nav>
-    <details><summary>关于页选篇</summary><AboutArticle /></details>
   </main>
 </div>
 
 <style>
+  .publication-times {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+  }
   main {
     padding: 34px 40px;
     min-width: 0;
@@ -190,14 +204,6 @@
     display: flex;
     gap: 25px;
     margin: 20px 0;
-  }
-  details {
-    margin-top: 30px;
-  }
-  summary {
-    cursor: pointer;
-    color: #77886b;
-    font-size: 13px;
   }
   @media (max-width: 780px) {
     main {

@@ -16,7 +16,10 @@
     "@gallery/ui": "workspace:*",
     "@tiptap/core": "3.31.3",
     "@tiptap/pm": "3.31.3",
-    "@tiptap/starter-kit": "3.31.3"
+    "@tiptap/starter-kit": "3.31.3",
+    "@tiptap/extension-highlight": "3.31.3",
+    "@tiptap/extension-table": "3.31.3",
+    "@tiptap/extension-list": "3.31.3"
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "5.5.7",

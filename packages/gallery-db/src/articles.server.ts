@@ -23,6 +23,8 @@ type Row = {
   version: string;
   content: ArticleContent;
   has_changes: boolean;
+  first_published_at?: Date | null;
+  published_at?: Date | null;
 };
 const dto = (row: Row): ManagedArticle => ({
   ...row.content,
@@ -31,6 +33,8 @@ const dto = (row: Row): ManagedArticle => ({
   status: row.status,
   version: String(row.version),
   hasChanges: row.has_changes,
+  firstPublishedAt: row.first_published_at?.toISOString() ?? null,
+  publishedAt: row.published_at?.toISOString() ?? null,
 });
 export async function articleLock(db: Db) {
   await sql`SELECT id FROM gallery.site WHERE id=1 FOR UPDATE`.execute(db);
@@ -45,7 +49,7 @@ export function validateArticleContent(value: unknown): ArticleContent {
       /^\d{4}-\d{2}-\d{2}$/.test(c.date) &&
       Number.isFinite(Date.parse(c.date)) &&
       new Date(c.date).toISOString().slice(0, 10) === c.date,
-    '发表日期无效。',
+    '写作日期无效。',
   );
   ensure(typeof c.listed === 'boolean' && Array.isArray(c.albums) && c.albums.length <= 30, '文章设置无效。');
   let document;
@@ -78,7 +82,7 @@ export function validateArticleContent(value: unknown): ArticleContent {
 }
 export async function getArticle(db: Db, id: string) {
   const row = (
-    await sql<Row>`SELECT a.*, (r.id IS NULL OR a.content IS DISTINCT FROM r.content) AS has_changes FROM gallery.article a LEFT JOIN gallery.article_release r ON r.id=a.current_release_id WHERE a.id=${uuid(id)}::uuid`.execute(
+    await sql<Row>`SELECT a.*, r.published_at, (SELECT min(published_at) FROM gallery.article_release WHERE article_id=a.id) AS first_published_at, (r.id IS NULL OR a.content IS DISTINCT FROM r.content) AS has_changes FROM gallery.article a LEFT JOIN gallery.article_release r ON r.id=a.current_release_id WHERE a.id=${uuid(id)}::uuid`.execute(
       db,
     )
   ).rows[0];
@@ -93,7 +97,7 @@ export async function listArticles(db: Db, query = '', page = 1, status = '') {
       .count,
   );
   const rows = (
-    await sql<Row>`SELECT a.id,a.slug,a.status,a.version,a.content-'document' AS content,(r.id IS NULL OR a.content IS DISTINCT FROM r.content) AS has_changes FROM gallery.article a LEFT JOIN gallery.article_release r ON r.id=a.current_release_id ${filter} ORDER BY a.updated_at DESC,a.id LIMIT 30 OFFSET ${(page - 1) * 30}`.execute(
+    await sql<Row>`SELECT a.id,a.slug,a.status,a.version,a.content-'document' AS content,r.published_at,(SELECT min(published_at) FROM gallery.article_release WHERE article_id=a.id) AS first_published_at,(r.id IS NULL OR a.content IS DISTINCT FROM r.content) AS has_changes FROM gallery.article a LEFT JOIN gallery.article_release r ON r.id=a.current_release_id ${filter} ORDER BY a.updated_at DESC,a.id LIMIT 30 OFFSET ${(page - 1) * 30}`.execute(
       db,
     )
   ).rows;
@@ -191,21 +195,19 @@ export async function articleMediaOptions(
     ).rows;
     return {
       more: rows.length > 48,
-      items: rows
-        .slice(0, 48)
-        .map((p) => ({
-          id: p.album_id + ':' + p.asset_id,
-          ref: p.asset_id,
-          kind: 'photo',
-          album: p.album_id,
-          albumTitle: p.album_title,
-          title: p.title || '未命名照片',
-          alt: p.alt_text || p.title || '照片',
-          src: `/media/source/${p.asset_id}?variant=thumbnail`,
-          preview: `/media/source/${p.asset_id}?variant=preview`,
-          width: p.width,
-          height: p.height,
-        })),
+      items: rows.slice(0, 48).map((p) => ({
+        id: p.album_id + ':' + p.asset_id,
+        ref: p.asset_id,
+        kind: 'photo',
+        album: p.album_id,
+        albumTitle: p.album_title,
+        title: p.title || '未命名照片',
+        alt: p.alt_text || p.title || '照片',
+        src: `/media/source/${p.asset_id}?variant=thumbnail`,
+        preview: `/media/source/${p.asset_id}?variant=preview`,
+        width: p.width,
+        height: p.height,
+      })),
     };
   }
   const rows = (
@@ -221,20 +223,18 @@ export async function articleMediaOptions(
   ).rows;
   return {
     more: rows.length > 48,
-    items: rows
-      .slice(0, 48)
-      .map((m) => ({
-        id: m.id,
-        ref: m.id,
-        kind: 'upload',
-        title: m.name,
-        usage: m.usage,
-        alt: m.name,
-        src: `/media/articles/${m.id}?variant=thumbnail`,
-        preview: `/media/articles/${m.id}?variant=preview`,
-        width: m.width,
-        height: m.height,
-      })),
+    items: rows.slice(0, 48).map((m) => ({
+      id: m.id,
+      ref: m.id,
+      kind: 'upload',
+      title: m.name,
+      usage: m.usage,
+      alt: m.name,
+      src: `/media/articles/${m.id}?variant=thumbnail`,
+      preview: `/media/articles/${m.id}?variant=preview`,
+      width: m.width,
+      height: m.height,
+    })),
   };
 }
 export async function articleImageMap(db: Db, id: string, content: ArticleContent, admin = false) {
@@ -437,7 +437,7 @@ export async function publicArticles(db: Db, page = 1) {
     ).rows[0]!.count,
   );
   const rows = (
-    await sql<any>`SELECT id,slug,content-'document' AS content FROM gallery.published_article WHERE content->>'listed'='true' ORDER BY content->>'date' DESC,published_at DESC,id LIMIT 20 OFFSET ${(page - 1) * 20}`.execute(
+    await sql<any>`SELECT id,slug,first_published_at,published_at,content-'document' AS content FROM gallery.published_article WHERE content->>'listed'='true' ORDER BY first_published_at DESC,id LIMIT 20 OFFSET ${(page - 1) * 20}`.execute(
       db,
     )
   ).rows;
@@ -449,6 +449,8 @@ export async function publicArticles(db: Db, page = 1) {
         ...r.content,
         id: r.id,
         slug: r.slug,
+        firstPublishedAt: r.first_published_at.toISOString(),
+        publishedAt: r.published_at.toISOString(),
         images: await articleImageMap(db, r.id, {
           ...r.content,
           document: { schemaVersion: 1, doc: { type: 'doc' } },
@@ -469,6 +471,8 @@ export async function publicArticle(db: Db, slug: string, about = false) {
     ...row.content,
     id: row.id,
     slug: row.slug,
+    firstPublishedAt: row.first_published_at.toISOString(),
+    publishedAt: row.published_at.toISOString(),
     images: await articleImageMap(db, row.id, row.content),
     related: (
       await sql<{

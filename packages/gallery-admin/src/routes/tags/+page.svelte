@@ -41,10 +41,10 @@
   }
 </script>
 
-<svelte:head><title>标签管理 · Gallery</title></svelte:head>
+<svelte:head><title>照片标签 · Gallery</title></svelte:head>
 <MapAdminFrame active="tags" user={data.user} publicOrigin={data.publicOrigin}>
   <section class="map-admin tags-page">
-    <h1>标签管理</h1>
+    <h1>照片标签</h1>
     <p>为照片整理主题。标签在所有相册中统一使用；重命名会同步更新前台名称。</p>
     {#if message}<p class="notice" class:error={failed} role="status">{message}</p>{/if}
     <form

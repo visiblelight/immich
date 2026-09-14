@@ -1,12 +1,12 @@
 /** Structured article content is independent of album/photo Markdown. */
 export type ArticleMark = {
-  type: 'bold' | 'italic' | 'link';
+  type: 'bold' | 'italic' | 'link' | 'underline' | 'strike' | 'highlight' | 'code';
   attrs?: { href: string };
 };
 export type ArticleNode = {
   type: string;
   text?: string;
-  attrs?: Record<string, string | number>;
+  attrs?: Record<string, string | number | boolean | number[] | null>;
   marks?: ArticleMark[];
   content?: ArticleNode[];
 };
@@ -46,6 +46,10 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
     'blockquote',
     'horizontalRule',
     'galleryImage',
+    'imagePlaceholder',
+    'codeBlock',
+    'taskList',
+    'table',
   ]);
   function visit(value: ArticleNode, depth: number, parent: string): ArticleNode {
     if (++count > 10000 || depth > 20 || !value || typeof value !== 'object')
@@ -55,11 +59,19 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
     const valid =
       parent === 'root'
         ? type === 'doc'
-        : inline
-          ? ['text', 'hardBreak'].includes(type)
-          : ['bulletList', 'orderedList'].includes(parent)
-            ? type === 'listItem'
-            : block.has(type);
+        : parent === 'codeBlock'
+          ? type === 'text'
+          : inline
+            ? ['text', 'hardBreak'].includes(type)
+            : ['bulletList', 'orderedList'].includes(parent)
+              ? type === 'listItem'
+              : parent === 'taskList'
+                ? type === 'taskItem'
+                : parent === 'table'
+                  ? type === 'tableRow'
+                  : parent === 'tableRow'
+                    ? ['tableCell', 'tableHeader'].includes(type)
+                    : block.has(type);
     if (!valid) throw new Error('文章包含不支持的内容');
     const out: ArticleNode = { type };
     if (type === 'text') {
@@ -67,11 +79,46 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
       out.text = value.text;
       if (value.marks)
         out.marks = value.marks.map((mark) => {
-          if (mark.type === 'bold' || mark.type === 'italic') return { type: mark.type };
+          if (['bold', 'italic', 'underline', 'strike', 'highlight', 'code'].includes(mark.type))
+            return { type: mark.type };
           const href = mark.type === 'link' && articleLink(mark.attrs?.href);
           if (!href) throw new Error('文章链接无效');
           return { type: 'link', attrs: { href } };
         });
+      if (parent === 'codeBlock' && value.marks?.length) throw new Error('代码块不能包含文字样式');
+    } else if (type === 'taskItem') {
+      if (typeof value.attrs?.checked !== 'boolean') throw new Error('任务完成状态无效');
+      out.attrs = { checked: value.attrs.checked };
+    } else if (['tableCell', 'tableHeader'].includes(type)) {
+      const colspan = value.attrs?.colspan ?? 1,
+        rowspan = value.attrs?.rowspan ?? 1;
+      if (
+        !Number.isInteger(colspan) ||
+        Number(colspan) < 1 ||
+        Number(colspan) > 20 ||
+        !Number.isInteger(rowspan) ||
+        Number(rowspan) < 1 ||
+        Number(rowspan) > 100
+      )
+        throw new Error('表格合并范围无效');
+      const widths = value.attrs?.colwidth;
+      if (
+        widths != null &&
+        (!Array.isArray(widths) ||
+          widths.length !== colspan ||
+          widths.some((w) => !Number.isInteger(w) || (w !== 0 && w < 40) || w > 2000))
+      )
+        throw new Error('表格列宽无效');
+      out.attrs = { colspan, rowspan, colwidth: widths ?? null };
+    } else if (type === 'imagePlaceholder') {
+      out.attrs = {
+        alt: typeof value.attrs?.alt === 'string' ? value.attrs.alt.slice(0, 200) : '待补充图片',
+      };
+    } else if (type === 'codeBlock') {
+      const language = value.attrs?.language;
+      if (language != null && (typeof language !== 'string' || !/^[a-z0-9_+-]{0,30}$/i.test(language)))
+        throw new Error('代码语言无效');
+      out.attrs = { language: language ?? null };
     } else if (type === 'heading') {
       if (![2, 3].includes(Number(value.attrs?.level))) throw new Error('标题级别无效');
       out.attrs = { level: Number(value.attrs!.level) };
@@ -97,16 +144,77 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
       };
     }
     if (value.content !== undefined) {
-      if (!Array.isArray(value.content) || ['text', 'hardBreak', 'horizontalRule'].includes(type))
+      if (
+        !Array.isArray(value.content) ||
+        ['text', 'hardBreak', 'horizontalRule', 'imagePlaceholder'].includes(type)
+      )
         throw new Error('文章结构无效');
       out.content = value.content.map((node) => visit(node, depth + 1, type));
     }
-    if (['bulletList', 'orderedList', 'listItem', 'blockquote'].includes(type) && !out.content?.length)
+    if (
+      [
+        'bulletList',
+        'orderedList',
+        'listItem',
+        'blockquote',
+        'taskList',
+        'taskItem',
+        'table',
+        'tableRow',
+        'tableCell',
+        'tableHeader',
+      ].includes(type) &&
+      !out.content?.length
+    )
       throw new Error('内容块不能为空');
-    if (type === 'listItem' && out.content?.[0]?.type !== 'paragraph') throw new Error('列表项需以段落开始');
+    if (['listItem', 'taskItem'].includes(type) && out.content?.[0]?.type !== 'paragraph')
+      throw new Error('列表项需以段落开始');
+    if (type === 'table') validateTable(out);
     return out;
   }
   return { schemaVersion: 1, doc: visit(root.doc, 0, 'root') };
+}
+
+/** Bound cell spans and reject ragged/overlapping tables before rendering. */
+function validateTable(table: ArticleNode) {
+  const rows = table.content!;
+  if (rows.length > 100) throw new Error('表格最多 100 行');
+  const grid: boolean[][] = rows.map(() => []);
+  for (const [y, row] of rows.entries()) {
+    let x = 0;
+    for (const cell of row.content!) {
+      while (grid[y]![x]) x++;
+      const width = Number(cell.attrs!.colspan),
+        height = Number(cell.attrs!.rowspan);
+      if (x + width > 20 || y + height > rows.length) throw new Error('表格范围无效');
+      for (let dy = 0; dy < height; dy++)
+        for (let dx = 0; dx < width; dx++) {
+          if (grid[y + dy]![x + dx]) throw new Error('表格单元格重叠');
+          grid[y + dy]![x + dx] = true;
+        }
+      x += width;
+    }
+  }
+  const width = grid[0]!.length;
+  if (
+    !width ||
+    grid.some(
+      (row) => row.length !== width || Array.from({ length: width }, (_, i) => row[i]).some((v) => !v),
+    )
+  )
+    throw new Error('表格行列不完整');
+}
+
+export function articleTime(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
 }
 
 export function articleText(node: ArticleNode): string {
@@ -138,13 +246,20 @@ export function renderArticle(document: ArticleDocument, resolve: ArticleImageRe
     const children = () => (node.content ?? []).map(render).join('');
     if (node.type === 'text') {
       let result = escape(node.text!);
-      for (const mark of node.marks ?? [])
+      for (const mark of node.marks ?? []) {
+        const tag = {
+          bold: 'strong',
+          italic: 'em',
+          underline: 'u',
+          strike: 's',
+          highlight: 'mark',
+          code: 'code',
+        }[mark.type as 'bold'];
         result =
-          mark.type === 'bold'
-            ? `<strong>${result}</strong>`
-            : mark.type === 'italic'
-              ? `<em>${result}</em>`
-              : `<a href="${escape(mark.attrs!.href)}" rel="noopener noreferrer">${result}</a>`;
+          mark.type === 'link'
+            ? `<a href="${escape(mark.attrs!.href)}" rel="noopener noreferrer">${result}</a>`
+            : `<${tag}>${result}</${tag}>`;
+      }
       return result;
     }
     if (node.type === 'doc') return children();
@@ -152,6 +267,28 @@ export function renderArticle(document: ArticleDocument, resolve: ArticleImageRe
     if (node.type === 'horizontalRule') return '<hr>';
     if (node.type === 'heading')
       return `<h${node.attrs!.level} id="section-${++heading}">${children()}</h${node.attrs!.level}>`;
+    if (node.type === 'codeBlock') return `<pre><code>${escape(articleText(node))}</code></pre>`;
+    if (node.type === 'imagePlaceholder')
+      return `<div class="article-image-unavailable">图片待补充：${escape(String(node.attrs?.alt ?? ''))}</div>`;
+    if (node.type === 'table') {
+      const columns = node
+        .content![0]!.content!.flatMap((cell) =>
+          Array.from({ length: Number(cell.attrs!.colspan) }, (_, i) => {
+            const width = (cell.attrs!.colwidth as number[] | null)?.[i];
+            return width ? `<col style="width:${width}px">` : '<col>';
+          }),
+        )
+        .join('');
+      return `<div class="article-table-scroll" role="region" aria-label="文章表格" tabindex="0"><table><colgroup>${columns}</colgroup><tbody>${children()}</tbody></table></div>`;
+    }
+    if (node.type === 'tableRow') return `<tr>${children()}</tr>`;
+    if (['tableCell', 'tableHeader'].includes(node.type)) {
+      const tag = node.type === 'tableHeader' ? 'th' : 'td';
+      return `<${tag} colspan="${node.attrs!.colspan}" rowspan="${node.attrs!.rowspan}">${children()}</${tag}>`;
+    }
+    if (node.type === 'taskList') return `<ul data-type="taskList">${children()}</ul>`;
+    if (node.type === 'taskItem')
+      return `<li data-type="taskItem" data-checked="${node.attrs!.checked}"><span class="article-task-check" role="img" aria-label="${node.attrs!.checked ? '已完成' : '未完成'}">${node.attrs!.checked ? '☑' : '☐'}</span><div>${children()}</div></li>`;
     if (node.type === 'galleryImage') {
       const resolved = resolve(node);
       const index = image++;
@@ -193,6 +330,8 @@ export interface ManagedArticle extends ArticleContent {
   version: string;
   status: 'draft' | 'published' | 'offline';
   hasChanges: boolean;
+  firstPublishedAt?: string | null;
+  publishedAt?: string | null;
 }
 export interface ArticleMediaOption extends ArticleImage {
   id: string;

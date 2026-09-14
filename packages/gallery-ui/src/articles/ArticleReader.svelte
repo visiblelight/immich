@@ -1,22 +1,27 @@
 <script lang="ts">
   import {
     articleHeadings,
+    articleTime,
     articleText,
     renderArticle,
     type ArticleDocument,
     type ArticleImageResolver,
     type ArticleNode,
-  } from "../../../gallery-core/src/article";
-  import "./article.css";
+  } from '../../../gallery-core/src/article';
+  import './article.css';
   let {
     title,
-    date = "",
+    date = '',
+    firstPublishedAt = null,
+    publishedAt = null,
     document,
     resolveImage,
     related = [],
   }: {
     title: string;
     date?: string;
+    firstPublishedAt?: string | null;
+    publishedAt?: string | null;
     document: ArticleDocument;
     resolveImage: ArticleImageResolver;
     related?: { title: string; href: string }[];
@@ -29,19 +34,15 @@
   const images = $derived.by(() => {
     const nodes: ArticleNode[] = [];
     const visit = (node: ArticleNode) => {
-      if (node.type === "galleryImage") nodes.push(node);
+      if (node.type === 'galleryImage') nodes.push(node);
       node.content?.forEach(visit);
     };
     visit(document.doc);
     return nodes.map(resolveImage);
   });
-  const minutes = $derived(
-    Math.max(1, Math.ceil(articleText(document.doc).length / 350)),
-  );
+  const minutes = $derived(Math.max(1, Math.ceil(articleText(document.doc).length / 350)));
   function openImage(event: MouseEvent) {
-    const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
-      "[data-article-image]",
-    );
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-article-image]');
     if (button) {
       current = Number(button.dataset.articleImage);
       dialog.showModal();
@@ -50,8 +51,7 @@
   }
   function move(direction: number) {
     let next = current + direction;
-    while (next >= 0 && next < images.length && !images[next])
-      next += direction;
+    while (next >= 0 && next < images.length && !images[next]) next += direction;
     if (next >= 0 && next < images.length) current = next;
   }
 </script>
@@ -59,11 +59,11 @@
 <svelte:window
   onkeydown={(event) => {
     if (!active) return;
-    if (event.key === "ArrowRight") {
+    if (event.key === 'ArrowRight') {
       event.preventDefault();
       move(1);
     }
-    if (event.key === "ArrowLeft") {
+    if (event.key === 'ArrowLeft') {
       event.preventDefault();
       move(-1);
     }
@@ -74,18 +74,20 @@
     <header class="article-heading">
       <h1>{title}</h1>
       <p>
-        {#if date}<time datetime={date}>{date.replaceAll("-", ".")}</time><span
-            >·</span
-          >{/if}约 {minutes} 分钟
+        {#if firstPublishedAt}<time datetime={firstPublishedAt} title="北京时间 UTC+8"
+            >发布于 {articleTime(firstPublishedAt)}</time
+          ><span>·</span>
+          {#if publishedAt && publishedAt !== firstPublishedAt}<time
+              datetime={publishedAt}
+              title="北京时间 UTC+8">更新于 {articleTime(publishedAt)}</time
+            ><span>·</span>{/if}
+        {:else if date}<time datetime={date}>{date.replaceAll('-', '.')}</time><span>·</span>{/if}约 {minutes} 分钟
       </p>
     </header>
     {#if headings.length}<details class="mobile-toc">
         <summary>文章目录</summary>
         <nav aria-label="文章目录">
-          {#each headings as item}<a
-              class:sub={item.level === 3}
-              href={"#" + item.id}>{item.text}</a
-            >{/each}
+          {#each headings as item}<a class:sub={item.level === 3} href={'#' + item.id}>{item.text}</a>{/each}
         </nav>
       </details>{/if}
     <!-- Buttons in the sanitized renderer are keyboard-accessible; clicks bubble here. -->
@@ -95,8 +97,7 @@
     {#if related.length}<footer>
         <span>相关相册</span>
         <div>
-          {#each related as album}<a href={album.href}
-              >{album.title} <span aria-hidden="true">↗</span></a
+          {#each related as album}<a href={album.href}>{album.title} <span aria-hidden="true">↗</span></a
             >{/each}
         </div>
       </footer>{/if}
@@ -104,28 +105,15 @@
   {#if headings.length}<aside class="desktop-toc">
       <span>本文目录</span>
       <nav aria-label="文章目录">
-        {#each headings as item}<a
-            class:sub={item.level === 3}
-            href={"#" + item.id}>{item.text}</a
-          >{/each}
+        {#each headings as item}<a class:sub={item.level === 3} href={'#' + item.id}>{item.text}</a>{/each}
       </nav>
     </aside>{/if}
 </div>
-<dialog
-  bind:this={dialog}
-  class="immersive"
-  aria-label="文章图片"
-  onclose={() => (active = false)}
->
-  {#if images[current]}<img
-      src={images[current]!.preview}
-      alt={images[current]!.alt}
-    />{/if}
+<dialog bind:this={dialog} class="immersive" aria-label="文章图片" onclose={() => (active = false)}>
+  {#if images[current]}<img src={images[current]!.preview} alt={images[current]!.alt} />{/if}
   <div class="viewer-tools">
-    <button
-      onclick={() => move(-1)}
-      disabled={!images.slice(0, current).some(Boolean)}
-      aria-label="上一张">←</button
+    <button onclick={() => move(-1)} disabled={!images.slice(0, current).some(Boolean)} aria-label="上一张"
+      >←</button
     ><span>{current + 1} / {images.length}</span><button
       onclick={() => move(1)}
       disabled={!images.slice(current + 1).some(Boolean)}
