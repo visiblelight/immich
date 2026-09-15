@@ -4,7 +4,11 @@ import type { DatabaseService } from './config.server.ts';
  * their actual source contract and privilege tests have been certified.
  */
 export async function assertDatabaseCompatibility(db: Kysely<unknown>, service: DatabaseService): Promise<void> {
-  const { rows } = await sql<{ version: number; role: string; elevated: boolean }>`SELECT
+  const { rows } = await sql<{
+    version: number;
+    role: string;
+    elevated: boolean;
+  }>`SELECT
     current_setting('server_version_num')::integer AS version, current_user AS role,
     (rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls) AS elevated
     FROM pg_catalog.pg_roles WHERE rolname = current_user`.execute(db);
@@ -23,6 +27,7 @@ export async function assertDatabaseCompatibility(db: Kysely<unknown>, service: 
   ) AS unsafe`.execute(db);
   if (privileges.rows[0]?.unsafe !== false) throw new Error('Unsafe Gallery database privileges');
   // Explicit columns force PostgreSQL to validate underlying view dependencies.
+  await sql`SELECT name,copyright_name,footer_text FROM gallery.published_site LIMIT 0`.execute(db);
   await sql`SELECT album_id, release_id, ancestor_ids, description_document FROM gallery.published_album LIMIT 0`.execute(
     db,
   );

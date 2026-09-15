@@ -4,6 +4,5 @@
   let { data } = $props();
 </script>
 
-<svelte:head><title>去过 · {data.site.name}</title></svelte:head><Frame name={data.site.name}
-  ><World {...data.visited} /></Frame
->
+<svelte:head><title>去过 · {data.site.name}</title><meta name="description" content={data.site.tagline} /></svelte:head
+><Frame site={data.site} name={data.site.name}><World {...data.visited} /></Frame>

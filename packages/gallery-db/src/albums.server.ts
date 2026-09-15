@@ -60,7 +60,9 @@ async function siteRow(db: Db, lock = false): Promise<GallerySite> {
       version: string;
       tree_version: string;
       contact_links: GallerySite['contactLinks'];
-    }>`SELECT name,tagline,version,tree_version,contact_links FROM gallery.site WHERE id=1 ${lock ? sql`FOR UPDATE` : sql``}`.execute(
+      copyright_name: string;
+      footer_text: string;
+    }>`SELECT name,tagline,version,tree_version,contact_links,copyright_name,footer_text FROM gallery.site WHERE id=1 ${lock ? sql`FOR UPDATE` : sql``}`.execute(
       db,
     )
   ).rows[0];
@@ -71,6 +73,8 @@ async function siteRow(db: Db, lock = false): Promise<GallerySite> {
     version: r.version,
     treeVersion: r.tree_version,
     contactLinks: r.contact_links,
+    copyrightName: r.copyright_name,
+    footerText: r.footer_text,
   };
 }
 export async function adminState(db: Db) {
@@ -402,7 +406,10 @@ export async function saveAlbumItem(
       for (const variant of ['preview', 'thumbnail'] as const) {
         try {
           const bytes = await readSourceDerivative(trx, member.asset, variant, root);
-          const info = await sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' }).metadata();
+          const info = await sharp(bytes, {
+            limitInputPixels: 100_000_000,
+            failOn: 'error',
+          }).metadata();
           ensure(info.width && info.height, '图片不可用。');
         } catch {
           ensure(false, '照片预览不可用，请检查 Immich；本次修改尚未保存或发布。', 409);
@@ -510,7 +517,10 @@ export async function publishAlbum(
       try {
         for (const variant of ['preview', 'thumbnail'] as const) {
           const bytes = await readSourceDerivative(trx, member.asset, variant, root);
-          const metadata = await sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' }).metadata();
+          const metadata = await sharp(bytes, {
+            limitInputPixels: 100_000_000,
+            failOn: 'error',
+          }).metadata();
           ensure(metadata.width && metadata.height, '图片不可用。');
         }
       } catch {
@@ -583,6 +593,15 @@ export async function setAlbumAvailability(db: Db, user: GalleryUser, id: string
 }
 export async function saveSite(db: Db, user: GalleryUser, input: Record<string, unknown>) {
   const contacts = validateContactLinks(input.contactLinks ?? []);
+  for (const [field, max] of [
+    ['copyrightName', 100],
+    ['footerText', 300],
+  ] as const) {
+    ensure(
+      input[field] === undefined || (typeof input[field] === 'string' && input[field].length <= max),
+      '页脚信息格式无效。',
+    );
+  }
   ensure(
     typeof input.name === 'string' &&
       input.name.trim().length > 0 &&
@@ -595,7 +614,23 @@ export async function saveSite(db: Db, user: GalleryUser, input: Record<string, 
     await actor(trx, user);
     const site = await siteRow(trx, true);
     ensure(input.version === site.version, '站点设置已更新，请刷新。', 409);
-    await sql`UPDATE gallery.site SET name=${String(input.name).trim()},tagline=${String(input.tagline)},contact_links=${JSON.stringify(contacts)}::jsonb,version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE id=1`.execute(
+    if (input.aboutArticleId !== undefined) {
+      const about = (
+        await sql<{
+          version: string;
+        }>`SELECT about_article_version AS version FROM gallery.site WHERE id=1`.execute(trx)
+      ).rows[0]!;
+      ensure(String(input.aboutArticleVersion) === String(about.version), '关于选篇已变化，请刷新后再保存。', 409);
+      const id = input.aboutArticleId ? uuid(input.aboutArticleId) : null;
+      ensure(
+        !id || (await sql`SELECT id FROM gallery.published_article WHERE id=${id}::uuid`.execute(trx)).rows.length > 0,
+        '只能选择已发布文章。',
+      );
+      await sql`UPDATE gallery.site SET about_article_id=${id}::uuid,about_article_version=about_article_version+1 WHERE id=1`.execute(
+        trx,
+      );
+    }
+    await sql`UPDATE gallery.site SET name=${String(input.name).trim()},tagline=${String(input.tagline)},contact_links=${JSON.stringify(contacts)}::jsonb,copyright_name=${input.copyrightName === undefined ? (site.copyrightName ?? '') : String(input.copyrightName).trim()},footer_text=${input.footerText === undefined ? (site.footerText ?? '') : String(input.footerText).trim()},version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE id=1`.execute(
       trx,
     );
     await sql`INSERT INTO gallery.audit_event(id,actor_user_id,action,target_type,target_id) VALUES(${randomUUID()}::uuid,${user.id}::uuid,'site.save','site','1')`.execute(
@@ -687,7 +722,12 @@ export async function picker(db: Db, filters: URLSearchParams) {
         photoVersion: p.version,
       };
   }
-  return { assets, albums, tags, next: rows.length > 60 ? assets.at(-1)!.id : null };
+  return {
+    assets,
+    albums,
+    tags,
+    next: rows.length > 60 ? assets.at(-1)!.id : null,
+  };
 }
 
 async function refreshSharedFlags(db: Db, assets: string[], albumId: string) {

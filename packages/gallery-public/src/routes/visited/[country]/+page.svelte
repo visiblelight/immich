@@ -4,7 +4,9 @@
   let { data } = $props();
 </script>
 
-<svelte:head><title>{data.country.name} · 去过 · {data.site.name}</title></svelte:head><Frame name={data.site.name}
+<svelte:head><title>{data.country.name} · 去过 · {data.site.name}</title></svelte:head><Frame
+  site={data.site}
+  name={data.site.name}
   >{#key `${data.country.id}:${data.visitId}`}<Country
       country={data.country}
       bounds={data.bounds}

@@ -18,7 +18,11 @@ type AlbumRow = {
   title: string;
   summary: string;
   parent_album_id: string | null;
-  description_document: { blocks: TextBlock[]; markdown?: string; groups?: PhotoGroup[] };
+  description_document: {
+    blocks: TextBlock[];
+    markdown?: string;
+    groups?: PhotoGroup[];
+  };
   photo_album_id: string | null;
   photo_id: string | null;
   count: string;
@@ -32,8 +36,12 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         await sql<{
           name: string;
           tagline: string;
+          copyrightName: string;
+          footerText: string;
           contactLinks: import('@gallery/core').ContactLink[];
-        }>`SELECT name,tagline,contact_links AS "contactLinks" FROM gallery.published_site WHERE id=1`.execute(trx)
+        }>`SELECT name,tagline,copyright_name AS "copyrightName",footer_text AS "footerText",contact_links AS "contactLinks" FROM gallery.published_site WHERE id=1`.execute(
+          trx,
+        )
       ).rows[0];
       ensure(site, 'Gallery 尚未初始化。', 503);
       const rows = (
@@ -114,8 +122,12 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
         await sql<{
           name: string;
           tagline: string;
+          copyrightName: string;
+          footerText: string;
           contactLinks: import('@gallery/core').ContactLink[];
-        }>`SELECT name,tagline,contact_links AS "contactLinks" FROM gallery.site WHERE id=1`.execute(trx)
+        }>`SELECT name,tagline,copyright_name AS "copyrightName",footer_text AS "footerText",contact_links AS "contactLinks" FROM gallery.site WHERE id=1`.execute(
+          trx,
+        )
       ).rows[0];
       ensure(site, 'Gallery 尚未初始化。', 503);
       const rows = (
@@ -125,7 +137,11 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
           title: string;
           summary: string;
           parent_album_id: string | null;
-          description_document: { blocks: TextBlock[]; markdown?: string; groups?: PhotoGroup[] };
+          description_document: {
+            blocks: TextBlock[];
+            markdown?: string;
+            groups?: PhotoGroup[];
+          };
           cover_asset_id: string | null;
           count: string;
           show_exif: boolean;

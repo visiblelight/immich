@@ -428,3 +428,9 @@ ADR 0012 已确认。拟新增文章、发布版本、独立素材及引用关�
 ## 0009：文章实际发布时间
 
 `published_article` 与 `published_about_article` 追加 `first_published_at timestamptz`，由该文章不可变发布记录的最早 `published_at` 聚合；原 `published_at` 仍表示当前版本的发布时间。仅当前公开文章可通过视图读取。后台列表和编辑页读取同样的发布记录，未发布返回空值。没有新表、没有改写已有文章、没有修改 Immich 结构。正文 JSON 扩展遵循 ADR 0013：表格及单元格跨度／列宽、嵌套任务及布尔状态、文字 mark、代码块和图片占位；具体白名单与容量边界由 core 校验。旧 schemaVersion 1 文档兼容读取。
+
+## 0010：页脚与统一站点设置（2026-09-15）
+
+`gallery.site` 新增 `copyright_name text NOT NULL DEFAULT ''`（最多 100 字，空值表示使用站点名称）和 `footer_text text NOT NULL DEFAULT ''`（最多 300 字，可选页脚短句）。`gallery.published_site` 在原有字段末尾公开这两个字段，权限及 security barrier 保持原状。
+
+统一保存使用站点 version 和 about_article_version 检查并发，在锁定 site 行的同一事务中校验已发布文章并更新全部设置。旧 about 接口同步推进 site.version，避免旧页面覆盖新保存。失败不会产生部分保存。兼容旧客户端省略新增页脚字段。迁移为增量扩展，旧应用可忽略新增列；回滚优先回滚应用，不删除配置。

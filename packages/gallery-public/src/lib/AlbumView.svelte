@@ -12,7 +12,7 @@
       photoId?: string | null;
       returnTo?: string | null;
       initialPage?: number;
-      relatedArticles?: {title:string;slug:string}[];
+      relatedArticles?: { title: string; slug: string }[];
     };
   } = $props();
   let immersive = $state(false);
@@ -49,9 +49,7 @@
     active={data.active}
     initialPhotoId={data.photoId}
     initialPage={data.initialPage ?? 1}
+    relatedArticles={data.relatedArticles ?? []}
     {navigatePhoto}
     bind:immersive
   />{/key}
-
-{#if !data.photoId && data.relatedArticles?.length}<aside class="related-articles"><span>相关文章</span>{#each data.relatedArticles as article}<a href={'/records/'+article.slug}>{article.title} ↗</a>{/each}</aside>{/if}
-<style>.related-articles{margin:0 4vw 45px;border-top:1px solid #e2e7dd;padding:22px 0;display:flex;gap:18px 30px;flex-wrap:wrap;font-size:13px;color:#88927f}.related-articles a{color:#55734e;text-decoration:none}</style>

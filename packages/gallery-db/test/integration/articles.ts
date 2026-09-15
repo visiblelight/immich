@@ -17,6 +17,8 @@ import {
   publicArticles,
   aboutArticleSettings,
   saveAboutArticle,
+  saveSite,
+  publicCatalog,
   uploadArticleMedia,
   readArticleMedia,
   deleteArticleMedia,
@@ -37,12 +39,21 @@ export async function articles(
   asset: string,
   mediaRoot: string,
 ) {
-  const user = { id: userId, email: 'gallery@example.invalid', displayName: 'Gallery' };
+  const user = {
+    id: userId,
+    email: 'gallery@example.invalid',
+    displayName: 'Gallery',
+  };
   const root = { sourceRoot: '/data/thumbs', mountedRoot: mediaRoot };
   const dir = await mkdtemp(path.join(tmpdir(), 'gallery-article-files-'));
-  const text = (s: string): ArticleNode => ({ type: 'paragraph', content: [{ type: 'text', text: s }] });
+  const text = (s: string): ArticleNode => ({
+    type: 'paragraph',
+    content: [{ type: 'text', text: s }],
+  });
   try {
-    const bytes = await sharp({ create: { width: 100, height: 80, channels: 3, background: '#658068' } })
+    const bytes = await sharp({
+      create: { width: 100, height: 80, channels: 3, background: '#658068' },
+    })
       .jpeg()
       .withMetadata()
       .toBuffer();
@@ -53,13 +64,7 @@ export async function articles(
     assert.equal(meta.format, 'webp');
     await assert.rejects(readArticleMedia(pub, dir, upload.id, 'preview', randomUUID()));
     await assert.rejects(
-      uploadArticleMedia(
-        db,
-        user,
-        dir,
-        Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
-        'x.svg',
-      ),
+      uploadArticleMedia(db, user, dir, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), 'x.svg'),
     );
     await assert.rejects(sql`SELECT * FROM gallery.article`.execute(pub));
     const id = await createArticle(db, user);
@@ -79,16 +84,29 @@ export async function articles(
               {
                 type: 'tableRow',
                 content: [
-                  { type: 'tableHeader', attrs: { colspan: 1, rowspan: 1 }, content: [text('Rome')] },
+                  {
+                    type: 'tableHeader',
+                    attrs: { colspan: 1, rowspan: 1 },
+                    content: [text('Rome')],
+                  },
                 ],
               },
             ],
           },
           {
             type: 'taskList',
-            content: [{ type: 'taskItem', attrs: { checked: true }, content: [text('Passport')] }],
+            content: [
+              {
+                type: 'taskItem',
+                attrs: { checked: true },
+                content: [text('Passport')],
+              },
+            ],
           },
-          { type: 'codeBlock', content: [{ type: 'text', text: 'day 1\n  Rome' }] },
+          {
+            type: 'codeBlock',
+            content: [{ type: 'text', text: 'day 1\n  Rome' }],
+          },
           {
             type: 'galleryImage',
             attrs: { kind: 'upload', ref: upload.id },
@@ -97,7 +115,12 @@ export async function articles(
         ],
       },
     };
-    a = await saveArticle(db, user, { id, version: a.version, slug: 'article-test', content: a });
+    a = await saveArticle(db, user, {
+      id,
+      version: a.version,
+      slug: 'article-test',
+      content: a,
+    });
     await assert.rejects(publicArticle(pub, 'article-test'));
     await assert.rejects(deleteArticleMedia(db, dir, upload.id), /引用/);
     await assert.rejects(saveArticle(db, user, { id, version: '1', slug: a.slug, content: a }), /其他页面/);
@@ -112,7 +135,39 @@ export async function articles(
     assert.ok((await publicArticles(pub)).articles.some((x) => x.id === id));
     assert.ok((await readArticleMedia(pub, dir, upload.id, 'preview', id)).length);
     let settings = await aboutArticleSettings(db);
-    await saveAboutArticle(db, { id, version: settings.version });
+    const siteBefore = (await adminState(db)).site;
+    const unified = {
+      ...siteBefore,
+      name: 'Unified settings',
+      copyrightName: 'Photo author',
+      footerText: 'Light and distance',
+      aboutArticleId: id,
+      aboutArticleVersion: settings.version,
+    };
+    await saveSite(db, user, unified);
+    assert.equal((await aboutArticleSettings(db)).id, id);
+    const shownSite = (await publicCatalog(pub)).site;
+    assert.equal(shownSite.copyrightName, 'Photo author');
+    assert.equal(shownSite.footerText, 'Light and distance');
+    assert.equal(shownSite.name, 'Unified settings');
+    await assert.rejects(saveSite(db, user, unified), /刷新/);
+    const updatedSite = (await adminState(db)).site;
+    const updatedAbout = await aboutArticleSettings(db);
+    await assert.rejects(
+      saveSite(db, user, {
+        ...updatedSite,
+        name: 'Must roll back',
+        aboutArticleId: randomUUID(),
+        aboutArticleVersion: updatedAbout.version,
+      }),
+      /已发布/,
+    );
+    assert.equal((await publicCatalog(pub)).site.name, 'Unified settings');
+    assert.equal((await aboutArticleSettings(db)).version, updatedAbout.version);
+    await assert.rejects(saveSite(db, user, { ...updatedSite, footerText: 'x'.repeat(301) }), /页脚/);
+    await saveAboutArticle(db, { id, version: updatedAbout.version });
+    await assert.rejects(saveSite(db, user, { ...updatedSite }), /刷新/);
+
     await assert.rejects(offlineArticle(db, { id, version: a.version }), /关于/);
     assert.equal((await publicArticle(pub, '', true)).title, a.title);
     const release = (
@@ -123,12 +178,15 @@ export async function articles(
     await assert.rejects(
       sql`UPDATE gallery.article_release SET content='{}'::jsonb WHERE id=${release}::uuid`.execute(db),
     );
-    await assert.rejects(
-      sql`DELETE FROM gallery.article_media_ref WHERE release_id=${release}::uuid`.execute(db),
-    );
+    await assert.rejects(sql`DELETE FROM gallery.article_media_ref WHERE release_id=${release}::uuid`.execute(db));
     const stale = structuredClone(a);
     a.title = 'Unpublished title';
-    a = await saveArticle(db, user, { id, version: a.version, slug: a.slug, content: a });
+    a = await saveArticle(db, user, {
+      id,
+      version: a.version,
+      slug: a.slug,
+      content: a,
+    });
     assert.equal((await publicArticle(pub, '', true)).title, 'A formal journey');
     await assert.rejects(publishArticle(db, user, { id, version: stale.version }, root, dir), /版本/);
     a = await publishArticle(db, user, { id, version: a.version }, root, dir);
@@ -154,8 +212,14 @@ export async function articles(
     assert.ok((await readArticleMedia(pub, dir, upload.id, 'preview', id2)).length);
     await assert.rejects(readArticleMedia(pub, dir, upload.id, 'preview', id));
     assert.ok(!(await publicArticles(pub)).articles.some((x) => x.id === id2));
-    second.cover = { type: 'galleryImage', attrs: { kind: 'upload', ref: upload.id } };
-    second.document = { schemaVersion: 1, doc: { type: 'doc', content: [text('Cover-only upload')] } };
+    second.cover = {
+      type: 'galleryImage',
+      attrs: { kind: 'upload', ref: upload.id },
+    };
+    second.document = {
+      schemaVersion: 1,
+      doc: { type: 'doc', content: [text('Cover-only upload')] },
+    };
     second = await saveArticle(db, user, {
       id: id2,
       version: second.version,
@@ -175,8 +239,7 @@ export async function articles(
     second = await publishArticle(db, user, { id: id2, version: second.version }, root, dir);
     await assert.rejects(readArticleMedia(pub, dir, upload.id, 'preview', id2));
     // Source photos retain their explicitly selected album context.
-    for (const v of ['preview', 'thumbnail'])
-      await writeFile(path.join(mediaRoot, `${asset}-${v}.jpg`), bytes);
+    for (const v of ['preview', 'thumbnail']) await writeFile(path.join(mediaRoot, `${asset}-${v}.jpg`), bytes);
     const album = await createAlbum(db, user, {
       title: 'Article source',
       treeVersion: (await adminState(db)).site.treeVersion,
@@ -186,7 +249,11 @@ export async function articles(
       const row = state.albums.find((a) => a.id === album)!;
       return {
         row,
-        v: { version: row.version, draftVersion: row.draftVersion, treeVersion: state.site.treeVersion },
+        v: {
+          version: row.version,
+          draftVersion: row.draftVersion,
+          treeVersion: state.site.treeVersion,
+        },
       };
     };
     let sa = await albumState();
@@ -208,7 +275,10 @@ export async function articles(
       attrs: { kind: 'photo', ref: asset, album },
       content: [{ type: 'text', text: 'Local caption' }],
     };
-    second.document = { schemaVersion: 1, doc: { type: 'doc', content: [text('Travel'), photo] } };
+    second.document = {
+      schemaVersion: 1,
+      doc: { type: 'doc', content: [text('Travel'), photo] },
+    };
     second.albums = [album];
     second = await saveArticle(db, user, {
       id: id2,

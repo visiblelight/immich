@@ -143,7 +143,18 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
     await admin.connect();
     await pub.connect();
     await t.test('transactional migration, repeat execution, role identity', async () => {
-      assert.deepEqual(await migrate(migrator), ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009']);
+      assert.deepEqual(await migrate(migrator), [
+        '0001',
+        '0002',
+        '0003',
+        '0004',
+        '0005',
+        '0006',
+        '0007',
+        '0008',
+        '0009',
+        '0010',
+      ]);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
       assert.equal(
@@ -170,7 +181,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         await assert.rejects(migrate(migrator, dirUrl), /history mismatch/);
         await copyFile(new URL('0001_foundation.sql', migrationDirectory), path.join(directory, '0001_foundation.sql'));
         await writeFile(
-          path.join(directory, '0010_failure.sql'),
+          path.join(directory, '9999_failure.sql'),
           'CREATE TABLE gallery.rollback_probe(id integer); SELECT 1/0;',
         );
         await assert.rejects(migrate(migrator, dirUrl), (e: { code: string }) => e.code === '22012');
@@ -179,7 +190,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           null,
         );
         assert.equal(
-          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='0010'")).rows[0].count,
+          (await migrator.query("SELECT count(*) FROM gallery.schema_migration WHERE version='9999'")).rows[0].count,
           '0',
         );
       } finally {
@@ -332,8 +343,15 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         );
         // Tiny bbox contains exact GPS but not approximate point: global map must not leak exact through filtering.
         assert.equal(
-          (await getMapClusters(publicDb, { west: 41.6366, east: 41.6368, south: 41.6167, north: 41.6169, zoom: 20 }))
-            .length,
+          (
+            await getMapClusters(publicDb, {
+              west: 41.6366,
+              east: 41.6368,
+              south: 41.6167,
+              north: 41.6169,
+              zoom: 20,
+            })
+          ).length,
           0,
         );
         assert.equal(
@@ -569,7 +587,10 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       );
       await owner.query('ANALYZE');
       const start = performance.now();
-      const clusters = await getMapClusters(publicDb, { ...world, albumId: large.id });
+      const clusters = await getMapClusters(publicDb, {
+        ...world,
+        albumId: large.id,
+      });
       const ms = performance.now() - start;
       assert.equal(
         clusters.reduce((sum, r) => sum + Number(r.count), 0),
@@ -636,7 +657,11 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         saveMapSettings,
         publicMapSettings,
       } = await import('../../src/index.server.ts');
-      const user = { id: ids.user, email: 'gallery@example.invalid', displayName: 'Gallery' };
+      const user = {
+        id: ids.user,
+        email: 'gallery@example.invalid',
+        displayName: 'Gallery',
+      };
       const mapAssets = [randomUUID(), randomUUID()];
       for (const asset of mapAssets) await sourceAsset(asset, ids.owner);
       await owner.query(`UPDATE public.asset_exif SET "timeZone"='Asia/Tbilisi' WHERE "assetId"=ANY($1::uuid[])`, [
@@ -685,7 +710,12 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           ...settings,
           providers: settings.providers.map((p) =>
             p.provider === 'amap'
-              ? { ...p, enabled: true, browserKey: 'synthetic-key', securityCode: 'synthetic-secret' }
+              ? {
+                  ...p,
+                  enabled: true,
+                  browserKey: 'synthetic-key',
+                  securityCode: 'synthetic-secret',
+                }
               : p,
           ),
         },
@@ -702,19 +732,29 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       await saveMapSettings(
         adminDb,
         user,
-        { ...current, providers: settings.providers.map((p) => ({ ...p, clearSecret: true })) },
+        {
+          ...current,
+          providers: settings.providers.map((p) => ({
+            ...p,
+            clearSecret: true,
+          })),
+        },
         master,
       );
       await admin.query(`UPDATE gallery.album SET status='offline',offline_at=now() WHERE id=ANY($1::uuid[])`, [
         [a.id, duplicate.id],
       ]);
     });
-    await t.test('shared photo publication, tag intersection, concurrency and public scope', async()=>{
-      const tagAssets=[randomUUID(),randomUUID()];
-      for(const asset of tagAssets) await sourceAsset(asset,ids.owner);
-      await sharedPhotosAndTags(adminDb,publicDb,owner,ids.user,tagAssets,mediaRoot);
+    await t.test('shared photo publication, tag intersection, concurrency and public scope', async () => {
+      const tagAssets = [randomUUID(), randomUUID()];
+      for (const asset of tagAssets) await sourceAsset(asset, ids.owner);
+      await sharedPhotosAndTags(adminDb, publicDb, owner, ids.user, tagAssets, mediaRoot);
     });
-    await t.test('articles: snapshots, media grants, about, concurrency and source revocation',async()=>{const asset=randomUUID();await sourceAsset(asset,ids.owner);await articles(adminDb,publicDb,owner,ids.user,asset,mediaRoot);});
+    await t.test('articles: snapshots, media grants, about, concurrency and source revocation', async () => {
+      const asset = randomUUID();
+      await sourceAsset(asset, ids.owner);
+      await articles(adminDb, publicDb, owner, ids.user, asset, mediaRoot);
+    });
     await t.test('full database backup and isolated recovery', async () => {
       await recovery(config, mediaRoot);
     });

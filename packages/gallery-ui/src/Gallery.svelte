@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { tick, untrack, onMount } from 'svelte';
+  import { enterViewerFullscreen, exitViewerFullscreen } from './viewer-fullscreen';
   import { captureTime } from '../../gallery-core/src/capture-time';
   import Markdown from './Markdown.svelte';
-  import PublicHeader from './PublicHeader.svelte';
+  import PublicFrame from './PublicFrame.svelte';
+  import Icon from './Icon.svelte';
   let filtersOpen = $state(false);
   import { documentMarkdown } from '../../gallery-core/src/markdown';
   import type { DisplayAlbum, DisplayPhoto } from '../../gallery-core/src/content';
@@ -18,10 +20,13 @@
     feed,
     navigateBoundary,
     immersive = $bindable(false),
+    relatedArticles = [],
   }: {
     site: {
       name: string;
       tagline: string;
+      copyrightName?: string;
+      footerText?: string;
       contactLinks?: import('../../gallery-core/src/content').ContactLink[];
     };
     albums: DisplayAlbum[];
@@ -33,6 +38,7 @@
     navigatePhoto?: (photo: DisplayPhoto | null, replace?: boolean) => void;
     navigateBoundary?: (offset: number) => void;
     immersive?: boolean;
+    relatedArticles?: { title: string; slug: string }[];
     feed?: {
       tags?: string[];
       availableTags?: { id: string; name: string; count: number }[];
@@ -46,8 +52,8 @@
   let photo = $state<DisplayPhoto | null>(null);
   let viewer: HTMLDialogElement;
   let showVariants = $state(true);
-  const photoTitle = (p: DisplayPhoto) =>
-    p.group ? p.group.title || '未命名照片组' : p.title || '未命名照片';
+  const listTitle = (p: DisplayPhoto) => (p.group ? p.group.title : p.title)?.trim() || '';
+  const photoTitle = (p: DisplayPhoto) => (p.group ? p.group.title || '未命名照片组' : p.title || '未命名照片');
   $effect(() => {
     const selectedId = photo?.id;
     if (selectedId)
@@ -62,10 +68,36 @@
     swiped = false;
   async function setImmersive(value: boolean) {
     immersive = value;
+    if (value) void enterViewerFullscreen();
+    else void exitViewerFullscreen();
     await tick();
     if (value) viewer?.querySelector<HTMLButtonElement>('.immersive-exit')?.focus({ preventScroll: true });
     else immersiveButton?.focus({ preventScroll: true });
   }
+  let copyStatus = $state('');
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+  async function copyPhotoLink() {
+    if (!photo || preview) return;
+    const url = new URL(photoLink(photo), location.origin).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      copyStatus = '链接已复制';
+    } catch {
+      copyStatus = '复制失败，请复制浏览器地址';
+    }
+    clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => (copyStatus = ''), 2400);
+  }
+  onMount(() => {
+    const changed = () => {
+      if (!document.fullscreenElement && immersive) void setImmersive(false);
+    };
+    document.addEventListener('fullscreenchange', changed);
+    return () => {
+      document.removeEventListener('fullscreenchange', changed);
+      clearTimeout(copyTimer);
+    };
+  });
   let items = $derived.by(() => {
     const photos = active?.photos ?? [];
     if (feed) return photos;
@@ -77,9 +109,7 @@
         seen.add(id);
         return true;
       })
-      .map((p) =>
-        p.group ? (photos.find((x) => x.id === p.group!.cover && x.group?.id === p.group!.id) ?? p) : p,
-      );
+      .map((p) => (p.group ? (photos.find((x) => x.id === p.group!.cover && x.group?.id === p.group!.id) ?? p) : p));
   });
   let variants = $derived(
     photo?.group && !feed ? (active?.photos ?? []).filter((p) => p.group?.id === photo?.group?.id) : [],
@@ -96,12 +126,7 @@
         }).format(new Date(value))
       : '日期未知';
   let tagSearch = $state('');
-  const feedLink = (
-    page: number,
-    month = feed?.month ?? '',
-    sort = feed?.sort ?? 'taken',
-    tags = feed?.tags ?? [],
-  ) => {
+  const feedLink = (page: number, month = feed?.month ?? '', sort = feed?.sort ?? 'taken', tags = feed?.tags ?? []) => {
     const q = new URLSearchParams({ sort, month, page: String(page) });
     for (const tag of tags) q.append('tag', tag);
     return `/photos?${q}`;
@@ -111,15 +136,11 @@
       1,
       feed?.month,
       feed?.sort,
-      (feed?.tags ?? []).includes(id)
-        ? (feed?.tags ?? []).filter((t) => t !== id)
-        : [...(feed?.tags ?? []), id],
+      (feed?.tags ?? []).includes(id) ? (feed?.tags ?? []).filter((t) => t !== id) : [...(feed?.tags ?? []), id],
     );
 
   let info = $state(true);
-  let page = $state(
-    untrack(() => Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1))),
-  );
+  let page = $state(untrack(() => Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1))));
   let pageAlbum = $state<string | null>(null);
   let albumPage = $state(0);
   $effect(() => {
@@ -163,6 +184,7 @@
   });
   const photoLink = (p: DisplayPhoto) => `/albums/${p.albumSlug || active?.slug}/photos/${p.id}`;
   function closePhoto() {
+    void exitViewerFullscreen();
     immersive = false;
     photo = null;
     if (initialPhotoId && navigatePhoto) navigatePhoto(null, true);
@@ -197,7 +219,14 @@
     choose(variants[(i + offset + variants.length) % variants.length]!);
   }
   function keys(e: KeyboardEvent) {
-    if (!viewer?.open || !e.key.startsWith('Arrow')) return;
+    if (!viewer?.open || (e.target instanceof HTMLElement && e.target.closest('input,textarea,[contenteditable=true]')))
+      return;
+    if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      void setImmersive(!immersive);
+      return;
+    }
+    if (!e.key.startsWith('Arrow')) return;
     e.preventDefault();
     if (e.key === 'ArrowRight') shift(1);
     if (e.key === 'ArrowLeft') shift(-1);
@@ -211,17 +240,14 @@
 {#if preview}<div class="preview-notice">
     草稿预览 · 仅管理员可见 · 当前显示已保存内容 <a href="/albums">返回工作台 →</a>
   </div>{/if}
-<div class="gallery public-site">
-  <PublicHeader name={site.name} active={about ? 'about' : feed ? 'photos' : 'albums'} {preview} />
-  {#snippet albumPagination()}
-    {#if children.length > 24}<div class="pagination">
-        <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页相册</button><span
-          >{albumPage + 1} / {Math.ceil(children.length / 24)}</span
-        ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}
-          >下一页相册</button
-        >
-      </div>{/if}
-  {/snippet}
+{#snippet albumPagination()}
+  {#if children.length > 24}<div class="pagination">
+      <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页相册</button><span
+        >{albumPage + 1} / {Math.ceil(children.length / 24)}</span
+      ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}>下一页相册</button>
+    </div>{/if}
+{/snippet}
+<PublicFrame {site} active={about ? 'about' : feed ? 'photos' : 'albums'} {preview}>
   <main>
     {#if about}<article class="about">
         <h1>在路上，也在日常里</h1>
@@ -245,9 +271,7 @@
           aria-expanded={filtersOpen}
           aria-controls="photo-filters"
           onclick={() => (filtersOpen = !filtersOpen)}
-          >筛选{feed.tags?.length ? ` · ${feed.tags.length} 个标签` : ''}{feed.month
-            ? ' · ' + feed.month
-            : ''}</button
+          >筛选{feed.tags?.length ? ` · ${feed.tags.length} 个标签` : ''}{feed.month ? ' · ' + feed.month : ''}</button
         >
       </div>
       <div class="timeline-layout">
@@ -275,8 +299,7 @@
             <nav aria-label="照片时间轴">
               <a class:chosen={!feed.month} href={feedLink(1, '')}>全部</a>{#each feed.months as m}<a
                   class:chosen={feed.month === m.month}
-                  href={feedLink(1, m.month)}
-                  >{m.month === 'unknown' ? '日期未知' : m.month}<small>{m.count}</small></a
+                  href={feedLink(1, m.month)}>{m.month === 'unknown' ? '日期未知' : m.month}<small>{m.count}</small></a
                 >{/each}
             </nav>
           </section>
@@ -287,9 +310,8 @@
               <div class="tag-options">
                 {#each (feed.availableTags ?? [])
                   .filter((t) => t.name.toLocaleLowerCase().includes(tagSearch.trim().toLocaleLowerCase()))
-                  .slice(0, 50) as tag}<a
-                    class:selected={feed.tags?.includes(tag.id)}
-                    href={toggleTag(tag.id)}>{tag.name}<small>{tag.count}</small></a
+                  .slice(0, 50) as tag}<a class:selected={feed.tags?.includes(tag.id)} href={toggleTag(tag.id)}
+                    >{tag.name}<small>{tag.count}</small></a
                   >{/each}
               </div>
               {#if !feed.availableTags?.length}<p>暂无公开标签。</p>{/if}
@@ -312,14 +334,18 @@
               >
                 {month === 'unknown' ? '日期未知' : month.replace('-', ' 年 ') + ' 月'}
               </h2>{/if}
-            <button class="photo" id={`photo-${p.id}`} onclick={() => show(p)}
+            <button
+              class="photo"
+              id={`photo-${p.id}`}
+              aria-label={`查看${p.group?.title || p.title || `第 ${index + 1} 张照片`}`}
+              onclick={() => show(p)}
               ><img
                 src={p.thumbnail}
                 alt={p.alt || p.title || p.group?.title || '查看照片'}
                 width="600"
                 height="450"
                 loading="lazy"
-              /><span>{photoTitle(p)}{p.group ? ' · 照片组' : ''}</span></button
+              />{#if listTitle(p)}<span>{listTitle(p)}</span>{/if}</button
             >
           {/each}
           {#if !items.length}<p class="empty">这里还没有公开照片。</p>{/if}
@@ -334,9 +360,7 @@
         <h1>相册 <small>{children.length} 本</small></h1>
       </div>
       <div class="album-grid">
-        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
-            class="album-card"
-            href={link(album)}
+        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a class="album-card" href={link(album)}
             >{#if album.cover}<img
                 src={album.cover}
                 alt={album.title}
@@ -358,9 +382,7 @@
           <p>发布后的作品会在这里出现。</p>
         </div>{/if}
     {:else}<div class="breadcrumbs">
-        <a href="/albums">相册</a>{#each crumbs as parent}<span>/</span><a href={link(parent)}
-            >{parent.title}</a
-          >{/each}
+        <a href="/albums">相册</a>{#each crumbs as parent}<span>/</span><a href={link(parent)}>{parent.title}</a>{/each}
       </div>
       <h1>{active.title}</h1>
       <div class="detail">
@@ -390,7 +412,8 @@
               照片 <span>{active.photos.length}</span>
             </h2>{/if}
           <div class="photos-grid">
-            {#each items.slice(page * 48, (page + 1) * 48) as p}<button
+            {#each items.slice(page * 48, (page + 1) * 48) as p, index}<button
+                aria-label={`查看${p.group?.title || p.title || `第 ${page * 48 + index + 1} 张照片`}`}
                 id={`photo-${p.id}`}
                 class="photo"
                 class:stack={!!p.group}
@@ -402,8 +425,8 @@
                   width="600"
                   height="450"
                 />{#if p.group}<span class="stack-label"
-                    >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group
-                      .title || '照片组'}</span
+                    >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group.title ||
+                      '照片组'}</span
                   >{:else if p.title}<span>{p.title}</span>{/if}</button
               >{/each}
           </div>
@@ -425,11 +448,15 @@
           </details>
         </aside>
       </div>{/if}
+    {#if !photo && relatedArticles.length}<aside class="related-articles" aria-label="相关文章">
+        <span>相关文章</span>{#each relatedArticles as article}<a href={'/records/' + article.slug}>{article.title} ↗</a
+          >{/each}
+      </aside>{/if}
   </main>
-  <footer>© {new Date().getFullYear()} {site.name}</footer>
-</div>
+</PublicFrame>
 <dialog
   bind:this={viewer}
+  class="public-site photo-viewer"
   class:immersive
   aria-label="照片大图"
   onclose={closePhoto}
@@ -440,41 +467,54 @@
     }
   }}
 >
-  {#if photo}<div class="viewer-toolbar">
+  {#if photo}<span class="copy-status" role="status">{copyStatus}</span>
+    <div class="viewer-toolbar">
       <span
         >{feed ? '相片' : '相册项目'}
         {itemIndex(photo) + 1} / {items.length}{variants.length
           ? ` · 组内 ${variants.findIndex((p) => p.id === photo!.id) + 1} / ${variants.length}`
           : ''}</span
       >
-      <div>
-        {#if variants.length}<button onclick={() => (showVariants = !showVariants)}
-            >{showVariants ? '收起组内视角' : '展开组内视角'}</button
+      <div class="viewer-actions">
+        {#if variants.length}<button
+            class="icon-button"
+            aria-label={showVariants ? '隐藏组内视角' : '显示组内视角'}
+            title={showVariants ? '隐藏组内视角' : '显示组内视角'}
+            aria-pressed={showVariants}
+            onclick={() => (showVariants = !showVariants)}><Icon name="stack" /></button
           >{/if}
-
         <button
+          class="icon-button"
+          aria-label={info ? '隐藏信息' : '显示信息'}
+          title={info ? '隐藏信息' : '显示信息'}
+          aria-pressed={info}
+          onclick={() => (info = !info)}><Icon name="info" /></button
+        >
+        <button
+          class="icon-button"
           bind:this={immersiveButton}
-          title="隐藏全部界面，点击照片或按 Esc 返回"
-          onclick={() => setImmersive(true)}>沉浸查看</button
-        ><button onclick={() => (info = !info)}>{info ? '隐藏信息' : '显示信息'}</button><button
-          class="viewer-close"
+          aria-label="全屏欣赏"
+          title="全屏欣赏（F）"
+          onclick={() => setImmersive(true)}><Icon name="fullscreen" /></button
+        >
+        {#if !preview}<button class="icon-button" aria-label="复制照片链接" title="复制照片链接" onclick={copyPhotoLink}
+            ><Icon name="copy" /></button
+          >{/if}
+        <button
+          class="icon-button viewer-close"
           aria-label="关闭大图"
-          onclick={() => viewer.close()}>×</button
+          title="关闭（Esc）"
+          onclick={() => viewer.close()}><Icon name="close" /></button
         >
       </div>
     </div>
-    <div
-      class="viewer-body"
-      class:with-variants={variants.length > 0 && showVariants}
-      class:without-info={!info}
-    >
+    <div class="viewer-body" class:with-variants={variants.length > 0 && showVariants} class:without-info={!info}>
       {#if variants.length && showVariants}<div class="group-variants" aria-label="组内视角">
           <span title="使用上下方向键切换">组内视角</span>{#each variants as p, index}<button
               class:chosen={p.id === photo.id}
               aria-label={`查看组内第 ${index + 1} 张`}
               aria-pressed={p.id === photo.id}
-              onclick={() => choose(p)}
-              ><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
+              onclick={() => choose(p)}><img src={p.thumbnail} alt={p.alt || p.title || `视角 ${index + 1}`} /></button
             >{/each}
         </div>{/if}
       <div
@@ -514,8 +554,7 @@
           <section class="work-description">
             <h2>{photoTitle(photo)}</h2>
             {#if photo.tags?.length}<nav class="photo-tags" aria-label="照片标签">
-                {#each photo.tags as tag}<a href={`/photos?${new URLSearchParams({ tag: tag.id })}`}
-                    >{tag.name}</a
+                {#each photo.tags as tag}<a href={`/photos?${new URLSearchParams({ tag: tag.id })}`}>{tag.name}</a
                   >{/each}
               </nav>{/if}
             {#if photo.group}<Markdown text={photo.group.description} />{:else if photo.description}<Markdown
@@ -576,8 +615,7 @@
           {#if photo.occurrences?.length}<section class="photo-context">
               <h3>所在相册</h3>
               {#each photo.occurrences as occurrence}<a
-                  href={`/albums/${occurrence.albumSlug}/photos/${occurrence.photoId}`}
-                  >{occurrence.albumTitle} →</a
+                  href={`/albums/${occurrence.albumSlug}/photos/${occurrence.photoId}`}>{occurrence.albumTitle} →</a
                 >{/each}{#if photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
             </section>{/if}
         </aside>{/if}
@@ -594,8 +632,7 @@
             aria-current={itemIndex(photo) === index ? 'true' : undefined}
             aria-label={`查看第 ${index + 1} 项：${photoTitle(p)}`}
             onclick={() => choose(p)}
-            ><img loading="lazy" src={p.thumbnail} alt="" /><span
-              >{index + 1}{p.group && !feed ? ' · 组' : ''}</span
+            ><img loading="lazy" src={p.thumbnail} alt="" /><span>{index + 1}{p.group && !feed ? ' · 组' : ''}</span
             ></button
           >{/each}
       </div>
@@ -768,13 +805,6 @@
     }
   }
 
-  .gallery {
-    box-sizing: border-box;
-    max-width: 1680px;
-    margin: auto;
-    padding: 0 5%;
-  }
-
   a {
     color: inherit;
     text-decoration: none;
@@ -878,6 +908,7 @@
     cursor: pointer;
   }
   .photo {
+    align-self: start;
     padding: 0;
     border: 0;
     background: none;
@@ -886,6 +917,7 @@
     min-width: 0;
   }
   .photo img {
+    display: block;
     width: 100%;
     height: auto;
     aspect-ratio: 4/3;
@@ -941,12 +973,6 @@
   }
   .pagination button:disabled {
     opacity: 0.4;
-  }
-  footer {
-    border-top: 1px solid #e4e7e0;
-    padding: 26px 0;
-    color: #8c9881;
-    font-size: 12px;
   }
   .about {
     max-width: 660px;
@@ -1059,9 +1085,9 @@
     text-align: right;
     overflow-wrap: anywhere;
   }
-  :global(a:focus-visible),
+  a:focus-visible,
   button:focus-visible {
-    outline: 2px solid #789968;
+    outline: 1px solid #88978b;
     outline-offset: 4px;
   }
   @media (max-width: 1100px) {
@@ -1078,11 +1104,6 @@
     }
   }
   @media (max-width: 760px) {
-    .gallery {
-      box-sizing: border-box;
-      padding: 0 22px;
-    }
-
     nav {
       gap: 23px;
       font-size: 13px;
@@ -1637,7 +1658,7 @@
   button:focus-visible,
   a:focus-visible,
   input:focus-visible {
-    outline: 2px solid #64826a;
+    outline: 1px solid #88978b;
     outline-offset: 3px;
   }
   .breadcrumbs {
@@ -1773,9 +1794,6 @@
     }
   }
   @media (max-width: 600px) {
-    .gallery {
-      padding: 0 18px;
-    }
   }
 
   .viewer-body .photo-information {
@@ -1802,5 +1820,268 @@
   .camera-details dd {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+  .photo-filters :is(input, select) {
+    font: inherit;
+    font-size: 12px;
+    min-height: 36px;
+    box-sizing: border-box;
+    border: 1px solid #e0e5dc;
+    border-radius: 5px;
+    background-color: #fff;
+    color: #465443;
+  }
+  .photo-filters input {
+    width: 100%;
+    padding: 8px 10px;
+    margin: 0 0 10px;
+  }
+  .photo-filters .tag-options,
+  .photo-filters .selected-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+  }
+  .photo-filters .tag-options a,
+  .photo-filters .selected-tags a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    box-sizing: border-box;
+    font-size: 12px;
+    line-height: 18px;
+    padding: 5px 9px;
+    border: 0;
+    border-radius: 4px;
+    background: #f0f3ee;
+    color: #697566;
+  }
+  .photo-filters .tag-options a.selected {
+    background: #e0e8dc;
+    color: #354d38;
+  }
+  .photo-filters .tag-options small {
+    font-size: 11px;
+    margin: 0;
+    opacity: 0.7;
+  }
+  .photo-filters .photo-tag-filter p {
+    font-size: 11px;
+    line-height: 1.8;
+    color: #899283;
+    margin: 12px 0 0;
+  }
+  .photo-filters .selected-tags {
+    margin: 12px 0 0;
+  }
+  .photo-filters .selected-tags .clear-tags {
+    background: transparent;
+  }
+  .photo-filters :is(input, select):focus:not(:focus-visible) {
+    outline: none;
+    box-shadow: none;
+    border-color: #e0e5dc;
+  }
+  dialog[open] {
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    display: grid;
+    grid-template-rows: 52px minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+  .viewer-toolbar {
+    padding: 4px 12px 4px 18px;
+    gap: 8px;
+    position: relative;
+    background: #141b16;
+  }
+  .viewer-toolbar > span {
+    flex-basis: auto;
+    white-space: nowrap;
+    font-size: 11px;
+    color: #aeb9aa;
+  }
+  .viewer-toolbar .viewer-actions {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .viewer-toolbar .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    color: #ced8c9;
+    position: static;
+  }
+  .viewer-toolbar .icon-button:hover {
+    background: #29342b;
+  }
+  .viewer-toolbar .icon-button[aria-pressed='true'] {
+    background: #263029;
+  }
+  .viewer-body .photo-information {
+    margin: 0;
+    border-radius: 0;
+    padding: 22px;
+  }
+  .viewer-body {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .viewer-body .full-image {
+    height: 100%;
+    min-height: 0;
+  }
+  .album-navigation {
+    position: relative;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+    align-items: center;
+    padding: 6px 10px;
+    background: #141b16;
+    border: 0;
+  }
+  .strip-heading {
+    display: contents;
+  }
+  .strip-heading > span {
+    display: none;
+  }
+  .strip-heading button {
+    min-width: 30px;
+    width: 30px;
+    grid-row: 1;
+  }
+  .strip-heading button:last-child {
+    grid-column: 3;
+  }
+  .album-strip {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 2px 4px;
+  }
+  .album-strip button {
+    flex-basis: 64px;
+    padding: 2px;
+    border-radius: 2px;
+  }
+  .album-strip img {
+    width: 58px;
+    height: 40px;
+  }
+  .album-strip span {
+    display: none;
+  }
+  .copy-status {
+    position: absolute;
+    top: 58px;
+    right: 16px;
+    z-index: 5;
+    color: #e8eee4;
+    background: #29362def;
+    border-radius: 5px;
+    font-size: 12px;
+  }
+  .copy-status:not(:empty) {
+    padding: 8px 12px;
+  }
+  @media (max-width: 760px) {
+    dialog[open] {
+      grid-template-rows: 52px minmax(0, 1fr) auto;
+    }
+    .viewer-toolbar {
+      padding: 4px 8px;
+    }
+    .viewer-toolbar > span {
+      font-size: 10px;
+      white-space: normal;
+      line-height: 1.5;
+    }
+    .viewer-toolbar .viewer-actions {
+      gap: 0;
+    }
+    .viewer-toolbar .icon-button {
+      width: 40px;
+      height: 40px;
+    }
+    .viewer-body,
+    .viewer-body.with-variants {
+      height: 100%;
+      overflow-y: auto;
+      align-content: start;
+    }
+    .viewer-body .full-image {
+      height: 54dvh;
+      min-height: 200px;
+    }
+    .viewer-body.without-info {
+      align-content: stretch;
+    }
+    .viewer-body.without-info .full-image {
+      height: 100%;
+      min-height: 0;
+    }
+    .viewer-body .photo-information {
+      padding: 22px 18px;
+    }
+    .group-variants {
+      height: 54dvh;
+    }
+    .album-strip img {
+      height: 36px;
+      width: 54px;
+    }
+    .album-strip button {
+      flex-basis: 60px;
+    }
+  }
+  dialog.immersive[open] {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  dialog.immersive .viewer-body,
+  dialog.immersive .full-image {
+    height: 100%;
+    min-height: 0;
+  }
+  dialog.immersive .copy-status {
+    display: none;
+  }
+  .related-articles {
+    margin-top: 32px;
+    border-top: 1px solid #e2e7dd;
+    padding-top: 22px;
+    display: flex;
+    gap: 18px 30px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: #7b8974;
+  }
+  @media (max-width: 760px) {
+    dialog:not(.immersive) .viewer-body:not(.without-info) .full-image {
+      height: auto;
+      min-height: 0;
+      align-self: start;
+    }
+    dialog:not(.immersive) .viewer-body:not(.without-info) .full-image > img {
+      height: auto;
+      max-height: 65dvh;
+    }
+    dialog:not(.immersive) .viewer-body:not(.without-info) .group-variants {
+      height: 100%;
+      max-height: 65dvh;
+    }
   }
 </style>

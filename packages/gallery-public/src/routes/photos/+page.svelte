@@ -16,7 +16,11 @@
     photos: data.feed.photos,
   });
   function query(page = data.feed.page) {
-    const q = new URLSearchParams({ sort: data.feed.sort, month: data.feed.month, page: String(page) });
+    const q = new URLSearchParams({
+      sort: data.feed.sort,
+      month: data.feed.month,
+      page: String(page),
+    });
     for (const tag of data.feed.tags) q.append('tag', tag);
     return q;
   }
@@ -38,10 +42,10 @@
 </script>
 
 <svelte:head
-  ><title>相片 · {data.site.name}</title><meta name="description" content="按时间浏览旅途与日常中的照片" /><link
-    rel="canonical"
-    href={`${data.origin}/photos`}
-  /></svelte:head
+  ><title>相片 · {data.site.name}</title><meta
+    name="description"
+    content={data.site.tagline || '按时间浏览旅途与日常中的照片'}
+  /><link rel="canonical" href={`${data.origin}/photos`} /></svelte:head
 >
 {#key `${data.feed.tags.join(',')}:${data.feed.sort}:${data.feed.month}:${data.feed.page}:${data.photoId}`}<Gallery
     site={data.site}

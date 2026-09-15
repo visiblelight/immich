@@ -198,7 +198,8 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
         {
           id: randomUUID(),
           asset,
-          photoVersion: (await (await api('source')).json()).assets.find(
+          // The 10,000 map fixtures can sort ahead of this asset; narrow the picker before reading its version.
+          photoVersion: (await (await api('source?search=sample.raw')).json()).assets.find(
             (p: { id: string }) => p.id === asset,
           )?.galleryPhoto?.photoVersion,
           title: 'HTTP published photo',

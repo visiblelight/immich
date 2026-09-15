@@ -1,10 +1,10 @@
 <script lang="ts">
   let {
     name,
-    active = "albums",
+    active = 'albums',
     preview = false,
     recordsHref = '/records',
-    aboutHref = "/about",
+    aboutHref = '/about',
   }: {
     name: string;
     active?: string;
@@ -17,14 +17,10 @@
 <header class="public-header" class:with-records={!!recordsHref}>
   <a class="brand" href="/albums">{name}</a>
   <nav aria-label="主导航">
-    {#each [["albums", "相册"], ["photos", "相片"], ["visited", "去过"], ...(recordsHref ? [["records", "记录"]] : []), ["about", "关于"]] as [id, label]}
-      {#if !preview || id === "albums"}<a
-          href={id === "records"
-            ? recordsHref
-            : id === "about"
-              ? aboutHref
-              : `/${id}`}
-          aria-current={active === id ? "page" : undefined}>{label}</a
+    {#each [['albums', '相册'], ['photos', '相片'], ['visited', '去过'], ...(recordsHref ? [['records', '记录']] : []), ['about', '关于']] as [id, label]}
+      {#if !preview || id === 'albums'}<a
+          href={id === 'records' ? recordsHref : id === 'about' ? aboutHref : `/${id}`}
+          aria-current={active === id ? 'page' : undefined}>{label}</a
         >{/if}
     {/each}
   </nav>
@@ -38,8 +34,7 @@
     margin: 0;
     background: #fafbf9;
     color: #2f3731;
-    font-family:
-      -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
   }
   .public-header {
     height: 80px;
@@ -55,7 +50,7 @@
     text-decoration: none;
   }
   .brand {
-    font-family: Georgia, "Songti SC", serif;
+    font-family: Georgia, 'Songti SC', serif;
     font-size: 24px;
     font-weight: 650;
     white-space: nowrap;
@@ -80,7 +75,7 @@
     color: #344d3d;
   }
   a:focus-visible {
-    outline: 2px solid #52765c;
+    outline: 1px solid #88978b;
     outline-offset: 5px;
     border-radius: 2px;
   }
@@ -127,7 +122,15 @@
       no-repeat right 12px center;
   }
   :global(.public-site :is(button, a, input, select, summary):focus-visible) {
-    outline: 2px solid #64826a;
+    outline: 1px solid #88978b;
     outline-offset: 3px;
+  }
+  :global(.public-site :is(button, a, input, select, summary):focus:not(:focus-visible)) {
+    outline: none;
+    box-shadow: none;
+  }
+  :global(html:not([data-keyboard-focus='true']) .public-site :focus) {
+    outline: none;
+    box-shadow: none;
   }
 </style>

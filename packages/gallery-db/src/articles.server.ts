@@ -421,7 +421,7 @@ export async function saveAboutArticle(db: Db, input: Record<string, unknown>) {
     ensure(old.version === String(input.version), '站点设置已变化，请刷新后再保存。', 409);
     const id = input.id ? uuid(input.id) : null;
     ensure(!id || old.articles.some((a) => a.id === id), '只能选择已发布文章。');
-    await sql`UPDATE gallery.site SET about_article_id=${id}::uuid,about_article_version=about_article_version+1 WHERE id=1`.execute(
+    await sql`UPDATE gallery.site SET about_article_id=${id}::uuid,about_article_version=about_article_version+1,version=version+1 WHERE id=1`.execute(
       trx,
     );
   });

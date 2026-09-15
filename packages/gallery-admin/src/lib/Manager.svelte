@@ -1,17 +1,9 @@
 <script lang="ts">
-  import AboutArticle from './articles/AboutArticle.svelte';
   import { tick, untrack } from 'svelte';
   import { goto, beforeNavigate } from '$app/navigation';
   import AdminSidebar from './AdminSidebar.svelte';
   import { sameAlbumContent, galleryInventory, albumPhotoCounts, albumTreeRows } from '@gallery/core';
-  import type {
-    AlbumContent,
-    DraftPhoto,
-    GallerySite,
-    GalleryUser,
-    ManagedAlbum,
-    SourcePhoto,
-  } from '@gallery/core';
+  import type { AlbumContent, DraftPhoto, GallerySite, GalleryUser, ManagedAlbum, SourcePhoto } from '@gallery/core';
   import './design/admin.css';
   import { MarkdownEditor } from '@gallery/ui';
   import TagPicker from './TagPicker.svelte';
@@ -24,6 +16,11 @@
     initial: {
       tags?: { id: string; name: string; active: boolean }[];
       site: GallerySite;
+      aboutSettings?: {
+        id: string;
+        version: string;
+        articles: { id: string; title: string }[];
+      };
       albums: ManagedAlbum[];
       user: GalleryUser;
       publicOrigin: string;
@@ -75,6 +72,10 @@
   let action = $state('publish');
   let siteName = $state(untrack(() => initial.site.name));
   let tagline = $state(untrack(() => initial.site.tagline));
+  let copyrightName = $state(untrack(() => initial.site.copyrightName ?? ''));
+  let footerText = $state(untrack(() => initial.site.footerText ?? ''));
+  let aboutSettings = $state(untrack(() => initial.aboutSettings));
+  let aboutArticleId = $state(untrack(() => initial.aboutSettings?.id ?? ''));
   let contactLinks = $state(untrack(() => copy(initial.site.contactLinks ?? [])));
   let displayName = $state(untrack(() => initial.user.displayName));
   let oldPassword = $state('');
@@ -169,6 +170,12 @@
     }
     siteName = workspaceData.site.name;
     tagline = workspaceData.site.tagline;
+    copyrightName = workspaceData.site.copyrightName ?? '';
+    footerText = workspaceData.site.footerText ?? '';
+    if (page === 'settings') {
+      aboutSettings = await api('article-about');
+      aboutArticleId = aboutSettings?.id ?? '';
+    }
     contactLinks = copy(workspaceData.site.contactLinks);
     displayName = workspaceData.user.displayName;
   }
@@ -177,9 +184,11 @@
       (page === 'settings' &&
         (siteName !== workspaceData.site.name ||
           tagline !== workspaceData.site.tagline ||
+          copyrightName !== (workspaceData.site.copyrightName ?? '') ||
+          footerText !== (workspaceData.site.footerText ?? '') ||
+          aboutArticleId !== (aboutSettings?.id ?? '') ||
           JSON.stringify(contactLinks) !== JSON.stringify(workspaceData.site.contactLinks ?? []))) ||
-      (page === 'account' &&
-        (displayName !== workspaceData.user.displayName || !!oldPassword || !!newPassword)),
+      (page === 'account' && (displayName !== workspaceData.user.displayName || !!oldPassword || !!newPassword)),
   );
   function abandon() {
     return !unsaved || window.confirm('有尚未保存的修改。是否放弃这些修改？');
@@ -382,18 +391,11 @@
 
 <svelte:window onbeforeunload={unload} />
 <svelte:head>
-  <title
-    >{page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'} · {workspaceData.site
-      .name}</title
+  <title>{page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'} · {workspaceData.site.name}</title
   >
 </svelte:head>
 <div class="workspace live-workspace">
-  <AdminSidebar
-    active={page}
-    user={workspaceData.user}
-    publicOrigin={workspaceData.publicOrigin}
-    onNavigate={nav}
-  />
+  <AdminSidebar active={page} user={workspaceData.user} publicOrigin={workspaceData.publicOrigin} onNavigate={nav} />
   <main class="main">
     <div class="topline">
       <span>工作台 / {page === 'albums' ? '相册' : page === 'settings' ? '站点设置' : '个人账号'}</span><a
@@ -418,8 +420,8 @@
         <div><span>照片组</span><strong>{inventory.groups}</strong></div>
       </div>
       <p class="inventory-note">
-        按当前草稿统计，照片跨相册去重，包含组内照片。前台可见 {workspaceData.albums.filter((a) => a.visible)
-          .length} 个相册 · 待发布草稿 / 修改 {workspaceData.albums.filter(
+        按当前草稿统计，照片跨相册去重，包含组内照片。前台可见 {workspaceData.albums.filter((a) => a.visible).length} 个相册
+        · 待发布草稿 / 修改 {workspaceData.albums.filter(
           (a) => a.hasUnpublishedChanges ?? a.draftVersion !== a.releaseVersion,
         ).length} 个
       </p>
@@ -448,12 +450,10 @@
                     onclick={() => toggleAlbum(a.id)}>{row.expanded ? '▾' : '▸'}</button
                   >{:else}<span class="tree-leaf" aria-hidden="true">{row.depth ? '└' : ''}</span>{/if}
                 <button class="album-name" onclick={() => select(a)}
-                  >{#if a.draft.cover}<img src={media(a.draft.cover)} alt="" />{:else}<span
-                      class="cover-empty">▦</span
+                  >{#if a.draft.cover}<img src={media(a.draft.cover)} alt="" />{:else}<span class="cover-empty">▦</span
                     >{/if}<span
                     ><strong>{a.draft.title || '未命名相册'}</strong><small
-                      >{workspaceData.albums.find((p) => p.id === a.draft.parent)?.draft.title ??
-                        '顶级相册'}</small
+                      >{workspaceData.albums.find((p) => p.id === a.draft.parent)?.draft.title ?? '顶级相册'}</small
                     ></span
                   ></button
                 >
@@ -591,12 +591,10 @@
               <div class="child-list">
                 {#each workspaceData.albums.filter((a) => a.draft.parent === id) as child}<button
                     onclick={() => select(child)}
-                    ><span>▦</span><span
-                      ><strong>{child.draft.title}</strong><small>{status(child)}</small></span
-                    ><span>→</span></button
-                  >{/each}{#if !workspaceData.albums.some((a) => a.draft.parent === id)}<p
-                    class="muted compact-empty"
-                  >
+                    ><span>▦</span><span><strong>{child.draft.title}</strong><small>{status(child)}</small></span><span
+                      >→</span
+                    ></button
+                  >{/each}{#if !workspaceData.albums.some((a) => a.draft.parent === id)}<p class="muted compact-empty">
                     还没有子相册。
                   </p>{/if}
               </div>
@@ -609,11 +607,7 @@
                 </div>
                 <span class="badge">文字内容</span>
               </div>
-              <MarkdownEditor
-                label="相册正文"
-                bind:value={content.markdown}
-                filename={`${content.slug}.md`}
-              />
+              <MarkdownEditor label="相册正文" bind:value={content.markdown} filename={`${content.slug}.md`} />
               <details style="margin-top:20px">
                 <summary>可选摘要 · 用于列表与分享</summary><label
                   >摘要<textarea rows="2" maxlength="2000" bind:value={content.summary}></textarea></label
@@ -636,8 +630,8 @@
               ><label
                 >所属父相册<select bind:value={content.parent}
                   ><option value="">无，作为顶级相册</option
-                  >{#each workspaceData.albums.filter((a) => a.id !== id && !below(a, id)) as a}<option
-                      value={a.id}>{a.draft.title}</option
+                  >{#each workspaceData.albums.filter((a) => a.id !== id && !below(a, id)) as a}<option value={a.id}
+                      >{a.draft.title}</option
                     >{/each}</select
                 ></label
               ><label
@@ -646,16 +640,17 @@
                 ></label
               ><label
                 >封面照片<select bind:value={content.cover}
-                  ><option value="">暂不设置封面</option>{#each content.photos as p, index}<option
-                      value={p.asset}>{p.title || `本册照片 ${index + 1}`}</option
+                  ><option value="">暂不设置封面</option>{#each content.photos as p, index}<option value={p.asset}
+                      >{p.title || `本册照片 ${index + 1}`}</option
                     >{/each}{#each workspaceData.albums.filter((a) => a.visible && below(a, id, true)) as child}{#each child.draft.photos.filter((p) => !content!.photos.some((q) => q.asset === p.asset)) as p}<option
                         value={p.asset}>{child.draft.title} / {p.title || '照片'}（发布时校验）</option
                       >{/each}{/each}</select
                 ></label
               ><label
                 >本册位置公开方式<select bind:value={content.location}
-                  ><option value="hidden">隐藏位置</option><option value="approximate">近似位置</option
-                  ><option value="exact">精确位置（新相册默认）</option></select
+                  ><option value="hidden">隐藏位置</option><option value="approximate">近似位置</option><option
+                    value="exact">精确位置（新相册默认）</option
+                  ></select
                 ><small>照片可以进一步收紧精度，不能突破本册设置。GPS 跟随 Immich 更新。</small></label
               ><label class="checkbox-label"
                 ><input type="checkbox" bind:checked={content.showExif} /> 展示相机与镜头 EXIF 参数</label
@@ -669,12 +664,45 @@
         </div>
       </header>
       <section class="panel content-panel form-panel settings-form">
-        <AboutArticle/>
-        <label>站点名称<input bind:value={siteName} maxlength="100" /></label><label
-          >站点简介<textarea bind:value={tagline} maxlength="2000" rows="3"></textarea></label
+        <h2>基本信息</h2>
+        <label
+          >站点名称<input bind:value={siteName} maxlength="100" /><small
+            >显示在全站页头、浏览器标题和默认版权署名中。</small
+          ></label
+        ><label
+          >站点简介<textarea bind:value={tagline} maxlength="2000" rows="3"></textarea><small
+            >用于页面搜索摘要和默认关于介绍；选用文章后，关于正文由该文章提供。</small
+          ></label
         >
+        <section class="settings-section">
+          <h2>关于页面</h2>
+          <label
+            >展示文章<select bind:value={aboutArticleId} disabled={!aboutSettings}>
+              <option value="">使用默认关于介绍</option>
+              {#each aboutSettings?.articles ?? [] as article}<option value={article.id}>{article.title}</option>{/each}
+            </select><small>选择已发布文章。正文修改需在文章编辑页重新发布；本页统一保存选篇。</small></label
+          >
+          <div class="settings-links">
+            <a href="/articles">管理文章 ↗</a>
+            <a href={workspaceData.publicOrigin + '/about'} target="_blank" rel="noreferrer">查看关于页 ↗</a>
+          </div>
+        </section>
+        <section class="settings-section">
+          <h2>页脚</h2>
+          <label
+            >版权署名<input bind:value={copyrightName} maxlength="100" placeholder={siteName} /><small
+              >留空时使用站点名称，年份自动更新。</small
+            ></label
+          >
+          <label
+            >页脚短句<textarea bind:value={footerText} maxlength="300" rows="2"></textarea><small
+              >可选，显示在所有前台页面的居中页脚。</small
+            ></label
+          >
+        </section>
         <section class="contact-section">
           <h2>联系链接</h2>
+          <p class="muted">显示在全站页脚，例如邮箱、社交账号或个人网站。</p>
           {#each contactLinks as contact, i}<div class="contact-row">
               <label>链接名称 {i + 1}<input bind:value={contact.label} maxlength="100" /></label><label
                 >链接地址 {i + 1}<input
@@ -684,11 +712,16 @@
                 /></label
               ><button onclick={() => contactLinks.splice(i, 1)}>移除链接 {i + 1}</button>
             </div>{/each}
-          <button
-            disabled={contactLinks.length >= 10}
-            onclick={() => contactLinks.push({ label: '', url: '' })}>添加联系链接</button
+          <button disabled={contactLinks.length >= 10} onclick={() => contactLinks.push({ label: '', url: '' })}
+            >添加联系链接</button
           >
         </section>
+        <hr />
+        <h2>页面与域名</h2>
+        <p class="muted">前台导航：相册 / 相片 / 去过 / 记录 / 关于。访问域名由部署配置管理。</p>
+        <a href={workspaceData.publicOrigin + '/albums'} target="_blank" rel="noreferrer"
+          >{workspaceData.publicOrigin}</a
+        >
         <div class="settings-actions">
           <button
             class="primary"
@@ -699,20 +732,18 @@
                   name: siteName,
                   tagline,
                   contactLinks,
+                  copyrightName,
+                  footerText,
+                  aboutArticleId,
+                  aboutArticleVersion: aboutSettings?.version,
                   version: workspaceData.site.version,
                 });
                 await refresh();
                 message = '站点设置已应用到前台。';
               })}>保存并应用</button
           >
-          <p class="muted">保存站点信息与联系链接，并更新前台。</p>
+          <p class="muted">一次保存基本信息、关于选篇、页脚及联系链接，立即应用到前台。</p>
         </div>
-        <hr />
-        <h2>页面与域名</h2>
-        <p class="muted">前台导航：相册 / 相片 / 去过 / 关于。关于页当前为静态文章，文章选篇后续加入。</p>
-        <a href={workspaceData.publicOrigin + '/albums'} target="_blank" rel="noreferrer"
-          >{workspaceData.publicOrigin}</a
-        >
       </section>
     {:else}<header class="page-heading">
         <div>
@@ -748,12 +779,7 @@
           }}
         >
           <label
-            >当前密码<input
-              type="password"
-              autocomplete="current-password"
-              bind:value={oldPassword}
-              required
-            /></label
+            >当前密码<input type="password" autocomplete="current-password" bind:value={oldPassword} required /></label
           ><label
             >新密码<input
               type="password"
@@ -863,8 +889,7 @@
             <input aria-label="搜索文件名" placeholder="搜索文件名…" bind:value={sourceSearch} /><select
               aria-label="按标签筛选"
               bind:value={sourceTag}
-              ><option value="">全部标签</option>{#each sourceTags as tag}<option value={tag.id}
-                  >{tag.name}</option
+              ><option value="">全部标签</option>{#each sourceTags as tag}<option value={tag.id}>{tag.name}</option
                 >{/each}</select
             ><label class="date-filter">拍摄日期起<input type="date" bind:value={since} /></label><button
               disabled={sourceBusy}>应用筛选</button
@@ -874,9 +899,7 @@
             {sourceBusy ? '正在读取图库…' : `${sourceAssets.length} 张照片 · 已在本册的照片不会重复添加`}
           </p>
           <div class="asset-grid">
-            {#each sourceAssets as asset}{@const added = content?.photos.some(
-                (p) => p.asset === asset.id,
-              )}<button
+            {#each sourceAssets as asset}{@const added = content?.photos.some((p) => p.asset === asset.id)}<button
                 class="asset-card"
                 class:selected={selected.some((a) => a.id === asset.id)}
                 aria-pressed={selected.some((a) => a.id === asset.id)}
@@ -962,13 +985,9 @@
       <div class="dialog-actions">
         <button disabled={busy} onclick={() => close()}>取消</button>
         <button disabled={busy} onclick={() => savePhoto(false)}>保存草稿</button>
-        <button class="primary" disabled={busy || !active?.visible} onclick={() => savePhoto(true)}
-          >保存并发布</button
-        >
+        <button class="primary" disabled={busy || !active?.visible} onclick={() => savePhoto(true)}>保存并发布</button>
       </div>
-      {#if !active?.visible}<p class="footnote">
-          请先发布相册并确认所有上级已公开；现在可以保存照片草稿。
-        </p>{/if}
+      {#if !active?.visible}<p class="footnote">请先发布相册并确认所有上级已公开；现在可以保存照片草稿。</p>{/if}
     {:else if modal === 'confirm' && active}<div class="dialog-body">
         <h3>{active.draft.title}</h3>
         <p>
@@ -991,9 +1010,7 @@
               <p>单独下线的子相册保持下线。</p>{/if}
           </div>
           <p class="muted">
-            {action === 'publish'
-              ? '发布时会重新校验照片来源、封面、版本和父级状态。'
-              : '影响范围按公开层级计算。'}
+            {action === 'publish' ? '发布时会重新校验照片来源、封面、版本和父级状态。' : '影响范围按公开层级计算。'}
           </p>{/if}
         <div class="dialog-actions">
           <button disabled={busy} onclick={() => close()}>取消</button><button
@@ -1058,5 +1075,36 @@
     .asset-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+  }
+  .settings-section {
+    display: grid;
+    gap: 18px;
+    margin: 26px 0;
+    padding-top: 24px;
+    border-top: 1px solid #e0e5dc;
+  }
+  .settings-section h2 {
+    margin: 0;
+  }
+  .settings-section a {
+    font-size: 13px;
+    color: #52724e;
+  }
+  .settings-form label small {
+    font-weight: 400;
+    color: #7c8776;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .settings-form .settings-section > h2 {
+    margin: 0;
+  }
+  .settings-form .settings-section > label {
+    margin: 0;
+  }
+  .settings-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
   }
 </style>

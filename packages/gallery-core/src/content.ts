@@ -46,6 +46,8 @@ export interface ManagedAlbum {
 }
 export type ContactLink = { label: string; url: string };
 export interface GallerySite {
+  copyrightName?: string;
+  footerText?: string;
   contactLinks: ContactLink[];
   name: string;
   tagline: string;

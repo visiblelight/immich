@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArticleReader, PublicHeader } from '@gallery/ui';
+  import { ArticleReader, PublicFrame } from '@gallery/ui';
   import { articleImageKey, type ArticleNode } from '@gallery/core';
   let { data } = $props();
 </script>
@@ -10,8 +10,7 @@
     content={data.article.summary}
   /></svelte:head
 >
-<div class="public-site" style="padding:0 4vw">
-  <PublicHeader name={data.site.name} active="records" />
+<PublicFrame site={data.site} active="records">
   <div class="back"><a href="/records">← 全部记录</a></div>
   <ArticleReader
     title={data.article.title}
@@ -21,7 +20,7 @@
     resolveImage={(node: ArticleNode) => data.article.images[articleImageKey(node)] ?? null}
     related={data.article.related}
   />
-</div>
+</PublicFrame>
 
 <style>
   .back {

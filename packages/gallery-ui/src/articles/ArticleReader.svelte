@@ -9,6 +9,32 @@
     type ArticleNode,
   } from '../../../gallery-core/src/article';
   import './article.css';
+  import { onMount } from 'svelte';
+  import Icon from '../Icon.svelte';
+  import { exitViewerFullscreen, enterViewerFullscreen } from '../viewer-fullscreen';
+  let copied = $state(false);
+  let focusView = $state(false);
+  function focusImage(value: boolean) {
+    focusView = value;
+    if (value) void enterViewerFullscreen();
+    else void exitViewerFullscreen();
+  }
+  onMount(() => {
+    const changed = () => {
+      if (!window.document.fullscreenElement) focusView = false;
+    };
+    window.document.addEventListener('fullscreenchange', changed);
+    return () => window.document.removeEventListener('fullscreenchange', changed);
+  });
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+  }
+
   let {
     title,
     date = '',
@@ -77,9 +103,8 @@
         {#if firstPublishedAt}<time datetime={firstPublishedAt} title="北京时间 UTC+8"
             >发布于 {articleTime(firstPublishedAt)}</time
           ><span>·</span>
-          {#if publishedAt && publishedAt !== firstPublishedAt}<time
-              datetime={publishedAt}
-              title="北京时间 UTC+8">更新于 {articleTime(publishedAt)}</time
+          {#if publishedAt && publishedAt !== firstPublishedAt}<time datetime={publishedAt} title="北京时间 UTC+8"
+              >更新于 {articleTime(publishedAt)}</time
             ><span>·</span>{/if}
         {:else if date}<time datetime={date}>{date.replaceAll('-', '.')}</time><span>·</span>{/if}约 {minutes} 分钟
       </p>
@@ -97,8 +122,7 @@
     {#if related.length}<footer>
         <span>相关相册</span>
         <div>
-          {#each related as album}<a href={album.href}>{album.title} <span aria-hidden="true">↗</span></a
-            >{/each}
+          {#each related as album}<a href={album.href}>{album.title} <span aria-hidden="true">↗</span></a>{/each}
         </div>
       </footer>{/if}
   </article>
@@ -109,17 +133,47 @@
       </nav>
     </aside>{/if}
 </div>
-<dialog bind:this={dialog} class="immersive" aria-label="文章图片" onclose={() => (active = false)}>
+<dialog
+  bind:this={dialog}
+  class="immersive"
+  oncancel={(event) => {
+    if (focusView) {
+      event.preventDefault();
+      focusImage(false);
+    }
+  }}
+  aria-label="文章图片"
+  onclose={() => {
+    active = false;
+    focusView = false;
+    copied = false;
+    void exitViewerFullscreen();
+  }}
+>
   {#if images[current]}<img src={images[current]!.preview} alt={images[current]!.alt} />{/if}
-  <div class="viewer-tools">
-    <button onclick={() => move(-1)} disabled={!images.slice(0, current).some(Boolean)} aria-label="上一张"
-      >←</button
-    ><span>{current + 1} / {images.length}</span><button
-      onclick={() => move(1)}
-      disabled={!images.slice(current + 1).some(Boolean)}
-      aria-label="下一张">→</button
-    ><button onclick={() => dialog.close()}>退出沉浸</button>
-  </div>
+  {#if focusView}<button class="focus-exit" aria-label="退出全屏欣赏" onclick={() => focusImage(false)}
+    ></button>{:else}<div class="viewer-tools">
+      <button
+        onclick={() => move(-1)}
+        disabled={!images.slice(0, current).some(Boolean)}
+        aria-label="上一张"
+        title="上一张"><Icon name="left" /></button
+      >
+      <span>{current + 1} / {images.length}</span>
+      <button
+        onclick={() => move(1)}
+        disabled={!images.slice(current + 1).some(Boolean)}
+        aria-label="下一张"
+        title="下一张"><Icon name="right" /></button
+      >
+      <button onclick={() => focusImage(true)} aria-label="全屏欣赏" title="全屏欣赏"><Icon name="fullscreen" /></button
+      >
+      <button onclick={copyLink} aria-label="复制文章链接" title={copied ? '链接已复制' : '复制文章链接'}
+        ><Icon name="copy" /></button
+      >
+      <button onclick={() => dialog.close()} aria-label="关闭图片" title="关闭（Esc）"><Icon name="close" /></button>
+      <span class="sr-status" role="status">{copied ? '链接已复制' : ''}</span>
+    </div>{/if}
 </dialog>
 
 <style>
@@ -275,5 +329,57 @@
     summary {
       cursor: pointer;
     }
+  }
+  .viewer-tools {
+    top: 10px;
+    right: 12px;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 8px;
+  }
+  .viewer-tools button {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .viewer-tools button:hover {
+    background: #ffffff14;
+  }
+  .viewer-tools span {
+    padding: 0 8px;
+  }
+  .viewer-tools .sr-status:empty {
+    display: none;
+  }
+  @media (max-width: 600px) {
+    .viewer-tools button {
+      width: 40px;
+      height: 40px;
+    }
+    .viewer-tools {
+      right: 6px;
+      gap: 0;
+    }
+    .viewer-tools .sr-status {
+      position: absolute;
+      top: 50px;
+      right: 4px;
+    }
+  }
+  .focus-exit {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    width: 100%;
+    height: 100%;
   }
 </style>
