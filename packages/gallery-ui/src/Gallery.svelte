@@ -456,6 +456,7 @@
 </PublicFrame>
 <dialog
   bind:this={viewer}
+  data-gallery-viewer
   class="public-site photo-viewer"
   class:immersive
   aria-label="照片大图"
@@ -1428,9 +1429,6 @@
       border-top: 1px solid #3c483e;
       padding: 24px;
     }
-  }
-  :global(html:has(dialog[aria-label='照片大图'][open])) {
-    overflow: hidden;
   }
   /* One complete image, no crop, controls, description or thumbnails. */
   dialog.immersive[open] {

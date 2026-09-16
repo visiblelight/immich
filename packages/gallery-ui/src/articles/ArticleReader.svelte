@@ -135,6 +135,7 @@
 </div>
 <dialog
   bind:this={dialog}
+  data-gallery-viewer
   class="immersive"
   oncancel={(event) => {
     if (focusView) {

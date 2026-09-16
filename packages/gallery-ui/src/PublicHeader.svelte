@@ -30,6 +30,10 @@
   :global(html) {
     scrollbar-gutter: stable;
   }
+  :global(html:has(dialog[data-gallery-viewer][open])) {
+    overflow: hidden;
+    scrollbar-gutter: auto;
+  }
   :global(body) {
     margin: 0;
     background: #fafbf9;
