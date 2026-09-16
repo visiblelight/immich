@@ -1,0 +1,71 @@
+# Fresh cloud installation; the shared HTTPS proxy is managed separately.
+# No database or media port is exposed to the Internet.
+services:
+  database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set a new database password}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: immich
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes: ['${VISION_DATA_ROOT:?}/database:/var/lib/postgresql/data']
+    shm_size: 128mb
+    networks: [immich]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d immich]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: docker.io/valkey/valkey:9@sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf
+    restart: unless-stopped
+    networks: [immich]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  immich-server:
+    image: ghcr.io/immich-app/immich-server@sha256:ae13784ffcfcce8f4178113eb6661602a1fd1912f3d539880b8ac0dd95fc8ac2
+    restart: unless-stopped
+    env_file: ${IMMICH_ENV_FILE:?}
+    volumes:
+      - '${VISION_DATA_ROOT}/library:/data'
+      - /etc/localtime:/etc/localtime:ro
+    ports: ['127.0.0.1:2283:2283']
+    networks:
+      immich: {}
+      edge:
+        aliases: [vision-immich]
+    depends_on:
+      database: { condition: service_healthy }
+      redis: { condition: service_healthy }
+  immich-machine-learning:
+    image: ${IMMICH_ML_IMAGE:?Set a pinned v3.2.0 machine-learning image digest}
+    restart: unless-stopped
+    env_file: ${IMMICH_ENV_FILE}
+    volumes: ['${VISION_DATA_ROOT}/model-cache:/cache']
+    networks: [immich]
+  public:
+    extends:
+      file: ../compose/compose.yml
+      service: public
+    networks:
+      immich: {}
+      edge:
+        aliases: [vision-gallery-public]
+  admin:
+    extends:
+      file: ../compose/compose.yml
+      service: admin
+    networks:
+      immich: {}
+      edge:
+        aliases: [vision-gallery-admin]
+networks:
+  immich:
+    name: ${IMMICH_NETWORK:?}
+  edge:
+    name: ${VISION_EDGE_NETWORK:-vision-edge}
+    external: true

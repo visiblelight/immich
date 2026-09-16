@@ -25,6 +25,7 @@
     "gallery:design:admin": "GALLERY_DESIGN_PREVIEW=1 pnpm --filter @gallery/admin dev",
     "gallery:design": "GALLERY_DESIGN_PREVIEW=1 pnpm --filter @gallery/public dev",
     "gallery:account": "node packages/gallery-db/scripts/account.ts",
+    "gallery:site:init": "node packages/gallery-db/scripts/initialize-site.ts",
     "gallery:prepare:upgrade": "node deployment/gallery/scripts/prepare-upgrade-check.mjs",
     "gallery:upgrade:prepare-copy": "node deployment/gallery/upgrade/prepare-copy.mjs",
     "gallery:upgrade:verify": "node deployment/gallery/upgrade/verify-flow.mjs",
