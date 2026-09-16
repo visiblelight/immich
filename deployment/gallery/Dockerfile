@@ -8,6 +8,7 @@ COPY packages/gallery-ui/package.json packages/gallery-ui/package.json
 COPY packages/gallery-public/package.json packages/gallery-public/package.json
 COPY packages/gallery-admin/package.json packages/gallery-admin/package.json
 COPY deployment/gallery/tsconfig.base.json deployment/gallery/tsconfig.base.json
+COPY deployment/gallery/database/bootstrap.sql deployment/gallery/database/bootstrap.sql
 RUN --mount=type=cache,target=/root/.local/share/pnpm pnpm --filter immich-monorepo --filter '@gallery/*' install --frozen-lockfile
 COPY packages/gallery-core packages/gallery-core
 COPY packages/gallery-db packages/gallery-db
