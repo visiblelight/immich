@@ -21,3 +21,5 @@ python3 deployment/gallery/cloud/render-proxy.py \
 ```
 
 上线记录与实际验证边界见 `docs/gallery/delivery/cloud-launch.md`。
+
+一致性检查点使用 `sh deployment/gallery/cloud/backup.sh /absolute/compose.env /absolute/new-backup-dir`。脚本只短暂停止本项目原本运行的写入服务，成功或失败均尝试恢复；目标目录必须尚不存在。备份包含凭据，保持私有权限，导出目的地应明确授权。此脚本不自动安排周期，也不把同盘副本当作异机备份。
