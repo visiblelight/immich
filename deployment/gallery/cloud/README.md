@@ -31,11 +31,11 @@ python3 deployment/gallery/cloud/render-proxy.py \
 GitHub Gallery workflow：`codex/gallery` 的检查通过后发布 `ghcr.io/visiblelight/gallery` 镜像，以 commit SHA 标记并按 digest 部署。PR 只检查；其它产品分支不发布。需设置仓库变量 `GALLERY_DEPLOY_ENABLED=true` 和 production 环境 Secrets：
 
 - `GALLERY_DEPLOY_HOST`：服务器地址。
-- `GALLERY_DEPLOY_USER`：绑定受限 SSH Key 的用户。
+- `GALLERY_DEPLOY_USER`：专用非 root 用户 `gallery-deploy`。
 - `GALLERY_DEPLOY_KEY`：专用私钥（不可复用个人登录 Key）。
 - `GALLERY_DEPLOY_KNOWN_HOSTS`：通过现有可信 SSH 连接核对的主机公钥。
 
-服务器安装本目录 `ci-dispatch.sh` 到 `/usr/local/sbin/gallery-ci-dispatch`、`deploy.sh` 到 `/usr/local/lib/gallery/deploy.sh`（root 拥有且不可由普通用户写入）。authorized_keys 使用 `restrict,command="/usr/local/sbin/gallery-ci-dispatch"` 限制该专用 Key；仅接受 `deploy <40位SHA> <固定仓库sha256镜像>`，拒绝交互 Shell、转发和其它命令。服务器用 workflow 短期 token 从 stdin 拉取 GHCR，临时 Docker 登录配置退出后删除。
+服务器安装本目录 `ci-dispatch.sh` 到 `/usr/local/sbin/gallery-ci-dispatch`、`deploy.sh` 到 `/usr/local/lib/gallery/deploy.sh`（root 拥有且不可由普通用户写入）。authorized_keys 使用 `restrict,command="/usr/local/sbin/gallery-ci-dispatch"` 限制该专用 Key；用户不加入 docker 组，仅通过 sudoers 获准调用 root 拥有且严格校验参数的 `/usr/local/lib/gallery/deploy.sh`，不获得通用 sudo 权限。仅接受 `deploy <40位SHA> <固定仓库sha256镜像>`，拒绝交互 Shell、转发和其它命令。服务器用 workflow 短期 token 从 stdin 拉取 GHCR，临时 Docker 登录配置退出后删除。
 
 部署串行执行；核对镜像 revision、当前产品分支与数据库实际迁移校验和。存在新增/修改迁移或 Compose 拓扑变化时停止，不自动修改数据库/其它服务。普通发布仅更新 public/admin，等待健康及回环 readiness；失败恢复前一配置、代码和应用镜像。上一版记录在 `/srv/vision/releases/previous`，不清理旧镜像以保留回退条件。
 
