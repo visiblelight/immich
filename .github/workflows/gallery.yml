@@ -30,7 +30,7 @@ permissions:
 
 concurrency:
   group: gallery-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   foundation:
@@ -54,3 +54,58 @@ jobs:
       - run: sh deployment/gallery/scripts/pnpm.sh gallery:test
       - run: sh deployment/gallery/scripts/pnpm.sh gallery:build
       - run: sh deployment/gallery/scripts/pnpm.sh gallery:smoke
+
+  image:
+    needs: foundation
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/codex/gallery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build and publish immutable Gallery image
+        id: push
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/visiblelight/gallery:$GITHUB_SHA"
+          docker build -f deployment/gallery/Dockerfile --label "org.opencontainers.image.source=https://github.com/visiblelight/immich" --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$image" .
+          docker push "$image"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: image
+    if: vars.GALLERY_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy Gallery through restricted SSH command
+        env:
+          DEPLOY_HOST: ${{ secrets.GALLERY_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.GALLERY_DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.GALLERY_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.GALLERY_DEPLOY_KNOWN_HOSTS }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ needs.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$work/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$work/known_hosts"
+          printf '%s' "$REGISTRY_TOKEN" | ssh -i "$work/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$work/known_hosts" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA $IMAGE"

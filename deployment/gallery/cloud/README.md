@@ -23,3 +23,20 @@ python3 deployment/gallery/cloud/render-proxy.py \
 上线记录与实际验证边界见 `docs/gallery/delivery/cloud-launch.md`。
 
 一致性检查点使用 `sh deployment/gallery/cloud/backup.sh /absolute/compose.env /absolute/new-backup-dir`。脚本只短暂停止本项目原本运行的写入服务，成功或失败均尝试恢复；目标目录必须尚不存在。备份包含凭据，保持私有权限，导出目的地应明确授权。此脚本不自动安排周期，也不把同盘副本当作异机备份。
+
+## 独立入口与自动发布（2026-09-17）
+
+代码目录调整为 `/root/work/immich`，数据和凭据继续位于 `/srv/vision`。公网入口由独立 `visiblelight/edge` 项目维护，禁止把 Gallery 路由写入 JVS 仓库或服务器模板。当前 vision-edge 网络仅连接 Edge 与本项目的 Web 服务。
+
+GitHub Gallery workflow：`codex/gallery` 的检查通过后发布 `ghcr.io/visiblelight/gallery` 镜像，以 commit SHA 标记并按 digest 部署。PR 只检查；其它产品分支不发布。需设置仓库变量 `GALLERY_DEPLOY_ENABLED=true` 和 production 环境 Secrets：
+
+- `GALLERY_DEPLOY_HOST`：服务器地址。
+- `GALLERY_DEPLOY_USER`：绑定受限 SSH Key 的用户。
+- `GALLERY_DEPLOY_KEY`：专用私钥（不可复用个人登录 Key）。
+- `GALLERY_DEPLOY_KNOWN_HOSTS`：通过现有可信 SSH 连接核对的主机公钥。
+
+服务器安装本目录 `ci-dispatch.sh` 到 `/usr/local/sbin/gallery-ci-dispatch`、`deploy.sh` 到 `/usr/local/lib/gallery/deploy.sh`（root 拥有且不可由普通用户写入）。authorized_keys 使用 `restrict,command="/usr/local/sbin/gallery-ci-dispatch"` 限制该专用 Key；仅接受 `deploy <40位SHA> <固定仓库sha256镜像>`，拒绝交互 Shell、转发和其它命令。服务器用 workflow 短期 token 从 stdin 拉取 GHCR，临时 Docker 登录配置退出后删除。
+
+部署串行执行；核对镜像 revision、当前产品分支与数据库实际迁移校验和。存在新增/修改迁移或 Compose 拓扑变化时停止，不自动修改数据库/其它服务。普通发布仅更新 public/admin，等待健康及回环 readiness；失败恢复前一配置、代码和应用镜像。上一版记录在 `/srv/vision/releases/previous`，不清理旧镜像以保留回退条件。
+
+数据库迁移应经备份、隔离验证和专门发布后，再运行普通 CI。一次性初始化脚本绝不进入常规发布。受限发布入口自身的更新通过维护流程安装，不由每次 CI 任意替换。
