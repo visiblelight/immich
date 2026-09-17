@@ -2,6 +2,8 @@
 
 状态：2026-09-16 已完成香港 ECS 全新部署、正式域名 HTTPS 与业务验收；OSS/CDN、持续异机备份及手机真机验收另行推进。
 
+> 2026-09-17 更新：公共入口已从 JVS 解耦，代码目录迁至 `/root/work/immich`；下文保留首次上线历史，当前状态见[独立 Edge 与自动发布](shared-edge.md)。
+
 ## 已确认范围
 
 - Gallery 前台主域名为 `https://vision.ke`，后台为 `https://admin.vision.ke`，Immich 为 `https://immich.vision.ke`。

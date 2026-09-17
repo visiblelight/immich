@@ -40,3 +40,5 @@ GitHub Gallery workflow：`codex/gallery` 的检查通过后发布 `ghcr.io/visi
 部署串行执行；核对镜像 revision、当前产品分支与数据库实际迁移校验和。存在新增/修改迁移或 Compose 拓扑变化时停止，不自动修改数据库/其它服务。普通发布仅更新 public/admin，等待健康及回环 readiness；失败恢复前一配置、代码和应用镜像。上一版记录在 `/srv/vision/releases/previous`，不清理旧镜像以保留回退条件。
 
 数据库迁移应经备份、隔离验证和专门发布后，再运行普通 CI。一次性初始化脚本绝不进入常规发布。受限发布入口自身的更新通过维护流程安装，不由每次 CI 任意替换。
+
+首次完整 CI 与独立入口验收已于 2026-09-17 完成，实际结果、应用版本和验证边界见 `docs/gallery/delivery/shared-edge.md`。普通产品更新会自动发布；有迁移或服务拓扑变化时按发布门禁提示处理。
