@@ -339,6 +339,17 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
         content: articleContent,
       })
     ).json();
+    assert.ok(Number.isFinite(Date.parse(articleResult.updatedAt)), 'save response contains persisted timestamp');
+    const previewUrl = `${origins.admin}/articles/${articleId}/preview`;
+    assert.equal((await fetch(previewUrl, { redirect: 'manual' })).status, 303);
+    const draftPreview = await fetch(previewUrl, { headers: { cookie } });
+    assert.equal(draftPreview.status, 200);
+    assert.equal(draftPreview.headers.get('cache-control'), 'no-store');
+    assert.match(draftPreview.headers.get('x-robots-tag') || '', /noindex/);
+    const draftHtml = await draftPreview.text();
+    assert.match(draftHtml, /Public article body/);
+    assert.match(draftHtml, /草稿预览/);
+    assert.match(draftHtml, /public-footer/);
     articleVersion = articleResult.version;
     assert.equal((await fetch(`${origins.public}/records/http-article`)).status, 404);
     await api(

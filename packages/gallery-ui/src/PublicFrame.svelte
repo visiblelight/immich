@@ -6,6 +6,7 @@
     site,
     active = 'albums',
     preview = false,
+    linkOrigin = '',
     children,
   }: {
     site: {
@@ -17,6 +18,7 @@
     };
     active?: string;
     preview?: boolean;
+    linkOrigin?: string;
     children: Snippet;
   } = $props();
 </script>
@@ -30,7 +32,7 @@
   }}
 />
 <div class="public-site public-shell">
-  <PublicHeader name={site.name} {active} {preview} />
+  <PublicHeader name={site.name} {active} {preview} {linkOrigin} />
   <div class="public-content">{@render children()}</div>
   <footer class="public-footer">
     {#if site.contactLinks?.length}<nav aria-label="联系链接">
@@ -56,7 +58,7 @@
     min-width: 0;
   }
   .public-footer {
-    padding: 24px 0;
+    padding: 14px 0;
     border-top: 1px solid #e4e7e0;
     text-align: center;
     color: #7e897c;
@@ -64,15 +66,18 @@
     line-height: 1.8;
   }
   .public-footer p {
-    margin: 4px 0;
+    margin: 0;
     overflow-wrap: anywhere;
+  }
+  .public-footer > * + * {
+    margin-top: 6px;
   }
   nav {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 6px 20px;
-    margin: 0 0 8px;
+    margin: 0;
   }
   a {
     color: inherit;
@@ -86,7 +91,7 @@
       padding: 0 18px;
     }
     .public-footer {
-      padding: 20px 0;
+      padding: 14px 0;
     }
   }
 </style>

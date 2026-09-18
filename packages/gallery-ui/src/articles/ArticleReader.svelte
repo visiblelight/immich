@@ -112,7 +112,9 @@
     {#if headings.length}<details class="mobile-toc">
         <summary>文章目录</summary>
         <nav aria-label="文章目录">
-          {#each headings as item}<a class:sub={item.level === 3} href={'#' + item.id}>{item.text}</a>{/each}
+          {#each headings as item}<a class:sub={item.level === 3} class:deep={item.level === 4} href={'#' + item.id}
+              >{item.text}</a
+            >{/each}
         </nav>
       </details>{/if}
     <!-- Buttons in the sanitized renderer are keyboard-accessible; clicks bubble here. -->
@@ -129,7 +131,9 @@
   {#if headings.length}<aside class="desktop-toc">
       <span>本文目录</span>
       <nav aria-label="文章目录">
-        {#each headings as item}<a class:sub={item.level === 3} href={'#' + item.id}>{item.text}</a>{/each}
+        {#each headings as item}<a class:sub={item.level === 3} class:deep={item.level === 4} href={'#' + item.id}
+            >{item.text}</a
+          >{/each}
       </nav>
     </aside>{/if}
 </div>
@@ -235,6 +239,9 @@
   }
   nav a.sub {
     padding-left: 12px;
+  }
+  nav a.deep {
+    padding-left: 24px;
   }
   .mobile-toc {
     display: none;

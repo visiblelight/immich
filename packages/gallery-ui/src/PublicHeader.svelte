@@ -3,23 +3,25 @@
     name,
     active = 'albums',
     preview = false,
+    linkOrigin = '',
     recordsHref = '/records',
     aboutHref = '/about',
   }: {
     name: string;
     active?: string;
     preview?: boolean;
+    linkOrigin?: string;
     recordsHref?: string;
     aboutHref?: string;
   } = $props();
 </script>
 
 <header class="public-header" class:with-records={!!recordsHref}>
-  <a class="brand" href="/albums">{name}</a>
+  <a class="brand" href={linkOrigin + '/albums'}>{name}</a>
   <nav aria-label="主导航">
     {#each [['albums', '相册'], ['photos', '相片'], ['visited', '去过'], ...(recordsHref ? [['records', '记录']] : []), ['about', '关于']] as [id, label]}
       {#if !preview || id === 'albums'}<a
-          href={id === 'records' ? recordsHref : id === 'about' ? aboutHref : `/${id}`}
+          href={linkOrigin + (id === 'records' ? recordsHref : id === 'about' ? aboutHref : `/${id}`)}
           aria-current={active === id ? 'page' : undefined}>{label}</a
         >{/if}
     {/each}

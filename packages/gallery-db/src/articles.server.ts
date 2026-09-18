@@ -23,6 +23,7 @@ type Row = {
   version: string;
   content: ArticleContent;
   has_changes: boolean;
+  updated_at: Date;
   first_published_at?: Date | null;
   published_at?: Date | null;
 };
@@ -33,6 +34,7 @@ const dto = (row: Row): ManagedArticle => ({
   status: row.status,
   version: String(row.version),
   hasChanges: row.has_changes,
+  updatedAt: row.updated_at.toISOString(),
   firstPublishedAt: row.first_published_at?.toISOString() ?? null,
   publishedAt: row.published_at?.toISOString() ?? null,
 });
@@ -97,7 +99,7 @@ export async function listArticles(db: Db, query = '', page = 1, status = '') {
       .count,
   );
   const rows = (
-    await sql<Row>`SELECT a.id,a.slug,a.status,a.version,a.content-'document' AS content,r.published_at,(SELECT min(published_at) FROM gallery.article_release WHERE article_id=a.id) AS first_published_at,(r.id IS NULL OR a.content IS DISTINCT FROM r.content) AS has_changes FROM gallery.article a LEFT JOIN gallery.article_release r ON r.id=a.current_release_id ${filter} ORDER BY a.updated_at DESC,a.id LIMIT 30 OFFSET ${(page - 1) * 30}`.execute(
+    await sql<Row>`SELECT a.id,a.slug,a.status,a.version,a.updated_at,a.content-'document' AS content,r.published_at,(SELECT min(published_at) FROM gallery.article_release WHERE article_id=a.id) AS first_published_at,(r.id IS NULL OR a.content IS DISTINCT FROM r.content) AS has_changes FROM gallery.article a LEFT JOIN gallery.article_release r ON r.id=a.current_release_id ${filter} ORDER BY a.updated_at DESC,a.id LIMIT 30 OFFSET ${(page - 1) * 30}`.execute(
       db,
     )
   ).rows;

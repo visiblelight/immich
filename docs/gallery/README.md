@@ -15,6 +15,7 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [登录与文章编辑优化](delivery/editor-polish.md) | 长期会话、保存反馈、独立预览、H4 与正文／页脚间距 |
 | [独立 Edge 与自动发布](delivery/shared-edge.md) | 公共入口解耦、本地维护线与 CI 发布状态 |
 | [首次云端部署准备](delivery/cloud-launch.md) | 正式域名、空库初始化、分阶段存储和上线检查状态 |
 | [统一外框与看图器 ADR 0014](decisions/0014-public-shell-and-viewer.md) | 已确认的九项 UI 优化、站点页脚与保存范围 |

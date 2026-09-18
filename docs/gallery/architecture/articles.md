@@ -18,7 +18,7 @@
 
 ## 内容协议
 
-正文采用 `schemaVersion: 1` 加 Tiptap 文档。服务端只接受白名单节点、属性及 mark；限制字节数、层级、节点数量和文本长度。标题只有 H2/H3，页面标题单独保存。图片节点 `galleryImage` 使用 kind/photo 或 upload、ref、来源相册上下文；图注为节点内 inline 内容。文档不含 Immich 路径、API Key、GPS 或任意 src。
+正文采用 `schemaVersion: 1` 加 Tiptap 文档。服务端只接受白名单节点、属性及 mark；限制字节数、层级、节点数量和文本长度。标题支持 H2/H3/H4，页面标题单独保存。图片节点 `galleryImage` 使用 kind/photo 或 upload、ref、来源相册上下文；图注为节点内 inline 内容。文档不含 Immich 路径、API Key、GPS 或任意 src。
 
 公开渲染不加载编辑器，文字转义、链接协议校验、图片经服务端解析授权。标题目录由正文顺序生成稳定锚点，避免用户 HTML ID 注入。样例资源使用单独的虚构 ref 映射，不能接入正式接口。
 
@@ -51,3 +51,11 @@ site.about_article_version 与原 site.version 分离；关于选篇不会使站
 正文新增 table/tableRow/tableCell/tableHeader、taskList/taskItem、codeBlock、imagePlaceholder；mark 增加 underline/strike/highlight/code。表格最多 100 行、20 列，校验跨度、矩形完整性及列宽；任务 checked 只接受布尔值；代码按纯文字转义。图片占位仅保存简短 alt，不保存外链 URL，不构成媒体授权。统一字体与单色高亮，外部任意 CSS 不落库。
 
 0009 给公开文章和关于视图追加首次发布时刻；后台直接聚合首条发布记录，最新时刻沿用当前 release.published_at。公开列表按首次发布倒序。date 保留为作者的写作日期；首次发布与最近更新不能手填，不随草稿保存变化。前后台时间格式统一标注北京时间 UTC+8。关于选篇只在站点设置操作，文章列表仅保留当前关于文章的标记。
+
+## 2026-09-18 编辑体验调整
+
+保存响应与编辑页加载返回 article.updated_at（updatedAt），供显示真实最近保存时间，不用客户端点击时间冒充写入时刻。此字段已有，不新增迁移；公开发表时间仍取 release。
+
+独立草稿预览位于后台 `/articles/[id]/preview`，读取当前草稿和已有授权素材接口，必须经过后台会话验证，响应 no-store / noindex。前台记录详情与预览共用 ArticlePage / ArticleReader / PublicFrame；预览的主导航及相关相册链接指向配置的公开域名，返回编辑留在后台。进入预览前等待保存成功，失败或冲突时留在编辑页。
+
+H4 在编辑按钮、HTML 粘贴、JSON 校验、发布渲染、桌面与移动目录中贯通；H1 转 H2，H5/H6 转 H4。旧文档不迁移。已有在粘贴中被降级为 H3 的内容须手动重新设为 H4。新增 H4 后如需回退应用，应使用仍支持 H4 的版本，否则旧校验器会拒绝后续保存。

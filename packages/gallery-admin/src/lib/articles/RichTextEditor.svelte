@@ -158,7 +158,7 @@
       element,
       extensions: [
         StarterKit.configure({
-          heading: { levels: [2, 3] },
+          heading: { levels: [2, 3, 4] },
           link: {
             openOnClick: false,
             autolink: false,
@@ -226,6 +226,11 @@
         title="三级标题"
         class:chosen={editorState.editor.isActive('heading', { level: 3 })}
         onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 3 }).run()}>H3</button
+      >
+      <button
+        title="四级标题"
+        class:chosen={editorState.editor.isActive('heading', { level: 4 })}
+        onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 4 }).run()}>H4</button
       >
       <span class="divider"></span>
       <button

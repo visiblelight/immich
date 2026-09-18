@@ -13,16 +13,16 @@ export function normalizeArticlePaste(html: string): { html: string; message: st
     images++;
   }
   if (images) notices.push(`${images} 张图片已保留为占位。点选占位后使用“图片”选片或上传替换。`);
-  if (doc.querySelector('h1,h4,h5,h6')) {
-    for (const heading of doc.querySelectorAll('h1,h4,h5,h6')) {
-      const replacement = doc.createElement(heading.tagName === 'H1' ? 'h2' : 'h3');
+  if (doc.querySelector('h1,h5,h6')) {
+    for (const heading of doc.querySelectorAll('h1,h5,h6')) {
+      const replacement = doc.createElement(heading.tagName === 'H1' ? 'h2' : 'h4');
       replacement.append(...heading.childNodes);
       heading.replaceWith(replacement);
     }
-    notices.push('正文标题已统一为 H2/H3；文章主标题请在标题栏填写。');
+    notices.push('正文标题已统一为 H2/H3/H4；文章主标题请在标题栏填写。');
   }
   const supported = new Set(
-    'html body head meta style p div span br h2 h3 strong b em i u s del strike mark code pre blockquote hr ul ol li label input table thead tbody tfoot tr th td colgroup col a figure figcaption img'.split(
+    'html body head meta style p div span br h2 h3 h4 strong b em i u s del strike mark code pre blockquote hr ul ol li label input table thead tbody tfoot tr th td colgroup col a figure figcaption img'.split(
       ' ',
     ),
   );

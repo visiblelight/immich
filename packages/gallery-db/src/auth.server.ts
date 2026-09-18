@@ -13,6 +13,8 @@ export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString('hex');
   return `scrypt-v1$${salt}$${(await derive(password, salt)).toString('hex')}`;
 }
+const sessionLifetime = 180 * 24 * 60 * 60 * 1000;
+const renewalInterval = 24 * 60 * 60 * 1000;
 const dummy = `scrypt-v1$${'0'.repeat(32)}$${'0'.repeat(128)}`;
 async function verifyPassword(password: string, hash: string) {
   const [method, salt, key] = hash.split('$');
@@ -56,7 +58,7 @@ export async function login(db: Kysely<unknown>, email: unknown, password: unkno
     ).rows[0];
     ensure(current?.password_hash === user.password_hash, '账号或密码不正确。', 401);
     const token = randomBytes(32).toString('base64url');
-    const expires = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const expires = new Date(Date.now() + sessionLifetime);
     await sql`INSERT INTO gallery.session(id,user_id,token_hash,audience,expires_at) VALUES(${randomUUID()}::uuid,${user.id}::uuid,${tokenHash(token)},'admin',${expires})`.execute(
       trx,
     );
@@ -67,18 +69,34 @@ export async function login(db: Kysely<unknown>, email: unknown, password: unkno
     return { token, expires };
   });
 }
-export async function sessionUser(db: Kysely<unknown>, token: string | undefined): Promise<GalleryUser | null> {
+export async function sessionUser(
+  db: Kysely<unknown>,
+  token: string | undefined,
+  onRenew?: (expires: Date) => void,
+): Promise<GalleryUser | null> {
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const row = (
     await sql<{
       id: string;
       email: string;
       display_name: string;
-    }>`SELECT u.id,u.email,u.display_name FROM gallery.session s JOIN gallery."user" u ON u.id=s.user_id WHERE s.token_hash=${tokenHash(token)} AND s.audience='admin' AND s.revoked_at IS NULL AND s.expires_at > now() AND u.status='active' AND u.role='admin'`.execute(
+      expires_at: Date;
+    }>`SELECT u.id,u.email,u.display_name,s.expires_at FROM gallery.session s JOIN gallery."user" u ON u.id=s.user_id WHERE s.token_hash=${tokenHash(token)} AND s.audience='admin' AND s.revoked_at IS NULL AND s.expires_at > now() AND u.status='active' AND u.role='admin'`.execute(
       db,
     )
   ).rows[0];
-  return row ? { id: row.id, email: row.email, displayName: row.display_name } : null;
+  if (!row) return null;
+  if (row.expires_at.getTime() < Date.now() + sessionLifetime - renewalInterval) {
+    const expires = new Date(Date.now() + sessionLifetime);
+    const renewed = await sql<{
+      expires_at: Date;
+    }>`UPDATE gallery.session s SET expires_at=GREATEST(s.expires_at,${expires}) FROM gallery."user" u WHERE s.user_id=u.id AND s.token_hash=${tokenHash(token)} AND s.audience='admin' AND s.revoked_at IS NULL AND s.expires_at > now() AND u.status='active' AND u.role='admin' RETURNING s.expires_at`.execute(
+      db,
+    );
+    if (!renewed.rows[0]) return null;
+    onRenew?.(renewed.rows[0].expires_at);
+  }
+  return { id: row.id, email: row.email, displayName: row.display_name };
 }
 export async function logout(db: Kysely<unknown>, token: string) {
   await sql`UPDATE gallery.session SET revoked_at=now() WHERE token_hash=${tokenHash(token)}`.execute(db);

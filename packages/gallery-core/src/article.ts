@@ -120,7 +120,7 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
         throw new Error('代码语言无效');
       out.attrs = { language: language ?? null };
     } else if (type === 'heading') {
-      if (![2, 3].includes(Number(value.attrs?.level))) throw new Error('标题级别无效');
+      if (![2, 3, 4].includes(Number(value.attrs?.level))) throw new Error('标题级别无效');
       out.attrs = { level: Number(value.attrs!.level) };
     } else if (type === 'orderedList') {
       const start = value.attrs?.start ?? 1;
@@ -330,6 +330,7 @@ export interface ManagedArticle extends ArticleContent {
   version: string;
   status: 'draft' | 'published' | 'offline';
   hasChanges: boolean;
+  updatedAt?: string | null;
   firstPublishedAt?: string | null;
   publishedAt?: string | null;
 }

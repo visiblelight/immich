@@ -1,7 +1,6 @@
 <script lang="ts">
   import { untrack, onDestroy } from 'svelte';
   import { beforeNavigate, goto } from '$app/navigation';
-  import { ArticleReader } from '@gallery/ui';
   import {
     articleImageKey,
     articleTime,
@@ -37,7 +36,6 @@
   let status = $state('已保存');
   let focus = $state(false);
   let settings = $state(true);
-  let preview = $state(false);
   let modal: HTMLDialogElement;
   let editor = $state<RichTextEditor>();
   let coverMode = $state(false);
@@ -92,6 +90,7 @@
           content: snapshot,
         });
         article.version = result.version;
+        article.updatedAt = result.updatedAt;
         article.status = result.status;
         dirty = revision !== mark;
         if (!dirty) article.hasChanges = result.hasChanges;
@@ -111,6 +110,31 @@
     const ok = await work;
     if (ok && dirty) return save();
     return ok;
+  }
+  function savedTime(value: string) {
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(new Date(value));
+  }
+  async function manualSave() {
+    if (await save()) message = '草稿已保存。';
+  }
+  async function openPreview() {
+    busy = true;
+    try {
+      if (await save()) {
+        busy = false;
+        window.location.assign(`/articles/${article.id}/preview`);
+      }
+    } finally {
+      busy = false;
+    }
   }
   async function publish() {
     busy = true;
@@ -204,9 +228,7 @@
     };
   }
   function insert() {
-    const picked = selected
-      .map((id) => options.find((p) => p.id === id))
-      .filter((p): p is ArticleMediaOption => !!p);
+    const picked = selected.map((id) => options.find((p) => p.id === id)).filter((p): p is ArticleMediaOption => !!p);
     if (coverMode) {
       article.cover = picked[0] ? node(picked[0]) : null;
       changed();
@@ -277,14 +299,18 @@
   {#if !focus}<AdminSidebar active="articles" user={initial.user} publicOrigin={initial.publicOrigin} />{/if}
   <main>
     <header class="edit-top">
-      <a href="/articles">← 文章</a><span class="save-status" role="status">{status}</span>
+      <a href="/articles">← 文章</a><span class="save-status" role="status"
+        >{status}{#if article.updatedAt}<time datetime={article.updatedAt} title="最近保存时间 · 北京时间 UTC+8"
+            >最近保存 {savedTime(article.updatedAt)}</time
+          >{/if}</span
+      >
       <div class="actions">
         <button
           onclick={() => {
-            void save();
+            void manualSave();
           }}
-          disabled={busy || saving || conflict}>保存草稿</button
-        ><button onclick={() => (preview = !preview)}>{preview ? '继续编辑' : '预览'}</button><button
+          disabled={busy || saving || conflict}>{saving ? '正在保存…' : '保存草稿'}</button
+        ><button onclick={openPreview} disabled={busy || conflict}>独立预览 ↗</button><button
           onclick={() => (settings = !settings)}
           aria-expanded={settings}>文章设置</button
         ><button class="primary" onclick={publish} disabled={busy || saving || conflict}
@@ -297,69 +323,46 @@
       </div>{/if}
     <div class="editor-layout-articles" class:without-settings={!settings || focus}>
       <section class="writing-paper">
-        {#if preview}<div class="preview-switch">
-            <span>当前草稿预览</span>{#if article.status === 'published'}<a
-                href={initial.publicOrigin + '/records/' + article.slug}
-                target="_blank"
-                rel="noreferrer">查看已发布版本 ↗</a
-              >{/if}
+        <div class="writing-title">
+          <div class="writing-caption">
+            <span>文章正文</span><button onclick={() => (focus = !focus)}>{focus ? '退出专注' : '专注写作'}</button>
           </div>
-          <div class="reader-preview">
-            <ArticleReader
-              title={article.title || '未命名文章'}
-              date={article.date}
-              document={article.document}
-              resolveImage={resolve}
-            />
-          </div>{:else}<div class="writing-title">
-            <div class="writing-caption">
-              <span>文章正文</span><button onclick={() => (focus = !focus)}
-                >{focus ? '退出专注' : '专注写作'}</button
-              >
-            </div>
-            <label
-              ><span class="sr-only">文章标题</span><textarea
-                rows="2"
-                class="title-input"
-                maxlength="200"
-                placeholder="给文章起个标题…"
-                bind:value={article.title}
-                oninput={changed}
-                disabled={busy}
-              ></textarea></label
-            >
-          </div>
-          <fieldset class="editor-lock" disabled={busy}>
-            <RichTextEditor
-              editable={!busy}
-              bind:this={editor}
-              document={article.document}
-              resolveImage={resolve}
-              onChange={(doc) => {
-                article.document = doc;
-                changed();
-              }}
-              onInsertImage={() => openPicker()}
-            />
-          </fieldset>{/if}
+          <label
+            ><span class="sr-only">文章标题</span><textarea
+              rows="2"
+              class="title-input"
+              maxlength="200"
+              placeholder="给文章起个标题…"
+              bind:value={article.title}
+              oninput={changed}
+              disabled={busy}
+            ></textarea></label
+          >
+        </div>
+        <fieldset class="editor-lock" disabled={busy}>
+          <RichTextEditor
+            editable={!busy}
+            bind:this={editor}
+            document={article.document}
+            resolveImage={resolve}
+            onChange={(doc) => {
+              article.document = doc;
+              changed();
+            }}
+            onInsertImage={() => openPicker()}
+          />
+        </fieldset>
       </section>
       {#if settings && !focus}<aside class="article-settings">
           <h2>文章设置</h2>
           {#if article.firstPublishedAt}<p class="hint">
-              首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(
-                article.publishedAt!,
-              )}<br />北京时间 UTC+8，发布后自动记录。
+              首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(article.publishedAt!)}<br
+              />北京时间 UTC+8，发布后自动记录。
             </p>{:else}<p class="hint">尚未发布。首次发布与最近更新时间由系统自动记录。</p>{/if}
           <label
-            >摘要<textarea
-              rows="4"
-              maxlength="1000"
-              bind:value={article.summary}
-              oninput={changed}
-              disabled={busy}
+            >摘要<textarea rows="4" maxlength="1000" bind:value={article.summary} oninput={changed} disabled={busy}
             ></textarea></label
-          ><label
-            >写作日期<input type="date" bind:value={article.date} onchange={changed} disabled={busy} /></label
+          ><label>写作日期<input type="date" bind:value={article.date} onchange={changed} disabled={busy} /></label
           ><label
             >文章链接<input
               bind:value={article.slug}
@@ -375,8 +378,7 @@
               alt="封面预览"
             />{/if}
           <div class="cover-actions">
-            <button onclick={() => openPicker(true)} disabled={busy}
-              >{article.cover ? '更换封面' : '选择封面'}</button
+            <button onclick={() => openPicker(true)} disabled={busy}>{article.cover ? '更换封面' : '选择封面'}</button
             >{#if article.cover}<button
                 onclick={() => {
                   article.cover = null;
@@ -404,14 +406,10 @@
               >{:else}<p class="hint">公开相册后，可在这里关联。</p>{/each}
           </fieldset>
           <p class="hint">图注属于这篇文章，不修改照片本身的资料。</p>
-          {#if article.status === 'published'}<button
-              class="withdraw"
-              onclick={offline}
-              disabled={busy || saving}>下线文章</button
-            >{:else if article.status === 'draft'}<button
-              class="withdraw"
-              onclick={remove}
-              disabled={busy || saving}>删除草稿</button
+          {#if article.status === 'published'}<button class="withdraw" onclick={offline} disabled={busy || saving}
+              >下线文章</button
+            >{:else if article.status === 'draft'}<button class="withdraw" onclick={remove} disabled={busy || saving}
+              >删除草稿</button
             >{/if}
         </aside>{/if}
     </div>
@@ -479,8 +477,7 @@
           void upload(e.currentTarget.files);
           e.currentTarget.value = '';
         }}
-      /><small>{uploading ? '正在上传…' : 'JPEG、PNG、WebP，每张最多 10 MB。不进入相册和去过统计。'}</small
-      ></label
+      /><small>{uploading ? '正在上传…' : 'JPEG、PNG、WebP，每张最多 10 MB。不进入相册和去过统计。'}</small></label
     >{/if}{#if pickerError}<p role="alert">{pickerError}</p>{/if}{#if loading}<p role="status">
       正在加载图片…
     </p>{:else}<div class="image-grid">
@@ -563,6 +560,11 @@
   }
   .edit-top .actions {
     margin-left: auto;
+  }
+  .save-status time {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
   }
   .save-status {
     font-size: 12px;
@@ -678,25 +680,6 @@
     width: 100%;
     color: #806957;
     background: transparent;
-  }
-  .reader-preview {
-    padding: 0 32px;
-  }
-  .reader-preview :global(.article-layout) {
-    display: block;
-    margin-top: 25px;
-  }
-  .reader-preview :global(.desktop-toc) {
-    display: none;
-  }
-  .preview-switch {
-    padding: 16px 25px;
-    border-bottom: 1px solid #e4e8df;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    color: #88947e;
-    font-size: 12px;
   }
   .focused {
     grid-template-columns: 1fr;
@@ -869,9 +852,6 @@
     dialog {
       padding: 18px;
     }
-    .reader-preview {
-      padding: 0 20px;
-    }
   }
   .cover-actions {
     display: flex;
@@ -888,9 +868,6 @@
   .edit-top > a {
     color: #67775f;
     text-decoration: none;
-  }
-  .preview-switch a {
-    color: #67775f;
   }
   .article-settings fieldset {
     max-height: 300px;

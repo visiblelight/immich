@@ -18,6 +18,7 @@ import {
   publishAlbum,
   saveAlbum as rawSaveAlbum,
   sessionUser,
+  tokenHash,
   setAlbumAvailability,
   sanitizeImage,
   readPublishedDerivative,
@@ -46,7 +47,38 @@ export async function workflow(
     await hashPassword(password),
   ]);
   const session = await login(db, user.email, password, 'synthetic-client');
-  assert.equal((await sessionUser(db, session.token))?.id, actorId);
+  const days = (date: Date) => (date.getTime() - Date.now()) / 86_400_000;
+  assert.ok(days(session.expires) > 179 && days(session.expires) <= 180);
+  let renewed: Date | undefined;
+  assert.equal(
+    (
+      await sessionUser(db, session.token, (expires) => {
+        renewed = expires;
+      })
+    )?.id,
+    actorId,
+  );
+  assert.equal(renewed, undefined, 'fresh sessions do not rewrite cookies on every request');
+  await owner.query("UPDATE gallery.session SET expires_at=now()+interval '8 hours' WHERE token_hash=$1", [
+    tokenHash(session.token),
+  ]);
+  assert.equal(
+    (
+      await sessionUser(db, session.token, (expires) => {
+        renewed = expires;
+      })
+    )?.id,
+    actorId,
+  );
+  assert.ok(renewed && days(renewed) > 179, 'existing short sessions renew while still valid');
+  await owner.query(
+    "UPDATE gallery.session SET created_at=now()-interval '2 days',expires_at=now()-interval '1 second' WHERE token_hash=$1",
+    [tokenHash(session.token)],
+  );
+  assert.equal(await sessionUser(db, session.token, () => assert.fail('expired session renewed')), null);
+  await owner.query("UPDATE gallery.session SET expires_at=now()+interval '180 days' WHERE token_hash=$1", [
+    tokenHash(session.token),
+  ]);
   await assert.rejects(login(db, user.email, 'incorrect', 'synthetic-client'), /账号或密码/);
   const initial = await adminState(db);
   const parent = await createAlbum(db, user, { title: 'Workflow parent', treeVersion: initial.site.treeVersion });

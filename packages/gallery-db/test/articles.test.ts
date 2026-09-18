@@ -203,3 +203,28 @@ test('invalid table spans, ragged rows and task states fail closed', () => {
     ),
   );
 });
+
+test('H4 survives validation and has its own stable outline anchor', () => {
+  const source = doc(
+    ...[2, 3, 4, 4].map((level): ArticleNode => ({
+      type: 'heading',
+      attrs: { level },
+      content: [{ type: 'text', text: 'Repeated heading' }],
+    })),
+  );
+  const clean = validateArticleDocument(source);
+  assert.deepEqual(
+    articleHeadings(clean).map(({ id, level }) => ({ id, level })),
+    [
+      { id: 'section-1', level: 2 },
+      { id: 'section-2', level: 3 },
+      { id: 'section-3', level: 4 },
+      { id: 'section-4', level: 4 },
+    ],
+  );
+  assert.match(
+    renderArticle(clean, () => null),
+    /<h4 id="section-3">Repeated heading<\/h4>/,
+  );
+  assert.throws(() => validateArticleDocument(doc({ type: 'heading', attrs: { level: 5 } })));
+});

@@ -29,7 +29,16 @@ export const handle: Handle = async ({ event, resolve }) => {
         { message: `请求来源与后台地址不一致，请通过 ${app.origin}/login 登录。` },
         { status: 403, headers: { 'cache-control': 'no-store' } },
       );
-    event.locals.user = await sessionUser(app.db, event.cookies.get('gallery_admin_session'));
+    const token = event.cookies.get('gallery_admin_session');
+    event.locals.user = await sessionUser(app.db, token, (expires) => {
+      event.cookies.set('gallery_admin_session', token!, {
+        path: '/',
+        httpOnly: true,
+        secure: app.secure,
+        sameSite: 'strict',
+        expires,
+      });
+    });
     const open = event.url.pathname === '/login' || event.url.pathname === '/api/login';
     if (!open && !event.locals.user) {
       return event.url.pathname.startsWith('/api/') || event.url.pathname.startsWith('/media/')
