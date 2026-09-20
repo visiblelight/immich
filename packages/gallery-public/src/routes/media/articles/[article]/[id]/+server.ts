@@ -1,7 +1,8 @@
-import { readArticleMedia } from '@gallery/db/server';
+import { readArticleMedia, publishedCdnRedirect } from '@gallery/db/server';
 import { getRuntime } from '$lib/server/runtime';
 import type { RequestHandler } from '@sveltejs/kit';
 export const GET: RequestHandler = async ({ params, url }) => {
+  const authorizedAt = Date.now();
   try {
     const app = getRuntime();
     const bytes = await readArticleMedia(
@@ -11,6 +12,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
       url.searchParams.get('variant') ?? 'thumbnail',
       params.article,
     );
+    const cdn = await publishedCdnRedirect(bytes, authorizedAt);
+    if (cdn) return cdn;
     return new Response(new Uint8Array(bytes), {
       headers: {
         'content-type': 'image/webp',

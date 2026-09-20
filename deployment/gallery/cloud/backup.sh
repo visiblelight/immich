@@ -33,9 +33,18 @@ if [ -f /etc/gallery/cdn-certificate.json ] && [ -d /var/lib/gallery-certificate
   ) 9>>/var/lib/gallery-certificate/task.lock
 fi
 git -C "$repo" rev-parse HEAD > "$backup/source-commit.txt"
+if [ -f /etc/gallery/media-sync.json ] && [ -d /var/lib/gallery-media ]; then
+  (
+    flock -w 60 9
+    tar -czf "$backup/media-sync.tar.gz" -C / etc/gallery/media-sync.json var/lib/gallery-media
+  ) 9>>/var/lib/gallery-media/task.lock
+fi
 compose images --format json > "$backup/images.json"
 (cd "$backup" && sha256sum database.dump media.tar.gz configuration.tar.gz source-commit.txt images.json > SHA256SUMS)
 if [ -f "$backup/certificate.tar.gz" ]; then
   (cd "$backup" && sha256sum certificate.tar.gz >> SHA256SUMS)
+fi
+if [ -f "$backup/media-sync.tar.gz" ]; then
+  (cd "$backup" && sha256sum media-sync.tar.gz >> SHA256SUMS)
 fi
 printf 'Created private checkpoint: %s\n' "$backup"

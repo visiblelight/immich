@@ -51,6 +51,15 @@ services:
     extends:
       file: ../compose/compose.yml
       service: public
+    environment:
+      GALLERY_CDN_DIRECTORY: /run/gallery-cdn
+    volumes:
+      - type: bind
+        source: ${GALLERY_CDN_STATE_PATH:-/var/lib/gallery-media/public}
+        target: /run/gallery-cdn
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       immich: {}
       edge:

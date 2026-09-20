@@ -1,0 +1,7 @@
+{
+  "bucket": "vision-ke",
+  "region": "cn-hongkong",
+  "endpoint": "https://oss-cn-hongkong-internal.aliyuncs.com",
+  "origin": "https://cdn.ke.ink",
+  "role_name": "GalleryMediaSyncRole"
+}

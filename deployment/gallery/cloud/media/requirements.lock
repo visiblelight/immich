@@ -1,0 +1,4 @@
+-r ../certificate/requirements.lock
+alibabacloud-oss-v2==1.4.0
+crcmod-plus==2.3.1
+pycryptodome==3.23.0
