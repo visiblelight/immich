@@ -1,6 +1,6 @@
 # 免费 CDN 证书自动化
 
-实现状态：脚本及本地测试完成，云端安装、签发、续期和公网部署尚未验收。
+实现状态：2026-09-20 已完成云端安装、DNS-01 测试及正式签发、CDN 公网指纹校验，定时任务已启用；systemd 实际执行一次续期检查与部署校验成功。尚未经历证书临近到期时的真实换证周期。
 
 证书明确使用 Let's Encrypt，acme.sh 固定版本 3.1.5 / `d5fc938d80e266dba3239f54cf4665432f17c00b`。不购买阿里云付费证书或托管续期。阿里云 HTTPS 请求数、DNS/OSS/CDN 资源自身仍按其计费规则执行。
 
@@ -16,7 +16,7 @@
 
 `gallery-metadata-guard.service` 在独立 nftables 表中拒绝转发到 `100.100.100.200` 的请求，防止桥接网络容器取得宿主机角色凭据。它不修改 Docker NAT 表、不影响正常公网请求，也不限制宿主机的证书任务。启用后成为 Docker 的启动前置依赖；规则独立于 Docker 链，在 Docker 重启期间仍保留。证书与未来媒体同步任务在宿主机执行，不向网页应用容器分发云凭据。
 
-启用前检查现有容器没有宿主网络、特权模式及元数据业务依赖；这些隔离不能防止宿主机 root 或特权容器主动绕过。当前生产容器均为非特权桥接网络，尚未启用规则。部署需先执行 `nft -c -f /opt/gallery-certificate/metadata-guard.nft`（首次安装时表不存在），再执行 `systemctl enable --now gallery-metadata-guard.service`。之后验证宿主机 IMDSv2 可用、应用容器访问被拒绝，以及各站点正常，最后才绑定实例角色。
+启用前检查现有容器没有宿主网络、特权模式及元数据业务依赖；这些隔离不能防止宿主机 root 或特权容器主动绕过。当前生产容器均为非特权桥接网络。规则已启用，实测宿主机 IMDSv2 返回 200、Gallery/JVS 容器访问失败且拒绝计数增加，四个站点保持可达；之后才绑定实例角色。新环境部署需先执行 `nft -c -f /opt/gallery-certificate/metadata-guard.nft`（首次安装时表不存在），再执行 `systemctl enable --now gallery-metadata-guard.service`，重复上述隔离验证。
 
 安装脚本只放置文件，不自动启用规则。回退隔离前应先解绑实例角色并等待旧临时凭据失效，再禁用服务及删除它自己的 `inet gallery_metadata_guard` 表；禁止清空整机 nftables 规则。新增依赖元数据的项目应单独评审身份方案，不能直接放开所有容器。
 
@@ -52,7 +52,9 @@ systemctl enable --now gallery-certificate.timer
 runuser -u gallery-certificate -- /opt/gallery-certificate/run.sh sync
 ```
 
-停止自动运行：`systemctl disable --now gallery-certificate.timer`。已在 CDN 生效的证书不会因此立即失效，但到期前必须恢复续期。配置及证书状态目录应纳入私有备份，不写入仓库。
+停止自动运行：`systemctl disable --now gallery-certificate.timer`。已在 CDN 生效的证书不会因此立即失效，但到期前必须恢复续期。配置及证书状态目录不写入仓库；Gallery 云备份脚本在检测到本任务时，会持有续期锁并额外生成私有的 `certificate.tar.gz` 和校验和，包含 ACME 账户及续期状态。
+
+恢复时先从已审核的 Git 版本安装工具，再恢复上述配置与状态目录，确认所有权为 `gallery-certificate`、目录 0700、私钥 0600。验证实例角色、DNS 委派、元数据隔离和 `run.sh sync` 后恢复计时器。更新证书工具同样从新 Git 提交重新执行安装器；应用镜像的 CI 发布本身不会自动执行宿主机安装器。
 
 ## 测试
 
@@ -62,4 +64,4 @@ runuser -u gallery-certificate -- /opt/gallery-certificate/run.sh sync
 GALLERY_CERT_PYTHON=/path/to/venv/bin/python sh deployment/gallery/scripts/pnpm.sh gallery:test:cloud
 ```
 
-本地单元测试覆盖域名与密钥校验、拒绝不可信链、保留其他 TXT 记录、CDN 部署重试、失败不写成功状态。完整验收还需真实角色、DNS-01 staging 签发、生产签发、CDN 公网证书和定时任务运行。
+8 项本地单元测试覆盖域名与密钥校验、拒绝不可信链、保留其他 TXT 记录、传播失败清理、CDN 部署重试、失败不写成功状态。云端已完成真实角色、DNS-01 staging 签发、生产签发、CDN 公网证书和 systemd 任务运行验收；未来真实到期换证及站外告警仍需持续运维。

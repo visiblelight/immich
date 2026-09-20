@@ -1,6 +1,6 @@
 # OSS / CDN 接入记录
 
-状态：资源核查已完成第一轮；Gallery 同步与 CDN 读取尚未实现，尚未切换生产图片。2026-09-20。
+状态：免费证书自动化、限定云角色及私有回源已配置并完成证书链路验收；Gallery 同步与 CDN 读取尚未实现，尚未切换生产图片。2026-09-20。
 
 ## 已确认的产品边界
 
@@ -39,25 +39,28 @@ CDN 返回的收费提示是 HTTPS 请求数计费，并非购买证书。阿里
 
 ## 后续实施与验收
 
-本地已实现 [证书自动化脚本](../../../deployment/gallery/cloud/certificate/README.md)：固定版本 acme.sh、ECS 角色临时凭据、独立 DNS 验证子域、可信证书链及私钥匹配校验、CDN 部署重试与公网指纹验证。8 项单元测试已通过，CI 已配置对应测试步骤；尚未在服务器安装、签发或启用定时任务，也未验收真实云侧鉴权。
+已实现并安装 [证书自动化脚本](../../../deployment/gallery/cloud/certificate/README.md)：固定版本 acme.sh、ECS 角色临时凭据、独立 DNS 验证子域、可信证书链及私钥匹配校验、CDN 部署重试与公网指纹验证。8 项单元测试及首轮完整 CI 已通过；真实 DNS 和证书 API 已验收，OSS 对象操作待后续媒体接入时实测。
 
 用户已明确批准验证子域委派、限定范围的角色创建与绑定、CDN 展示目录只读回源。实际完成：
 
 - 创建免费 DNS 子域 `acme-cdn.ke.ink`，完成所有权校验，添加 `_acme-challenge.cdn.ke.ink CNAME _acme-challenge.acme-cdn.ke.ink`。公网查询确认别名生效，子域 NS 为 `ns1.alidns.com`、`ns2.alidns.com`。
-- 创建 `GalleryMediaSyncRole`（仅信任 ECS），绑定 `GalleryMediaSync` 和 `GalleryCdnCertificate` 两项自定义策略，尚未绑定 ECS 实例。
+- 创建 `GalleryMediaSyncRole`（仅信任 ECS），绑定 `GalleryMediaSync` 和 `GalleryCdnCertificate` 两项自定义策略，隔离验收后已绑定香港 ECS 实例。
 - 核查此前已存在的 CDN 默认角色，移除其全账号 OSS 只读系统策略，改为 `GalleryCdnOriginRead`，仅可读取目标展示目录。变更前已确认账号内另外三个 CDN 域名的私有回源开关均关闭，未改动它们的配置。
 - `cdn.ke.ink` 私有回源已开启，使用同账号 STS，不创建 RAM 用户或长期 AccessKey。
-- 服务器只读核查：现有应用容器均为非特权桥接网络；准备了独立 nftables 元数据隔离服务，尚未安装启用。
+- 服务器现有应用容器均为非特权桥接网络；独立 nftables 元数据隔离服务已启用。宿主机 IMDSv2 返回 200，Gallery/JVS 容器探测失败且拒绝计数增加；四个站点仍可访问，没有修改 JVS 源码或 Edge 入口。
+- Let's Encrypt staging 与正式 DNS-01 签发均成功，TXT 自动添加及清理已验证。正式证书已自动上传 CDN，ECS 与本机均可完成可信 TLS 握手；公网指纹为 `6eaa0186410579e0f1c350e42291f213bfe5edba49902240c3ec6486a1cd8321`，有效期至 `2026-12-19T08:47:50Z`。
+- `gallery-certificate.timer` 已启用，每日两次检查；`gallery-certificate.service` 实际执行续期检查和公网校验返回 `Result=success / ExecMainStatus=0`。这不等于已经历下一次到期换证，仍须持续运维。
+- 证书状态独立存于 `/var/lib/gallery-certificate`，专用 Unix 用户权限为 0700；不会放宽 `/srv/vision` 的 root 私有权限。首份私有证书备份在 ECS `/srv/vision/backups/certificate-initial-20260920`，归档与校验和通过，未复制私钥至本机或 Git。云备份脚本已加入后续证书状态归档。
 
-1. HTTPS 计费已确认；完成证书自动化方案，先完成免费证书签发与 CDN 部署，再验证 TLS。
-2. 建立只允许 CDN 读取目标 Bucket 展示目录的角色；避免默认一键授权的全账号 OSS 只读范围。ECS 同步角色仅允许目标目录的必要对象操作，不使用主账号 AccessKey。
+1. 已完成：免费证书签发、自动部署、可信 TLS 及定时任务首轮验收。HTTPS 请求计费此前已确认，未购买付费证书。
+2. 已完成：CDN 展示目录只读角色、限定范围 ECS 同步角色和元数据隔离。不使用主账号或 RAM 用户长期 AccessKey；对象访问权限待媒体接入实测。
 3. 配置 300 秒 URL 签名鉴权。边缘节点缓存时间和 URL 授权时长分开设置；不能让浏览器缓存、过期内容策略或失败降级绕过撤销边界。
 4. 实现发布内容同步、内容版本对象名、失败重试、失效清理及受控 CDN 地址签发。多相册复用照片时，仅在所有公开引用撤销后回收。
 5. 未同步成功时继续走既有 ECS 授权媒体入口；后台私有选片与草稿预览保持认证要求。
 6. 验证有效签名成功、无签名/篡改/过期签名拒绝、源站匿名拒绝、缓存命中、图片像素不变及撤销后的 5 分钟边界；再通过项目 CI 发布。
 7. 回滚关闭 CDN 读取并恢复 ECS 授权入口；不删除 Immich 本地图像。云权限、证书任务及缓存清理分别记录实际实施结果。
 
-回源、同步及证书更新的具体权限见 [RAM 权限说明](../../../deployment/gallery/cloud/ram/README.md)。证书 DNS 验证采用独立子域委派，避免给 ECS 整个 `ke.ink` 的解析管理权限；权限策略已创建，实际对象访问及证书 API 尚待验收。
+回源、同步及证书更新的具体权限见 [RAM 权限说明](../../../deployment/gallery/cloud/ram/README.md)。证书 DNS 验证采用独立子域委派，避免给 ECS 整个 `ke.ink` 的解析管理权限；实际 OSS 对象访问、URL 鉴权和 Gallery 图片切换仍未完成。
 
 ## 官方依据
 

@@ -23,7 +23,19 @@ if [ -n "$writers" ]; then compose stop $writers >/dev/null; fi
 compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup/database.dump"
 tar -czf "$backup/media.tar.gz" -C "$data" library articles
 tar -czf "$backup/configuration.tar.gz" -C "$(dirname -- "$config")" .
+# Certificate state lives outside /srv/vision so its unprivileged worker can access it.
+# Preserve the ACME account and renewal state without racing a running renewal.
+if [ -f /etc/gallery/cdn-certificate.json ] && [ -d /var/lib/gallery-certificate ]; then
+  (
+    flock -w 60 9
+    tar --exclude='*.log' -czf "$backup/certificate.tar.gz" -C / \
+      etc/gallery/cdn-certificate.json var/lib/gallery-certificate
+  ) 9>>/var/lib/gallery-certificate/task.lock
+fi
 git -C "$repo" rev-parse HEAD > "$backup/source-commit.txt"
 compose images --format json > "$backup/images.json"
 (cd "$backup" && sha256sum database.dump media.tar.gz configuration.tar.gz source-commit.txt images.json > SHA256SUMS)
+if [ -f "$backup/certificate.tar.gz" ]; then
+  (cd "$backup" && sha256sum certificate.tar.gz >> SHA256SUMS)
+fi
 printf 'Created private checkpoint: %s\n' "$backup"
