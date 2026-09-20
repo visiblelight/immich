@@ -35,13 +35,13 @@ systemctl enable --now gallery-certificate.timer
 
 首次注册 ACME 账户需要域名所有者同意 Let's Encrypt 条款。staging 使用单独的状态目录，永不上传到生产 CDN；正式上传前使用系统根证书校验证书链、准确域名、私钥匹配和剩余有效期，拒绝测试证书及即将过期的证书。
 
-`install.sh` 只安装，不签发、不授予云权限、不启用计时器、不修改 Edge 或 JVS。若服务器缺少 Python venv 支持，先通过操作系统官方软件源安装对应 Python venv 包；不能改动系统 Python。
+`install.sh` 只安装，不签发、不授予云权限、不启用计时器、不修改 Edge 或 JVS。若服务器缺少 Python venv 支持，先通过操作系统官方软件源安装对应 Python venv 包；不能改动系统 Python。Python 依赖明确从官方 PyPI 安装，避免服务器预设镜像缺少锁定版本。状态使用独立的 `/var/lib/gallery-certificate`，不要求专用用户访问仅 root 可读的 `/srv/vision`。
 
 ## 自动运行及故障处理
 
 - systemd 每日两次检查续期，增加随机延迟；使用 `flock` 避免并行签发。
 - 每次检查都会重试 CDN 部署，即使当天没有生成新证书，也能恢复此前部署失败。
-- 只有公网 TLS 验证成功且指纹匹配才更新 `/srv/vision/certificate/status.json`。该文件不包含私钥或凭据。
+- 只有公网 TLS 验证成功且指纹匹配才更新 `/var/lib/gallery-certificate/status.json`。该文件不包含私钥或凭据。
 - SDK 错误仅输出错误类型及安全的错误码，不输出可能含请求签名或私钥的完整异常。
 - 部署失败时不主动关闭 HTTPS 或删除现有 CDN 证书。阿里云配置提交后仍需等待边缘节点传播；单个公网探测点通过不等于全球节点验收完成。
 - `systemctl status gallery-certificate.service` 与 journal 显示执行失败。尚未接入站外通知渠道，不能宣称已具备邮件/短信告警；需持续监测任务失败和公网证书有效期。

@@ -2,6 +2,6 @@
   "domain": "cdn.ke.ink",
   "validation_zone": "acme-cdn.ke.ink",
   "role_name": "GalleryMediaSyncRole",
-  "state_dir": "/srv/vision/certificate",
+  "state_dir": "/var/lib/gallery-certificate",
   "email": "visiblelight@gmail.com"
 }

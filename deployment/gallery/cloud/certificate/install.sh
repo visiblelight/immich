@@ -14,10 +14,10 @@ command -v flock >/dev/null
 command -v nft >/dev/null
 python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11 or newer is required"'
 if ! id gallery-certificate >/dev/null 2>&1; then
-  useradd --system --home-dir /srv/vision/certificate --shell /usr/sbin/nologin gallery-certificate
+  useradd --system --home-dir /var/lib/gallery-certificate --shell /usr/sbin/nologin gallery-certificate
 fi
 install -d -m 0755 "$base" /etc/gallery
-install -d -m 0700 -o gallery-certificate -g gallery-certificate /srv/vision/certificate
+install -d -m 0700 -o gallery-certificate -g gallery-certificate /var/lib/gallery-certificate
 if [ ! -d "$base/acme/.git" ]; then
   git init -q "$base/acme"
   git -C "$base/acme" remote add origin https://github.com/acmesh-official/acme.sh.git
@@ -27,7 +27,7 @@ git -C "$base/acme" fetch --depth 1 origin "$revision"
 git -C "$base/acme" checkout --detach "$revision"
 [ "$(git -C "$base/acme" rev-parse HEAD)" = "$revision" ]
 python3 -m venv "$base/venv"
-"$base/venv/bin/pip" install -r "$src/requirements.lock"
+"$base/venv/bin/pip" install --index-url https://pypi.org/simple -r "$src/requirements.lock"
 install -m 0755 "$src/cloud_certificate.py" "$src/run.sh" "$src/metadata-guard.sh" "$base/"
 install -m 0644 "$src/metadata-guard.nft" "$base/"
 install -m 0644 "$src/dns_gallery.sh" "$base/acme/dnsapi/dns_gallery.sh"
