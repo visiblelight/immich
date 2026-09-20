@@ -5,6 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "gallery:test:cloud": "sh deployment/gallery/cloud/certificate/test.sh",
     "gallery:map:generate": "node packages/gallery-public/scripts/generate-world-map.mjs",
     "gallery:map:boundaries": "node packages/gallery-db/scripts/prepare-countries.ts",
     "gallery:local:init": "node packages/gallery-db/scripts/initialize-local.ts",

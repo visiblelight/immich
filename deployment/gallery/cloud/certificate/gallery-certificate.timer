@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Gallery CDN certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 03,15:00:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=gallery-certificate.service
+
+[Install]
+WantedBy=timers.target

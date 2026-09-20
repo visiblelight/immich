@@ -1,0 +1,15 @@
+[Unit]
+Description=Block forwarded container traffic to Alibaba ECS instance credentials
+Before=docker.service gallery-certificate.service
+After=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gallery-certificate/metadata-guard.sh
+ExecReload=/opt/gallery-certificate/metadata-guard.sh
+RemainAfterExit=yes
+# Do not remove protection automatically when stopping/restarting services.
+
+[Install]
+RequiredBy=docker.service
+WantedBy=multi-user.target

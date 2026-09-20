@@ -1,0 +1,15 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["oss:GetObject", "oss:PutObject", "oss:DeleteObject"],
+      "Resource": ["acs:oss:*:*:vision-ke/gallery/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["cdn:RefreshObjectCaches"],
+      "Resource": ["acs:cdn:*:*:domain/cdn.ke.ink"]
+    }
+  ]
+}

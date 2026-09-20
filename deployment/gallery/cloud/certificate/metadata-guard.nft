@@ -1,0 +1,8 @@
+# Only forwarded traffic is filtered; host-side certificate/sync tasks keep IMDS access.
+# This separate table does not replace Docker's NAT/filter tables.
+table inet gallery_metadata_guard {
+  chain forward {
+    type filter hook forward priority -200; policy accept;
+    ip daddr 100.100.100.200 counter reject with icmp type admin-prohibited
+  }
+}

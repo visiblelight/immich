@@ -1,0 +1,5 @@
+alibabacloud-credentials==1.0.12
+alibabacloud-cdn20180510==9.2.0
+alibabacloud-alidns20150109==4.6.1
+cryptography==50.0.1
+dnspython==2.8.0
