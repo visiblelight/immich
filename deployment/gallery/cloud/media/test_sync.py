@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import sync
 
 def image(value=b'\xff\xd8\xff\xd9'):
@@ -72,5 +72,21 @@ class SyncTest(unittest.TestCase):
         self.assertIn(image()['key'], json.loads((self.root/'ledger.json').read_text()))
         self.cloud.fail = False; self.run_sync([], 1700)
         self.assertEqual(json.loads((self.root/'ledger.json').read_text()), {})
+    def test_sdk_wrapped_missing_object_uploads_but_forbidden_does_not(self):
+        import alibabacloud_oss_v2 as oss
+        cloud = sync.Cloud.__new__(sync.Cloud)
+        cloud.oss = oss; cloud.config = {'bucket': 'test'}; cloud.client = MagicMock()
+        for status in (404, 403):
+            cloud.client.reset_mock()
+            cloud.client.head_object.side_effect = oss.exceptions.OperationError(
+                name='HeadObject', error=oss.exceptions.ServiceError(status_code=status, code='Synthetic',
+                    request_id='test', message='test', ec='', timestamp='', request_target=''))
+            if status == 404:
+                self.assertTrue(cloud.ensure(image()['key'], b'\xff\xd8\xff\xd9', 'image/jpeg'))
+                self.assertEqual(cloud.client.put_object.call_count, 1)
+            else:
+                with self.assertRaises(oss.exceptions.OperationError):
+                    cloud.ensure(image()['key'], b'\xff\xd8\xff\xd9', 'image/jpeg')
+                cloud.client.put_object.assert_not_called()
 
 if __name__ == '__main__': unittest.main()

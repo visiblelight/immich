@@ -54,10 +54,10 @@ jobs:
       - run: sh deployment/gallery/scripts/pnpm.sh gallery:test
       - run: sh deployment/gallery/scripts/pnpm.sh gallery:build
       - run: sh deployment/gallery/scripts/pnpm.sh gallery:smoke
-      - name: Test CDN certificate automation without cloud credentials
+      - name: Test CDN certificate and media automation without cloud credentials
         run: |
           python3 -m venv /tmp/gallery-certificate-venv
-          /tmp/gallery-certificate-venv/bin/pip install -r deployment/gallery/cloud/certificate/requirements.lock
+          /tmp/gallery-certificate-venv/bin/pip install -r deployment/gallery/cloud/media/requirements.lock
           GALLERY_CERT_PYTHON=/tmp/gallery-certificate-venv/bin/python sh deployment/gallery/scripts/pnpm.sh gallery:test:cloud
 
   image:

@@ -70,8 +70,9 @@ class Cloud:
             head = self.client.head_object(self.oss.HeadObjectRequest(bucket=self.config['bucket'], key=key))
             if head.content_length == len(data) and (head.metadata or {}).get('sha256') == hashlib.sha256(data).hexdigest():
                 return False
-        except self.oss.exceptions.ServiceError as error:
-            if error.status_code != 404: raise
+        except self.oss.exceptions.OperationError as error:
+            cause = error.unwrap()
+            if not isinstance(cause, self.oss.exceptions.ServiceError) or cause.status_code != 404: raise
         self.client.put_object(self.oss.PutObjectRequest(bucket=self.config['bucket'], key=key,
             body=data, content_type=content_type, cache_control='no-store',
             metadata={'sha256': hashlib.sha256(data).hexdigest()}))

@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import sharp from 'sharp';
 import type { AlbumContent, ManagedAlbum } from '@gallery/core';
+import { cdnObjectKey } from '../../src/cdn.server.ts';
 
 async function port() {
   const server = createServer();
@@ -18,6 +19,14 @@ async function port() {
   return p;
 }
 export async function httpWorkflow(asset: string, mediaRoot: string) {
+  const cdnDirectory = mediaRoot + '/cdn-test';
+  await mkdir(cdnDirectory);
+  const cdnConfig = { enabled: true, origin: 'https://cdn.example.invalid', signingKey: 'SyntheticTestKey00000000000000000' };
+  async function readyCdn(bytes: Buffer) {
+    await writeFile(cdnDirectory + '/config.json', JSON.stringify(cdnConfig));
+    await writeFile(cdnDirectory + '/ready.json', JSON.stringify({ version: 1, checkedAt: Date.now(), objects: { [cdnObjectKey(bytes)]: true } }));
+  }
+  const disableCdn = () => writeFile(cdnDirectory + '/config.json', JSON.stringify({ ...cdnConfig, enabled: false }));
   const config = JSON.parse(await readFile(process.env.GALLERY_TEST_CONFIG!, 'utf8')) as {
     ownerUrl: string;
     passwords: Record<string, string>;
@@ -48,6 +57,7 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
           GALLERY_MEDIA_SOURCE_ROOT: '/data/thumbs',
           GALLERY_MEDIA_MOUNTED_ROOT: mediaRoot,
           GALLERY_ARTICLE_MEDIA_ROOT: mediaRoot + '/article-uploads',
+          GALLERY_CDN_DIRECTORY: service === 'public' ? cdnDirectory : '',
           BODY_SIZE_LIMIT: '12M',
           GALLERY_DESIGN_PREVIEW: '0',
           HOST: '127.0.0.1',
@@ -224,7 +234,8 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     const photoUrl = `${origins.public}/media/${created.id}/${content.photos[0]!.id}?variant=preview`;
     const image = await fetch(photoUrl);
     assert.equal(image.status, 200);
-    const metadata = await sharp(Buffer.from(await image.arrayBuffer())).metadata();
+    const imageBytes = Buffer.from(await image.arrayBuffer());
+    const metadata = await sharp(imageBytes).metadata();
     assert.equal(metadata.exif, undefined);
     assert.equal(metadata.format, 'jpeg');
     assert.equal(image.headers.get('content-type'), 'image/jpeg');
@@ -237,11 +248,19 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
       200,
     );
     assert.equal((await fetch(`${origins.public}/media/${created.id}/${randomUUID()}`)).status, 404);
+    await readyCdn(imageBytes);
+    const cdnImage = await fetch(photoUrl, { redirect: 'manual' });
+    assert.equal(cdnImage.status, 302);
+    assert.equal(cdnImage.headers.get('cache-control'), 'no-store');
+    assert.ok(cdnImage.headers.get('location')?.startsWith(cdnConfig.origin + '/gallery/v1/'));
     await api('availability', { ...(await version()), action: 'offline' });
     assert.equal((await fetch(url)).status, 404);
     assert.equal((await fetch(directUrl)).status, 404);
     assert.equal((await fetch(photoUrl)).status, 404);
     await api('availability', { ...(await version()), action: 'restore' });
+    assert.equal((await fetch(photoUrl, { redirect: 'manual' })).status, 302);
+    await disableCdn();
+    assert.equal((await fetch(photoUrl)).status, 200);
     assert.match(await fetch(url).then((r) => r.text()), /Published summary/);
     await stop(admin);
     await stop(pub);
@@ -410,7 +429,10 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal((await fetch(articleMediaUrl)).status, 404);
     articleResult = await (await api('article-publish', { id: articleId, version: articleVersion })).json();
     articleVersion = articleResult.version;
-    assert.equal((await fetch(articleMediaUrl)).status, 200);
+    const articleImage = await fetch(articleMediaUrl);
+    assert.equal(articleImage.status, 200);
+    await readyCdn(Buffer.from(await articleImage.arrayBuffer()));
+    assert.equal((await fetch(articleMediaUrl, { redirect: 'manual' })).status, 302);
     assert.match(
       await fetch(`${origins.public}/records/http-article`).then((r) => r.text()),
       /Public article body/,
@@ -440,6 +462,8 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     articleVersion = articleResult.version;
     assert.equal((await fetch(articleMediaUrl)).status, 404);
     articleResult = await (await api('article-publish', { id: articleId, version: articleVersion })).json();
+    assert.equal((await fetch(articleMediaUrl, { redirect: 'manual' })).status, 302);
+    await disableCdn();
     assert.equal((await fetch(articleMediaUrl)).status, 200);
     console.log(
       'Article HTTP: authenticated upload >512KB, drafts, optimistic conflict, publication, about binding and media revocation passed.',
