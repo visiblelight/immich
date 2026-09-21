@@ -17,6 +17,8 @@ export type ArticleImage = {
   alt: string;
   width?: number;
   height?: number;
+  items?: ArticleImage[];
+  caption?: string;
 };
 export type ArticleImageResolver = (node: ArticleNode) => ArticleImage | null;
 
@@ -46,6 +48,7 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
     'blockquote',
     'horizontalRule',
     'galleryImage',
+    'galleryImageGroup',
     'imagePlaceholder',
     'codeBlock',
     'taskList',
@@ -59,19 +62,21 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
     const valid =
       parent === 'root'
         ? type === 'doc'
-        : parent === 'codeBlock'
-          ? type === 'text'
-          : inline
-            ? ['text', 'hardBreak'].includes(type)
-            : ['bulletList', 'orderedList'].includes(parent)
-              ? type === 'listItem'
-              : parent === 'taskList'
-                ? type === 'taskItem'
-                : parent === 'table'
-                  ? type === 'tableRow'
-                  : parent === 'tableRow'
-                    ? ['tableCell', 'tableHeader'].includes(type)
-                    : block.has(type);
+        : parent === 'galleryImageGroup'
+          ? type === 'galleryImage'
+          : parent === 'codeBlock'
+            ? type === 'text'
+            : inline
+              ? ['text', 'hardBreak'].includes(type)
+              : ['bulletList', 'orderedList'].includes(parent)
+                ? type === 'listItem'
+                : parent === 'taskList'
+                  ? type === 'taskItem'
+                  : parent === 'table'
+                    ? type === 'tableRow'
+                    : parent === 'tableRow'
+                      ? ['tableCell', 'tableHeader'].includes(type)
+                      : block.has(type);
     if (!valid) throw new Error('文章包含不支持的内容');
     const out: ArticleNode = { type };
     if (type === 'text') {
@@ -127,6 +132,33 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
       if (!Number.isInteger(start) || Number(start) < 1 || Number(start) > 10000)
         throw new Error('列表序号无效');
       out.attrs = { start };
+    } else if (type === 'galleryImageGroup') {
+      const { kind, ref, album, caption = '' } = value.attrs ?? {};
+      if (
+        !['group', 'temporary'].includes(String(kind)) ||
+        typeof caption !== 'string' ||
+        caption.length > 10000
+      )
+        throw new Error('图片组格式无效');
+      if (
+        kind === 'group' &&
+        (typeof ref !== 'string' ||
+          !/^[a-zA-Z0-9-]{1,80}$/.test(ref) ||
+          typeof album !== 'string' ||
+          !/^[a-zA-Z0-9-]{1,80}$/.test(album) ||
+          value.content?.length)
+      )
+        throw new Error('照片组引用无效');
+      if (
+        kind === 'temporary' &&
+        (!Array.isArray(value.content) || value.content.length < 2 || value.content.length > 50)
+      )
+        throw new Error('临时图片组需要 2–50 张图片');
+      out.attrs = {
+        kind: String(kind),
+        caption,
+        ...(kind === 'group' ? { ref: String(ref), album: String(album) } : {}),
+      };
     } else if (type === 'galleryImage') {
       const { kind, ref, album } = value.attrs ?? {};
       if (
@@ -289,6 +321,36 @@ export function renderArticle(document: ArticleDocument, resolve: ArticleImageRe
     if (node.type === 'taskList') return `<ul data-type="taskList">${children()}</ul>`;
     if (node.type === 'taskItem')
       return `<li data-type="taskItem" data-checked="${node.attrs!.checked}"><span class="article-task-check" role="img" aria-label="${node.attrs!.checked ? '已完成' : '未完成'}">${node.attrs!.checked ? '☑' : '☐'}</span><div>${children()}</div></li>`;
+    if (node.type === 'galleryImageGroup') {
+      const resolved = node.attrs!.kind === 'group' ? resolve(node) : null;
+      const items =
+        node.attrs!.kind === 'group' ? (resolved?.items ?? []) : (node.content ?? []).map(resolve);
+      if (!items.length)
+        return '<figure><div class="article-image-unavailable">图片组暂不可用</div></figure>';
+      const start = image;
+      const slides = items
+        .map((item) => {
+          const index = image++;
+          return item && articleLink(item.src) && articleLink(item.preview)
+            ? `<button type="button" class="article-image" data-article-image="${index}" data-group-start="${start}" data-group-size="${items.length}" aria-label="沉浸查看：${escape(item.alt)}"><img src="${escape(item.src)}" alt="${escape(item.alt)}" loading="lazy" decoding="async"></button>`
+            : '<div class="article-image-unavailable">图片暂不可用</div>';
+        })
+        .join('');
+      // Source group descriptions belong to the gallery, not the article's narrative.
+      const caption = node.attrs!.caption ? escape(String(node.attrs!.caption)).replaceAll('\n', '<br>') : '';
+      const first = items.find((item) => item && item.width && item.height);
+      const ratio =
+        first &&
+        Number.isSafeInteger(first.width) &&
+        Number.isSafeInteger(first.height) &&
+        first.width! > 0 &&
+        first.height! > 0
+          ? `${first.width}/${first.height}`
+          : '3/2';
+      const arrow = (direction: number) =>
+        `<button type="button" class="article-media-control" data-carousel-step="${direction}" aria-label="图片组${direction < 0 ? '上一张' : '下一张'}" ${direction < 0 || items.length < 2 ? 'disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${direction < 0 ? 'm14 5-7 7 7 7' : 'm10 5 7 7-7 7'}"/></svg></button>`;
+      return `<figure class="article-carousel" aria-label="图片组"><div class="article-media-stage"><div class="article-carousel-track" style="aspect-ratio:${ratio}" tabindex="0" role="region" aria-label="图片组，可用左右方向键切换">${slides}</div>${items.length > 1 ? arrow(-1) + arrow(1) : ''}</div>${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`;
+    }
     if (node.type === 'galleryImage') {
       const resolved = resolve(node);
       const index = image++;
@@ -337,7 +399,9 @@ export interface ManagedArticle extends ArticleContent {
 export interface ArticleMediaOption extends ArticleImage {
   id: string;
   ref: string;
-  kind: 'photo' | 'upload';
+  kind: 'photo' | 'upload' | 'group';
+  hidden?: boolean;
+  items?: ArticleMediaOption[];
   album?: string;
   albumTitle?: string;
   usage?: number;
@@ -353,5 +417,34 @@ export function articleImages(content: ArticleContent): { key: string; node: Art
   }
   visit(content.document.doc, 'body');
   if (content.cover) result.push({ key: 'cover', node: content.cover });
+  return result;
+}
+
+/** Direct group refs are resolved against the source album's current published version. */
+export function articleGroups(content: ArticleContent): { key: string; node: ArticleNode }[] {
+  const result: { key: string; node: ArticleNode }[] = [];
+  function visit(node: ArticleNode, key: string) {
+    if (node.type === 'galleryImageGroup' && node.attrs?.kind === 'group') result.push({ key, node });
+    node.content?.forEach((child, index) => visit(child, `${key}.${index}`));
+  }
+  visit(content.document.doc, 'body');
+  return result;
+}
+
+/** Shares traversal order with renderArticle, including unavailable slots. */
+export function articleDisplayImages(
+  document: ArticleDocument,
+  resolve: ArticleImageResolver,
+): (ArticleImage | null)[] {
+  const result: (ArticleImage | null)[] = [];
+  function visit(node: ArticleNode) {
+    if (node.type === 'galleryImageGroup' && node.attrs?.kind === 'group') {
+      result.push(...(resolve(node)?.items ?? []));
+      return;
+    }
+    if (node.type === 'galleryImage') result.push(resolve(node));
+    else node.content?.forEach(visit);
+  }
+  visit(document.doc);
   return result;
 }

@@ -720,6 +720,7 @@ export async function picker(db: Db, filters: URLSearchParams) {
         alt: p.alt_text,
         tags: p.tags,
         photoVersion: p.version,
+        hiddenFromGallery: p.hidden_from_gallery,
       };
   }
   return {

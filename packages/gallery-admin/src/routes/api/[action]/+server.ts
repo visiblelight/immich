@@ -99,7 +99,11 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
       return json(
         await articleMediaOptions(
           app.db,
-          url.searchParams.get('kind') === 'upload' ? 'upload' : 'photo',
+          url.searchParams.get('kind') === 'group'
+            ? 'group'
+            : url.searchParams.get('kind') === 'upload'
+              ? 'upload'
+              : 'photo',
           url.searchParams.get('q') ?? '',
           url.searchParams.get('album') ?? '',
           Number(url.searchParams.get('page') ?? 1),

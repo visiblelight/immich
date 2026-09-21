@@ -228,3 +228,83 @@ test('H4 survives validation and has its own stable outline anchor', () => {
   );
   assert.throws(() => validateArticleDocument(doc({ type: 'heading', attrs: { level: 5 } })));
 });
+
+test('article groups validate mixed references, reject nesting, and keep carousel/viewer order', async () => {
+  const { articleDisplayImages, articleGroups, articleImages } =
+    await import('../../gallery-core/src/article.ts');
+  const photo: ArticleNode = {
+    type: 'galleryImage',
+    attrs: { kind: 'photo', ref: 'photo-1', album: 'album-1' },
+  };
+  const upload: ArticleNode = { type: 'galleryImage', attrs: { kind: 'upload', ref: 'upload-1' } };
+  const group: ArticleNode = {
+    type: 'galleryImageGroup',
+    attrs: { kind: 'group', ref: 'group-1', album: 'album-1', caption: '<script> & caption' },
+  };
+  const temporary: ArticleNode = {
+    type: 'galleryImageGroup',
+    attrs: { kind: 'temporary', caption: 'Mixed' },
+    content: [photo, upload],
+  };
+  const document = validateArticleDocument(doc(photo, group, temporary));
+  const resolved = { src: '/media/allowed', preview: '/media/allowed?variant=preview', alt: 'Safe' };
+  const resolve = (node: ArticleNode) =>
+    node.type === 'galleryImageGroup'
+      ? { ...resolved, items: [resolved, resolved, resolved] }
+      : node.attrs?.kind === 'upload'
+        ? null
+        : resolved;
+  const html = renderArticle(document, resolve);
+  assert.match(html, /data-group-start="1" data-group-size="3"/);
+  assert.match(html, /data-group-start="4" data-group-size="2"/);
+  assert.match(html, /&lt;script&gt; &amp; caption/);
+  assert.equal(articleDisplayImages(document, resolve).length, 6);
+  assert.equal(articleDisplayImages(document, resolve)[5], null);
+  const content = {
+    title: '',
+    summary: '',
+    date: '2026-09-21',
+    document,
+    cover: null,
+    listed: true,
+    albums: [],
+  };
+  assert.equal(articleGroups(content).length, 1);
+  assert.equal(articleImages(content).length, 3);
+  for (const invalid of [
+    { ...temporary, content: [photo] },
+    { ...temporary, content: [photo, group] },
+    { ...temporary, content: Array.from({ length: 51 }, () => photo) },
+    { ...group, content: [photo] },
+    { ...group, attrs: { kind: 'group', ref: 'g' } },
+  ])
+    assert.throws(() => validateArticleDocument(doc(invalid)));
+});
+
+test('article groups show only article captions, without inherited headings, separators or a counter', () => {
+  const group: ArticleNode = {
+    type: 'galleryImageGroup',
+    attrs: { kind: 'group', ref: 'group-1', album: 'album-1' },
+  };
+  const image = {
+    src: '/media/photo',
+    preview: '/media/photo?variant=preview',
+    alt: 'Church',
+    width: 4000,
+    height: 3000,
+  };
+  const resolve = () => ({
+    ...image,
+    items: [image, image],
+    caption: '## Source title\n\n---\n\nSource description',
+  });
+  const html = renderArticle(doc(group), resolve);
+  assert.doesNotMatch(html, /Source title|Source description|<hr|<h2|<figcaption|data-carousel-count|1 \/ 2/);
+  assert.match(html, /aspect-ratio:4000\/3000/);
+  assert.match(html, /aria-label="图片组下一张"/);
+  const captioned = renderArticle(
+    doc({ ...group, attrs: { ...group.attrs, caption: 'Article <caption>' } }),
+    resolve,
+  );
+  assert.match(captioned, /<figcaption>Article &lt;caption&gt;<\/figcaption>/);
+});

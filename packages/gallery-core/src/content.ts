@@ -10,6 +10,7 @@ export interface PhotoGroup {
 export type PhotoTag = { id: string; name: string };
 export interface DraftPhoto {
   photoVersion?: string;
+  hiddenFromGallery?: boolean;
   tags?: string[];
   group?: string;
   id: string;
@@ -60,7 +61,7 @@ export interface GalleryUser {
   displayName: string;
 }
 export interface SourcePhoto {
-  galleryPhoto?: Pick<DraftPhoto, 'title' | 'description' | 'alt' | 'tags' | 'photoVersion'>;
+  galleryPhoto?: Pick<DraftPhoto, 'title' | 'description' | 'alt' | 'tags' | 'photoVersion' | 'hiddenFromGallery'>;
   id: string;
   filename: string;
   width: number | null;
@@ -151,7 +152,9 @@ export function validateContent(input: unknown): AlbumContent {
     ensure(!!p && typeof p === 'object', '照片格式无效。');
     const photo = p as Record<string, unknown>;
     ensure(['inherit', 'hidden', 'approximate', 'exact'].includes(String(photo.location)), '照片位置策略无效。');
+    ensure(photo.hiddenFromGallery === undefined || typeof photo.hiddenFromGallery === 'boolean', '照片展示范围无效。');
     return {
+      hiddenFromGallery: photo.hiddenFromGallery === true,
       photoVersion: photo.photoVersion === undefined ? undefined : text(photo.photoVersion, 30, '照片版本'),
       tags: validateTagIds(photo.tags ?? []),
       group: photo.group ? uuid(photo.group) : '',

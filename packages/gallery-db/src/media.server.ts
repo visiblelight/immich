@@ -166,7 +166,13 @@ export async function readPublishedDerivative(
     FROM gallery.published_media WHERE album_id = ${albumId}::uuid AND photo_id = ${photoId}::uuid`.execute(
     db,
   );
-  const media = rows[0];
+  return readAuthorizedDerivative(rows[0], variant, root);
+}
+async function readAuthorizedDerivative(
+  media: MediaRow | undefined,
+  variant: MediaVariant,
+  root: MediaRoot,
+): Promise<{ bytes: Buffer; sourceVersion: string }> {
   if (!media) throw new Error('Media unavailable');
   const filePath = await resolveDerivedPath(media[`${variant}_path`], root);
   const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -188,4 +194,21 @@ export async function readPublishedDerivative(
   } finally {
     await file.close();
   }
+}
+
+/** Hidden works require a current published article reference, never just a known asset ID. */
+export async function readArticlePhotoDerivative(
+  db: Kysely<unknown>,
+  articleId: string,
+  albumId: string,
+  assetId: string,
+  variant: MediaVariant,
+  root: MediaRoot,
+) {
+  if (variant !== 'preview' && variant !== 'thumbnail') throw new Error('Media unavailable');
+  const { rows } =
+    await sql<MediaRow>`SELECT * FROM gallery.published_article_photo_media WHERE article_id=${articleId}::uuid AND album_id=${albumId}::uuid AND asset_id=${assetId}::uuid LIMIT 1`.execute(
+      db,
+    );
+  return readAuthorizedDerivative(rows[0], variant, root);
 }

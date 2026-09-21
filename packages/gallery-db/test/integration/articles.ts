@@ -29,6 +29,9 @@ import {
   publishAlbum,
   setAlbumAvailability,
   relatedArticles,
+  readArticlePhotoDerivative,
+  readPublishedDerivative,
+  publicPhotoFeed,
 } from '../../src/index.server.ts';
 import { articleImageKey, type ArticleNode } from '../../../gallery-core/src/article.ts';
 export async function articles(
@@ -38,6 +41,7 @@ export async function articles(
   userId: string,
   asset: string,
   mediaRoot: string,
+  otherAsset: string,
 ) {
   const user = {
     id: userId,
@@ -64,7 +68,13 @@ export async function articles(
     assert.equal(meta.format, 'webp');
     await assert.rejects(readArticleMedia(pub, dir, upload.id, 'preview', randomUUID()));
     await assert.rejects(
-      uploadArticleMedia(db, user, dir, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), 'x.svg'),
+      uploadArticleMedia(
+        db,
+        user,
+        dir,
+        Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+        'x.svg',
+      ),
     );
     await assert.rejects(sql`SELECT * FROM gallery.article`.execute(pub));
     const id = await createArticle(db, user);
@@ -178,7 +188,9 @@ export async function articles(
     await assert.rejects(
       sql`UPDATE gallery.article_release SET content='{}'::jsonb WHERE id=${release}::uuid`.execute(db),
     );
-    await assert.rejects(sql`DELETE FROM gallery.article_media_ref WHERE release_id=${release}::uuid`.execute(db));
+    await assert.rejects(
+      sql`DELETE FROM gallery.article_media_ref WHERE release_id=${release}::uuid`.execute(db),
+    );
     const stale = structuredClone(a);
     a.title = 'Unpublished title';
     a = await saveArticle(db, user, {
@@ -239,7 +251,8 @@ export async function articles(
     second = await publishArticle(db, user, { id: id2, version: second.version }, root, dir);
     await assert.rejects(readArticleMedia(pub, dir, upload.id, 'preview', id2));
     // Source photos retain their explicitly selected album context.
-    for (const v of ['preview', 'thumbnail']) await writeFile(path.join(mediaRoot, `${asset}-${v}.jpg`), bytes);
+    for (const v of ['preview', 'thumbnail'])
+      await writeFile(path.join(mediaRoot, `${asset}-${v}.jpg`), bytes);
     const album = await createAlbum(db, user, {
       title: 'Article source',
       treeVersion: (await adminState(db)).site.treeVersion,
@@ -289,8 +302,145 @@ export async function articles(
     second = await publishArticle(db, user, { id: id2, version: second.version }, root, dir);
     assert.ok((await publicArticle(pub, second.slug)).images[articleImageKey(photo)]);
     assert.ok((await relatedArticles(pub, album)).some((a) => a.slug === second.slug));
+    // Hidden works retain album membership and shared metadata, but only article context grants bytes.
+    await assert.rejects(sql`SELECT * FROM gallery.article_source_photo`.execute(pub));
+    await assert.rejects(sql`SELECT * FROM gallery.article_source_group`.execute(pub));
+    sa = await albumState();
+    const photoId = sa.row.draft.photos[0]!.id;
+    sa.row.draft.photos[0]!.hiddenFromGallery = true;
+    sa.row.draft.cover = asset;
+    await saveAlbum(db, user, album, { ...sa.v, content: sa.row.draft });
+    assert.ok(
+      (await readPublishedDerivative(pub, album, photoId, 'preview', root)).bytes.length,
+      'draft visibility does not alter public release',
+    );
+    await publishAlbum(db, user, album, (await albumState()).v, root);
+    await assert.rejects(readPublishedDerivative(pub, album, photoId, 'preview', root));
+    const hiddenCatalog = await publicCatalog(pub, (await albumState()).row.draft.slug);
+    assert.equal(hiddenCatalog.active!.photos.length, 0);
+    assert.equal(hiddenCatalog.active!.cover, null);
+    assert.ok(!(await publicPhotoFeed(pub)).photos.some((p) => p.albumId === album));
+    assert.equal(
+      (await sql`SELECT 1 FROM gallery.published_photo WHERE asset_id=${asset}::uuid`.execute(pub)).rows
+        .length,
+      0,
+    );
+    assert.ok((await readArticlePhotoDerivative(pub, id2, album, asset, 'preview', root)).bytes.length);
+    await assert.rejects(readArticlePhotoDerivative(pub, randomUUID(), album, asset, 'preview', root));
+    const picker = await articleMediaOptions(db, 'photo', '', album);
+    assert.equal(picker.items[0]!.hidden, true);
+    assert.equal((await albumState()).row.draft.photos.length, 1);
+    // The same work in a second album retains hidden status, never broadens the public grant.
+    const otherAlbum = await createAlbum(db, user, {
+      title: 'Other context',
+      treeVersion: (await adminState(db)).site.treeVersion,
+    });
+    let all = await adminState(db),
+      other = all.albums.find((a) => a.id === otherAlbum)!;
+    other.draft.photos = [{ ...(await albumState()).row.draft.photos[0]!, id: randomUUID() }];
+    await saveAlbum(db, user, otherAlbum, {
+      version: other.version,
+      draftVersion: other.draftVersion,
+      treeVersion: all.site.treeVersion,
+      content: other.draft,
+    });
+    all = await adminState(db);
+    other = all.albums.find((a) => a.id === otherAlbum)!;
+    await publishAlbum(
+      db,
+      user,
+      otherAlbum,
+      { version: other.version, draftVersion: other.draftVersion, treeVersion: all.site.treeVersion },
+      root,
+    );
+    await assert.rejects(readArticlePhotoDerivative(pub, id2, otherAlbum, asset, 'preview', root));
+    assert.equal((await publicCatalog(pub, other.draft.slug)).active!.photos.length, 0);
+    // Published Gallery group references stay live; temporary groups keep article-local membership.
+    for (const variant of ['preview', 'thumbnail'])
+      await writeFile(path.join(mediaRoot, `${otherAsset}-${variant}.jpg`), bytes);
+    sa = await albumState();
+    const groupId = randomUUID();
+    sa.row.draft.photos[0]!.group = groupId;
+    sa.row.draft.photos.push({
+      id: randomUUID(),
+      asset: otherAsset,
+      title: 'Second view',
+      description: 'Different angle',
+      alt: 'Second',
+      location: 'inherit',
+      group: groupId,
+      tags: [],
+    });
+    sa.row.draft.groups = [
+      { id: groupId, title: 'Referenced group', description: 'Shared group caption', cover: photoId },
+    ];
+    await saveAlbum(db, user, album, { ...sa.v, content: sa.row.draft });
+    await publishAlbum(db, user, album, (await albumState()).v, root);
+    const live: ArticleNode = { type: 'galleryImageGroup', attrs: { kind: 'group', ref: groupId, album } };
+    const temporary: ArticleNode = {
+      type: 'galleryImageGroup',
+      attrs: { kind: 'temporary', caption: 'Article-only' },
+      content: [photo, { type: 'galleryImage', attrs: { kind: 'upload', ref: upload.id } }],
+    };
+    second.document.doc.content = [text('Travel'), live, temporary];
+    second = await saveArticle(db, user, {
+      id: id2,
+      version: second.version,
+      slug: second.slug,
+      content: second,
+    });
+    await assert.rejects(
+      readArticlePhotoDerivative(pub, id2, album, otherAsset, 'preview', root),
+      'draft group does not grant a newly selected member',
+    );
+    second = await publishArticle(db, user, { id: id2, version: second.version }, root, dir);
+    let shown = await publicArticle(pub, second.slug);
+    assert.equal(shown.images[articleImageKey(live)]!.items!.length, 2);
+    assert.equal(shown.images[articleImageKey(live)]!.caption, 'Shared group caption');
+    assert.ok((await readArticlePhotoDerivative(pub, id2, album, otherAsset, 'preview', root)).bytes.length);
+    assert.ok((await readArticleMedia(pub, dir, upload.id, 'preview', id2)).length);
+    assert.equal((await articleMediaOptions(db, 'group', '', album)).items[0]!.items!.length, 2);
+    const groupRelease = (
+      await sql<any>`SELECT current_release_id FROM gallery.article WHERE id=${id2}::uuid`.execute(db)
+    ).rows[0]!.current_release_id;
+    await assert.rejects(
+      sql`DELETE FROM gallery.article_group_ref WHERE release_id=${groupRelease}::uuid`.execute(db),
+    );
+    sa = await albumState();
+    sa.row.draft.groups![0]!.description = 'Updated group caption';
+    sa.row.draft.photos.reverse();
+    await saveAlbum(db, user, album, { ...sa.v, content: sa.row.draft });
+    assert.equal(
+      (await publicArticle(pub, second.slug)).images[articleImageKey(live)]!.caption,
+      'Shared group caption',
+    );
+    await publishAlbum(db, user, album, (await albumState()).v, root);
+    shown = await publicArticle(pub, second.slug);
+    assert.equal(shown.images[articleImageKey(live)]!.caption, 'Updated group caption');
+    assert.equal(shown.images[articleImageKey(live)]!.items![0]!.ref, otherAsset);
+    // Removing the live source group revokes its members; independently referenced hidden photo remains valid.
+    sa = await albumState();
+    sa.row.draft.groups = [];
+    for (const p of sa.row.draft.photos) p.group = '';
+    await saveAlbum(db, user, album, { ...sa.v, content: sa.row.draft });
+    await publishAlbum(db, user, album, (await albumState()).v, root);
+    assert.equal((await publicArticle(pub, second.slug)).images[articleImageKey(live)], undefined);
+    await assert.rejects(readArticlePhotoDerivative(pub, id2, album, otherAsset, 'preview', root));
+    assert.ok((await readArticlePhotoDerivative(pub, id2, album, asset, 'preview', root)).bytes.length);
+    // Remove the historical temporary reference and prove it no longer authorizes bytes.
+    second.document.doc.content = [text('Travel'), photo];
+    second = await saveArticle(db, user, {
+      id: id2,
+      version: second.version,
+      slug: second.slug,
+      content: second,
+    });
+    second = await publishArticle(db, user, { id: id2, version: second.version }, root, dir);
+    await assert.rejects(readArticleMedia(pub, dir, upload.id, 'preview', id2));
     sa = await albumState();
     await setAlbumAvailability(db, user, album, { ...sa.v, action: 'offline' });
+    await assert.rejects(readArticlePhotoDerivative(pub, id2, album, asset, 'preview', root));
+
     assert.equal((await publicArticle(pub, second.slug)).images[articleImageKey(photo)], undefined);
     await assert.rejects(publishArticle(db, user, { id: id2, version: second.version }, root, dir));
     // Filesystem safety and unused upload cleanup.

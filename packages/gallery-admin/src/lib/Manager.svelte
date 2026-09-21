@@ -325,7 +325,7 @@
           ...(a.galleryPhoto ?? {}),
         });
     }
-    if (!content.cover) content.cover = content.photos[0]?.asset ?? '';
+    if (!content.cover) content.cover = content.photos.find((p) => !p.hiddenFromGallery)?.asset ?? '';
     close();
     message = `已加入 ${selected.length} 张照片，请保存草稿。`;
   }
@@ -640,10 +640,10 @@
                 ></label
               ><label
                 >封面照片<select bind:value={content.cover}
-                  ><option value="">暂不设置封面</option>{#each content.photos as p, index}<option value={p.asset}
-                      >{p.title || `本册照片 ${index + 1}`}</option
+                  ><option value="">暂不设置封面</option>{#each content.photos as p, index}<option value={p.asset} disabled={p.hiddenFromGallery}
+                      >{p.title || `本册照片 ${index + 1}`}{p.hiddenFromGallery ? '（仅文章可见）' : ''}</option
                     >{/each}{#each workspaceData.albums.filter((a) => a.visible && below(a, id, true)) as child}{#each child.draft.photos.filter((p) => !content!.photos.some((q) => q.asset === p.asset)) as p}<option
-                        value={p.asset}>{child.draft.title} / {p.title || '照片'}（发布时校验）</option
+                        value={p.asset} disabled={p.hiddenFromGallery}>{child.draft.title} / {p.title || '照片'}{p.hiddenFromGallery ? '（仅文章可见）' : '（发布时校验）'}</option
                       >{/each}{/each}</select
                 ></label
               ><label
@@ -964,6 +964,12 @@
             maxLength={50000}
             filename="photo.md"
           />
+          <label class="visibility-choice"
+            ><input type="checkbox" bind:checked={edited.hiddenFromGallery} />仅在文章引用时展示</label
+          >
+          <p class="hint">
+            保留在后台相册中；发布后从所有公开相册、相片、地图和照片标签中隐藏。文章引用仍可展示。
+          </p>
           <TagPicker bind:value={edited.tags} tags={workspaceData.tags ?? []} {createTag} />
           <details>
             <summary>高级设置</summary><label
@@ -1033,6 +1039,14 @@
 </dialog>
 
 <style>
+  .visibility-choice {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+  }
+  .visibility-choice input {
+    width: auto !important;
+  }
   .live-workspace {
     min-height: 100dvh;
   }

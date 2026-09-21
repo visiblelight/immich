@@ -21,12 +21,20 @@ async function port() {
 export async function httpWorkflow(asset: string, mediaRoot: string) {
   const cdnDirectory = mediaRoot + '/cdn-test';
   await mkdir(cdnDirectory);
-  const cdnConfig = { enabled: true, origin: 'https://cdn.example.invalid', signingKey: 'SyntheticTestKey00000000000000000' };
+  const cdnConfig = {
+    enabled: true,
+    origin: 'https://cdn.example.invalid',
+    signingKey: 'SyntheticTestKey00000000000000000',
+  };
   async function readyCdn(bytes: Buffer) {
     await writeFile(cdnDirectory + '/config.json', JSON.stringify(cdnConfig));
-    await writeFile(cdnDirectory + '/ready.json', JSON.stringify({ version: 1, checkedAt: Date.now(), objects: { [cdnObjectKey(bytes)]: true } }));
+    await writeFile(
+      cdnDirectory + '/ready.json',
+      JSON.stringify({ version: 1, checkedAt: Date.now(), objects: { [cdnObjectKey(bytes)]: true } }),
+    );
   }
-  const disableCdn = () => writeFile(cdnDirectory + '/config.json', JSON.stringify({ ...cdnConfig, enabled: false }));
+  const disableCdn = () =>
+    writeFile(cdnDirectory + '/config.json', JSON.stringify({ ...cdnConfig, enabled: false }));
   const config = JSON.parse(await readFile(process.env.GALLERY_TEST_CONFIG!, 'utf8')) as {
     ownerUrl: string;
     passwords: Record<string, string>;
@@ -358,7 +366,10 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
         content: articleContent,
       })
     ).json();
-    assert.ok(Number.isFinite(Date.parse(articleResult.updatedAt)), 'save response contains persisted timestamp');
+    assert.ok(
+      Number.isFinite(Date.parse(articleResult.updatedAt)),
+      'save response contains persisted timestamp',
+    );
     const previewUrl = `${origins.admin}/articles/${articleId}/preview`;
     assert.equal((await fetch(previewUrl, { redirect: 'manual' })).status, 303);
     const draftPreview = await fetch(previewUrl, { headers: { cookie } });
@@ -412,6 +423,17 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
           content: [
             ...articleContent.document.doc.content,
             { type: 'galleryImage', attrs: { kind: 'upload', ref: material.id }, content: [] },
+            {
+              type: 'galleryImageGroup',
+              attrs: { kind: 'temporary', caption: 'Mixed article group' },
+              content: [
+                {
+                  type: 'galleryImage',
+                  attrs: { kind: 'photo', ref: large.photos[0]!.asset, album: created.id },
+                },
+                { type: 'galleryImage', attrs: { kind: 'upload', ref: material.id } },
+              ],
+            },
           ],
         },
       },
@@ -429,6 +451,31 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal((await fetch(articleMediaUrl)).status, 404);
     articleResult = await (await api('article-publish', { id: articleId, version: articleVersion })).json();
     articleVersion = articleResult.version;
+    const hiddenUrl = `${origins.public}/media/article-photos/${articleId}/${created.id}/${large.photos[0]!.asset}?variant=preview`;
+    const hiddenState = await (await api('state')).json();
+    const hiddenAlbum = hiddenState.albums.find((a: any) => a.id === created.id);
+    hiddenAlbum.draft.photos[0].hiddenFromGallery = true;
+    await api('item', {
+      ...(await version()),
+      content: hiddenAlbum.draft,
+      target: hiddenAlbum.draft.photos[0].id,
+      publish: true,
+    });
+    assert.equal((await fetch(mediaUrls[0]!, { redirect: 'manual' })).status, 404);
+    assert.equal((await fetch(hiddenUrl)).status, 200);
+    assert.equal((await fetch(hiddenUrl.replace(articleId, randomUUID()))).status, 404);
+    const hiddenBytes = Buffer.from(await (await fetch(hiddenUrl)).arrayBuffer());
+    await readyCdn(hiddenBytes);
+    assert.equal((await fetch(hiddenUrl, { redirect: 'manual' })).status, 302);
+    assert.equal(
+      (await fetch(mediaUrls[0]!, { redirect: 'manual' })).status,
+      404,
+      'warm CDN cannot broaden hidden photo access',
+    );
+    assert.match(
+      await fetch(`${origins.public}/records/http-article`).then((r) => r.text()),
+      /article-carousel-track/,
+    );
     const articleImage = await fetch(articleMediaUrl);
     assert.equal(articleImage.status, 200);
     await readyCdn(Buffer.from(await articleImage.arrayBuffer()));
@@ -461,6 +508,7 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     articleResult = await (await api('article-offline', { id: articleId, version: articleVersion })).json();
     articleVersion = articleResult.version;
     assert.equal((await fetch(articleMediaUrl)).status, 404);
+    assert.equal((await fetch(hiddenUrl, { redirect: 'manual' })).status, 404);
     articleResult = await (await api('article-publish', { id: articleId, version: articleVersion })).json();
     assert.equal((await fetch(articleMediaUrl, { redirect: 'manual' })).status, 302);
     await disableCdn();

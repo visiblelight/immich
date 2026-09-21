@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     articleHeadings,
+    articleDisplayImages,
     articleTime,
     articleText,
     renderArticle,
@@ -57,28 +58,48 @@
   let active = $state(false);
   const headings = $derived(articleHeadings(document));
   const html = $derived(renderArticle(document, resolveImage));
-  const images = $derived.by(() => {
-    const nodes: ArticleNode[] = [];
-    const visit = (node: ArticleNode) => {
-      if (node.type === 'galleryImage') nodes.push(node);
-      node.content?.forEach(visit);
-    };
-    visit(document.doc);
-    return nodes.map(resolveImage);
-  });
+  const images = $derived(articleDisplayImages(document, resolveImage));
+  let rangeStart = $state(0);
+  let rangeEnd = $state(0);
+  function carouselState(track: HTMLElement) {
+    const index = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+    const figure = track.closest('.article-carousel')!;
+    const count = track.children.length;
+    const previous = figure.querySelector<HTMLButtonElement>('[data-carousel-step="-1"]');
+    const next = figure.querySelector<HTMLButtonElement>('[data-carousel-step="1"]');
+    if (previous) previous.disabled = index === 0;
+    if (next) next.disabled = index >= count - 1;
+  }
+  function scrollCarousel(track: HTMLElement, direction: number) {
+    const index = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+    track.scrollTo({
+      left: (index + direction) * track.clientWidth,
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
+  }
   const minutes = $derived(Math.max(1, Math.ceil(articleText(document.doc).length / 350)));
   function openImage(event: MouseEvent) {
+    const step = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-carousel-step]');
+    if (step) {
+      scrollCarousel(
+        step.closest('.article-carousel')!.querySelector('.article-carousel-track')!,
+        Number(step.dataset.carouselStep),
+      );
+      return;
+    }
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-article-image]');
     if (button) {
       current = Number(button.dataset.articleImage);
+      rangeStart = Number(button.dataset.groupStart ?? 0);
+      rangeEnd = button.dataset.groupSize ? rangeStart + Number(button.dataset.groupSize) : images.length;
       dialog.showModal();
       active = true;
     }
   }
   function move(direction: number) {
     let next = current + direction;
-    while (next >= 0 && next < images.length && !images[next]) next += direction;
-    if (next >= 0 && next < images.length) current = next;
+    while (next >= rangeStart && next < rangeEnd && !images[next]) next += direction;
+    if (next >= rangeStart && next < rangeEnd) current = next;
   }
 </script>
 
@@ -103,8 +124,9 @@
         {#if firstPublishedAt}<time datetime={firstPublishedAt} title="北京时间 UTC+8"
             >发布于 {articleTime(firstPublishedAt)}</time
           ><span>·</span>
-          {#if publishedAt && publishedAt !== firstPublishedAt}<time datetime={publishedAt} title="北京时间 UTC+8"
-              >更新于 {articleTime(publishedAt)}</time
+          {#if publishedAt && publishedAt !== firstPublishedAt}<time
+              datetime={publishedAt}
+              title="北京时间 UTC+8">更新于 {articleTime(publishedAt)}</time
             ><span>·</span>{/if}
         {:else if date}<time datetime={date}>{date.replaceAll('-', '.')}</time><span>·</span>{/if}约 {minutes} 分钟
       </p>
@@ -112,27 +134,48 @@
     {#if headings.length}<details class="mobile-toc">
         <summary>文章目录</summary>
         <nav aria-label="文章目录">
-          {#each headings as item}<a class:sub={item.level === 3} class:deep={item.level === 4} href={'#' + item.id}
-              >{item.text}</a
+          {#each headings as item}<a
+              class:sub={item.level === 3}
+              class:deep={item.level === 4}
+              href={'#' + item.id}>{item.text}</a
             >{/each}
         </nav>
       </details>{/if}
     <!-- Buttons in the sanitized renderer are keyboard-accessible; clicks bubble here. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="article-prose" onclick={openImage}>{@html html}</div>
+    <div
+      class="article-prose"
+      onclick={openImage}
+      onscrollcapture={(e) => {
+        const target = e.target as HTMLElement;
+        if (target.matches('.article-carousel-track')) carouselState(target);
+      }}
+      onkeydown={(e) => {
+        const track = (e.target as HTMLElement).closest<HTMLElement>('.article-carousel-track');
+        if (track && ['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+          e.preventDefault();
+          scrollCarousel(track, e.key === 'ArrowRight' ? 1 : -1);
+        }
+      }}
+    >
+      {@html html}
+    </div>
     {#if related.length}<footer>
         <span>相关相册</span>
         <div>
-          {#each related as album}<a href={album.href}>{album.title} <span aria-hidden="true">↗</span></a>{/each}
+          {#each related as album}<a href={album.href}>{album.title} <span aria-hidden="true">↗</span></a
+            >{/each}
         </div>
       </footer>{/if}
   </article>
   {#if headings.length}<aside class="desktop-toc">
       <span>本文目录</span>
       <nav aria-label="文章目录">
-        {#each headings as item}<a class:sub={item.level === 3} class:deep={item.level === 4} href={'#' + item.id}
-            >{item.text}</a
+        {#each headings as item}<a
+            class:sub={item.level === 3}
+            class:deep={item.level === 4}
+            href={'#' + item.id}>{item.text}</a
           >{/each}
       </nav>
     </aside>{/if}
@@ -160,23 +203,26 @@
     ></button>{:else}<div class="viewer-tools">
       <button
         onclick={() => move(-1)}
-        disabled={!images.slice(0, current).some(Boolean)}
+        disabled={!images.slice(rangeStart, current).some(Boolean)}
         aria-label="上一张"
         title="上一张"><Icon name="left" /></button
       >
-      <span>{current + 1} / {images.length}</span>
+      <span>{current - rangeStart + 1} / {rangeEnd - rangeStart}</span>
       <button
         onclick={() => move(1)}
-        disabled={!images.slice(current + 1).some(Boolean)}
+        disabled={!images.slice(current + 1, rangeEnd).some(Boolean)}
         aria-label="下一张"
         title="下一张"><Icon name="right" /></button
       >
-      <button onclick={() => focusImage(true)} aria-label="全屏欣赏" title="全屏欣赏"><Icon name="fullscreen" /></button
+      <button onclick={() => focusImage(true)} aria-label="全屏欣赏" title="全屏欣赏"
+        ><Icon name="fullscreen" /></button
       >
       <button onclick={copyLink} aria-label="复制文章链接" title={copied ? '链接已复制' : '复制文章链接'}
         ><Icon name="copy" /></button
       >
-      <button onclick={() => dialog.close()} aria-label="关闭图片" title="关闭（Esc）"><Icon name="close" /></button>
+      <button onclick={() => dialog.close()} aria-label="关闭图片" title="关闭（Esc）"
+        ><Icon name="close" /></button
+      >
       <span class="sr-status" role="status">{copied ? '链接已复制' : ''}</span>
     </div>{/if}
 </dialog>

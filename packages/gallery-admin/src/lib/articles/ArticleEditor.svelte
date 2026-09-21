@@ -39,13 +39,66 @@
   let modal: HTMLDialogElement;
   let editor = $state<RichTextEditor>();
   let coverMode = $state(false);
-  let kind = $state<'photo' | 'upload'>('photo');
+  let kind = $state<'photo' | 'upload' | 'group'>('photo');
   let query = $state('');
   let album = $state('');
   let mediaPage = $state(1);
   let more = $state(false);
   let options = $state<ArticleMediaOption[]>([]);
   let selected = $state<string[]>([]);
+  let pickerOpen = $state(false);
+  let groupMode = $state(false);
+  let groupCaption = $state('');
+  let editPosition = $state<number | null>(null);
+  let originalNodes: Record<string, ArticleNode> = {};
+  let optionCache = $state<Record<string, ArticleMediaOption>>({});
+  let dragged = '';
+  const picked = $derived(selected.map((id) => optionCache[id]).filter((p): p is ArticleMediaOption => !!p));
+  function reorder(from: number, to: number) {
+    if (from < 0 || to < 0 || to >= selected.length) return;
+    const next = [...selected];
+    next.splice(to, 0, next.splice(from, 1)[0]!);
+    selected = next;
+  }
+  function editGroup(value: ArticleNode, position: number) {
+    coverMode = false;
+    editPosition = position;
+    groupMode = value.attrs?.kind === 'temporary';
+    groupCaption = String(value.attrs?.caption ?? '');
+    originalNodes = {};
+    selected = [];
+    if (groupMode) {
+      for (const child of value.content ?? []) {
+        const item = resolve(child);
+        // Keep unavailable references visible so opening a group never drops content silently.
+        const p = item ?? {
+          id: articleImageKey(child),
+          ref: String(child.attrs!.ref),
+          album: child.attrs?.album ? String(child.attrs.album) : undefined,
+          kind: child.attrs!.kind as 'photo' | 'upload',
+          title: '图片暂不可用',
+          alt: '图片暂不可用',
+          src: '',
+          preview: '',
+        };
+        optionCache[p.id] = p;
+        originalNodes[p.id] = child;
+        selected.push(p.id);
+      }
+      kind = 'photo';
+    } else {
+      const p = resolve(value);
+      if (p) {
+        optionCache[p.id] = p;
+        selected = [p.id];
+      }
+      kind = 'group';
+    }
+    pickerOpen = true;
+    mediaPage = 1;
+    modal.showModal();
+    void loadMedia();
+  }
   let loading = $state(false);
   let uploading = $state(false);
   let pickerError = $state('');
@@ -193,20 +246,22 @@
           new URLSearchParams({
             kind,
             q: query,
-            album: kind === 'photo' ? album : '',
+            album: kind !== 'upload' ? album : '',
             page: String(mediaPage),
           }),
       );
       if (id !== requestId) return;
       options = result.items;
       more = result.more;
-      for (const p of result.items as ArticleMediaOption[])
+      for (const p of result.items as ArticleMediaOption[]) {
+        optionCache[p.id] = p;
         images[
           articleImageKey({
             type: 'galleryImage',
             attrs: { kind: p.kind, ref: p.ref, ...(p.album ? { album: p.album } : {}) },
           })
         ] = p;
+      }
     } catch (e) {
       if (id === requestId) pickerError = (e as Error).message;
     } finally {
@@ -215,6 +270,12 @@
   }
   function openPicker(cover = false) {
     coverMode = cover;
+    pickerOpen = true;
+    groupMode = false;
+    editPosition = null;
+    groupCaption = '';
+    originalNodes = {};
+    if (cover) kind = 'photo';
     selected = [];
     mediaPage = 1;
     modal.showModal();
@@ -222,19 +283,39 @@
   }
   function node(option: ArticleMediaOption): ArticleNode {
     return {
-      type: 'galleryImage',
+      type: option.kind === 'group' ? 'galleryImageGroup' : 'galleryImage',
       attrs: { kind: option.kind, ref: option.ref, ...(option.album ? { album: option.album } : {}) },
       content: [],
     };
   }
   function insert() {
-    const picked = selected.map((id) => options.find((p) => p.id === id)).filter((p): p is ArticleMediaOption => !!p);
-    if (coverMode) {
-      article.cover = picked[0] ? node(picked[0]) : null;
-      changed();
-    } else editor?.insertImages(picked.map(node));
-    modal.close();
-    selected = [];
+    if (!picked.length) return;
+    try {
+      if (coverMode) {
+        article.cover = node(picked[0]!);
+        changed();
+      } else {
+        const nodes = groupMode
+          ? [
+              {
+                type: 'galleryImageGroup',
+                attrs: { kind: 'temporary', caption: groupCaption },
+                content: picked.map((p) => originalNodes[p.id] ?? node(p)),
+              } as ArticleNode,
+            ]
+          : picked.map((p) =>
+              p.kind === 'group'
+                ? { ...node(p), attrs: { ...node(p).attrs, caption: groupCaption } }
+                : node(p),
+            );
+        if (editPosition !== null) editor?.replaceGroup(editPosition, nodes[0]!);
+        else editor?.insertImages(nodes);
+      }
+      modal.close();
+      selected = [];
+    } catch (e) {
+      pickerError = (e as Error).message;
+    }
   }
   async function upload(files: FileList | null) {
     if (!files) return;
@@ -253,6 +334,7 @@
         if (!response.ok) throw new Error(result.message ?? '上传失败');
         const p = result as ArticleMediaOption;
         options = [p, ...options];
+        optionCache[p.id] = p;
         images[articleImageKey(node(p))] = p;
         selected = coverMode ? [p.id] : [...selected, p.id];
       }
@@ -267,7 +349,8 @@
     pickerError = '';
     try {
       if (!(await save())) return;
-      for (const id of selected) await articleRequest('article-media-delete', { id });
+      for (const id of selected.filter((id) => optionCache[id]?.kind === 'upload'))
+        await articleRequest('article-media-delete', { id });
       selected = [];
       await loadMedia();
     } catch (e) {
@@ -300,8 +383,9 @@
   <main>
     <header class="edit-top">
       <a href="/articles">← 文章</a><span class="save-status" role="status"
-        >{status}{#if article.updatedAt}<time datetime={article.updatedAt} title="最近保存时间 · 北京时间 UTC+8"
-            >最近保存 {savedTime(article.updatedAt)}</time
+        >{status}{#if article.updatedAt}<time
+            datetime={article.updatedAt}
+            title="最近保存时间 · 北京时间 UTC+8">最近保存 {savedTime(article.updatedAt)}</time
           >{/if}</span
       >
       <div class="actions">
@@ -325,7 +409,9 @@
       <section class="writing-paper">
         <div class="writing-title">
           <div class="writing-caption">
-            <span>文章正文</span><button onclick={() => (focus = !focus)}>{focus ? '退出专注' : '专注写作'}</button>
+            <span>文章正文</span><button onclick={() => (focus = !focus)}
+              >{focus ? '退出专注' : '专注写作'}</button
+            >
           </div>
           <label
             ><span class="sr-only">文章标题</span><textarea
@@ -335,13 +421,12 @@
               placeholder="给文章起个标题…"
               bind:value={article.title}
               oninput={changed}
-              disabled={busy}
-            ></textarea></label
+              disabled={busy}></textarea></label
           >
         </div>
         <fieldset class="editor-lock" disabled={busy}>
           <RichTextEditor
-            editable={!busy}
+            editable={!busy && !pickerOpen}
             bind:this={editor}
             document={article.document}
             resolveImage={resolve}
@@ -350,19 +435,26 @@
               changed();
             }}
             onInsertImage={() => openPicker()}
+            onEditGroup={editGroup}
           />
         </fieldset>
       </section>
       {#if settings && !focus}<aside class="article-settings">
           <h2>文章设置</h2>
           {#if article.firstPublishedAt}<p class="hint">
-              首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(article.publishedAt!)}<br
-              />北京时间 UTC+8，发布后自动记录。
+              首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(
+                article.publishedAt!,
+              )}<br />北京时间 UTC+8，发布后自动记录。
             </p>{:else}<p class="hint">尚未发布。首次发布与最近更新时间由系统自动记录。</p>{/if}
           <label
-            >摘要<textarea rows="4" maxlength="1000" bind:value={article.summary} oninput={changed} disabled={busy}
-            ></textarea></label
-          ><label>写作日期<input type="date" bind:value={article.date} onchange={changed} disabled={busy} /></label
+            >摘要<textarea
+              rows="4"
+              maxlength="1000"
+              bind:value={article.summary}
+              oninput={changed}
+              disabled={busy}></textarea></label
+          ><label
+            >写作日期<input type="date" bind:value={article.date} onchange={changed} disabled={busy} /></label
           ><label
             >文章链接<input
               bind:value={article.slug}
@@ -378,7 +470,8 @@
               alt="封面预览"
             />{/if}
           <div class="cover-actions">
-            <button onclick={() => openPicker(true)} disabled={busy}>{article.cover ? '更换封面' : '选择封面'}</button
+            <button onclick={() => openPicker(true)} disabled={busy}
+              >{article.cover ? '更换封面' : '选择封面'}</button
             >{#if article.cover}<button
                 onclick={() => {
                   article.cover = null;
@@ -406,125 +499,286 @@
               >{:else}<p class="hint">公开相册后，可在这里关联。</p>{/each}
           </fieldset>
           <p class="hint">图注属于这篇文章，不修改照片本身的资料。</p>
-          {#if article.status === 'published'}<button class="withdraw" onclick={offline} disabled={busy || saving}
-              >下线文章</button
-            >{:else if article.status === 'draft'}<button class="withdraw" onclick={remove} disabled={busy || saving}
-              >删除草稿</button
+          {#if article.status === 'published'}<button
+              class="withdraw"
+              onclick={offline}
+              disabled={busy || saving}>下线文章</button
+            >{:else if article.status === 'draft'}<button
+              class="withdraw"
+              onclick={remove}
+              disabled={busy || saving}>删除草稿</button
             >{/if}
         </aside>{/if}
     </div>
   </main>
 </div>
-<dialog bind:this={modal} class="image-picker" aria-labelledby="image-picker-title">
+<dialog
+  bind:this={modal}
+  onclose={() => {
+    pickerOpen = false;
+  }}
+  class="image-picker"
+  aria-labelledby="image-picker-title"
+>
   <header>
     <div>
-      <h2 id="image-picker-title">{coverMode ? '选择封面' : '插入图片'}</h2>
-      <p>{coverMode ? '选择一张图片作为文章封面。' : '插入到光标位置，图注可以直接在图片下方编辑。'}</p>
+      <h2 id="image-picker-title">
+        {coverMode
+          ? '选择封面'
+          : editPosition !== null
+            ? '编辑图片组'
+            : groupMode
+              ? '组成文章图片组'
+              : '插入图片'}
+      </h2>
+      <p>
+        {coverMode
+          ? '选择一张图片作为文章封面。'
+          : 'Gallery 照片含已发布的隐藏作品；上传素材仅用于文章。可跨页、跨相册和素材类型选图。'}
+      </p>
     </div>
     <button onclick={() => modal.close()} aria-label="关闭图片选择">✕</button>
   </header>
-  <div class="picker-tabs">
-    <button
-      class:chosen={kind === 'photo'}
-      onclick={() => {
-        kind = 'photo';
-        selected = [];
-        mediaPage = 1;
-        void loadMedia();
-      }}>Gallery 照片</button
-    ><button
-      class:chosen={kind === 'upload'}
-      onclick={() => {
-        kind = 'upload';
-        selected = [];
-        mediaPage = 1;
-        void loadMedia();
-      }}>上传素材</button
-    >
-  </div>
-  <form
-    class="picker-filters"
-    onsubmit={(e) => {
-      e.preventDefault();
-      mediaPage = 1;
-      selected = [];
-      void loadMedia();
-    }}
-  >
-    <input
-      aria-label="搜索图片"
-      placeholder={kind === 'photo' ? '搜索照片标题或标签' : '搜索素材名称'}
-      bind:value={query}
-    />{#if kind === 'photo'}<select
-        aria-label="按相册筛选"
-        bind:value={album}
-        onchange={() => {
+  <div class="picker-body">
+    {#if selected.length}<section class="selected-images" aria-label="已选图片及顺序">
+        <p>已选 {selected.length} 项 · 拖动或用箭头调整顺序</p>
+        <div class="selected-strip">
+          {#each picked as p, index (p.id)}<div
+              draggable="true"
+              ondragstart={() => {
+                dragged = p.id;
+              }}
+              ondragover={(e) => e.preventDefault()}
+              ondrop={(e) => {
+                e.preventDefault();
+                reorder(selected.indexOf(dragged), index);
+              }}
+              role="group"
+              aria-label={`第 ${index + 1} 张`}
+            >
+              {#if p.src}<img src={p.src} alt={p.alt} />{:else}<span>图片不可用</span>{/if}
+              <span>{index + 1}</span><button
+                aria-label="前移图片"
+                disabled={index === 0}
+                onclick={() => reorder(index, index - 1)}>←</button
+              ><button
+                aria-label="后移图片"
+                disabled={index === picked.length - 1}
+                onclick={() => reorder(index, index + 1)}>→</button
+              ><button
+                aria-label="移除所选图片"
+                onclick={() => (selected = selected.filter((id) => id !== p.id))}>×</button
+              >
+            </div>{/each}
+        </div>
+        {#if groupMode || picked[0]?.kind === 'group'}<label
+            >文章中的图片组说明<textarea
+              rows="2"
+              maxlength="10000"
+              bind:value={groupCaption}
+              placeholder="可选，仅用于这篇文章；留空不展示图注"></textarea></label
+          >
+          <p>
+            {groupMode
+              ? '临时组只属于这篇文章，不创建相册照片组。'
+              : '照片成员跟随来源组的发布更新；图注只在这篇文章中使用。'}
+          </p>{/if}
+      </section>{/if}
+    <div class="picker-tabs">
+      <button
+        disabled={editPosition !== null && !groupMode}
+        class:chosen={kind === 'photo'}
+        onclick={() => {
+          kind = 'photo';
+          if (selected.some((id) => optionCache[id]?.kind === 'group')) selected = [];
           mediaPage = 1;
-          selected = [];
           void loadMedia();
-        }}
-        ><option value="">全部相册</option>{#each initial.albums as a}<option value={a.id}>{a.title}</option
-          >{/each}</select
-      >{/if}<button>查找</button>
-  </form>
-  {#if kind === 'upload'}<label class="upload-zone"
-      >＋ 上传插图<input
-        type="file"
-        multiple={!coverMode}
-        accept="image/jpeg,image/png,image/webp"
-        disabled={uploading}
-        onchange={(e) => {
-          void upload(e.currentTarget.files);
-          e.currentTarget.value = '';
-        }}
-      /><small>{uploading ? '正在上传…' : 'JPEG、PNG、WebP，每张最多 10 MB。不进入相册和去过统计。'}</small></label
-    >{/if}{#if pickerError}<p role="alert">{pickerError}</p>{/if}{#if loading}<p role="status">
-      正在加载图片…
-    </p>{:else}<div class="image-grid">
-      {#each options as p}<button
-          class:selected={selected.includes(p.id)}
-          aria-pressed={selected.includes(p.id)}
+        }}>Gallery 照片</button
+      >{#if !coverMode && !groupMode}<button
+          class:chosen={kind === 'group'}
           onclick={() => {
-            selected = coverMode
-              ? [p.id]
-              : selected.includes(p.id)
-                ? selected.filter((id) => id !== p.id)
-                : [...selected, p.id];
-          }}
-          ><img src={p.src} alt={p.alt} /><span
-            >{p.title || '未命名照片'}{#if p.kind === 'upload'}
-              · {p.usage ?? 0} 篇引用{/if}</span
-          ></button
-        >{:else}<p>暂无符合条件的图片。</p>{/each}
-    </div>{/if}
-  <div class="media-pages">
-    <button
-      disabled={mediaPage === 1 || loading}
-      onclick={() => {
-        mediaPage--;
-        selected = [];
+            kind = 'group';
+            selected = [];
+            mediaPage = 1;
+            void loadMedia();
+          }}>Gallery 照片组</button
+        >{/if}<button
+        disabled={editPosition !== null && !groupMode}
+        class:chosen={kind === 'upload'}
+        onclick={() => {
+          kind = 'upload';
+          if (selected.some((id) => optionCache[id]?.kind === 'group')) selected = [];
+          mediaPage = 1;
+          void loadMedia();
+        }}>上传素材</button
+      >
+    </div>
+    <form
+      class="picker-filters"
+      onsubmit={(e) => {
+        e.preventDefault();
+        mediaPage = 1;
         void loadMedia();
-      }}>上一页</button
-    ><span>第 {mediaPage} 页</span><button
-      disabled={!more || loading}
-      onclick={() => {
-        mediaPage++;
-        selected = [];
-        void loadMedia();
-      }}>下一页</button
+      }}
     >
+      <input
+        aria-label="搜索图片"
+        placeholder={kind === 'group'
+          ? '搜索照片组标题'
+          : kind === 'photo'
+            ? '搜索照片标题或标签'
+            : '搜索素材名称'}
+        bind:value={query}
+      />{#if kind !== 'upload'}<select
+          aria-label="按相册筛选"
+          bind:value={album}
+          onchange={() => {
+            mediaPage = 1;
+            void loadMedia();
+          }}
+          ><option value="">全部相册</option>{#each initial.albums as a}<option value={a.id}>{a.title}</option
+            >{/each}</select
+        >{/if}<button>查找</button>
+    </form>
+    {#if kind === 'upload'}<label class="upload-zone"
+        >＋ 上传插图<input
+          type="file"
+          multiple={!coverMode}
+          accept="image/jpeg,image/png,image/webp"
+          disabled={uploading}
+          onchange={(e) => {
+            void upload(e.currentTarget.files);
+            e.currentTarget.value = '';
+          }}
+        /><small>{uploading ? '正在上传…' : 'JPEG、PNG、WebP，每张最多 10 MB。不进入相册和去过统计。'}</small
+        ></label
+      >{/if}{#if pickerError}<p role="alert">{pickerError}</p>{/if}{#if loading}<p role="status">
+        正在加载图片…
+      </p>{:else}<div class="image-grid">
+        {#each options as p}<button
+            class:selected={selected.includes(p.id)}
+            aria-pressed={selected.includes(p.id)}
+            onclick={() => {
+              selected =
+                coverMode || p.kind === 'group'
+                  ? [p.id]
+                  : selected.includes(p.id)
+                    ? selected.filter((id) => id !== p.id)
+                    : [...selected, p.id];
+            }}
+            ><img src={p.src} alt={p.alt} /><span
+              >{p.title || '未命名照片'}{p.hidden ? ' · 仅文章可见' : ''}{p.kind === 'group'
+                ? ` · ${p.items?.length ?? 0} 张`
+                : ''}{#if p.kind === 'upload'}
+                · {p.usage ?? 0} 篇引用{/if}</span
+            ></button
+          >{:else}<p>暂无符合条件的图片。</p>{/each}
+      </div>{/if}
+    <div class="media-pages">
+      <button
+        disabled={mediaPage === 1 || loading}
+        onclick={() => {
+          mediaPage--;
+          void loadMedia();
+        }}>上一页</button
+      ><span>第 {mediaPage} 页</span><button
+        disabled={!more || loading}
+        onclick={() => {
+          mediaPage++;
+          void loadMedia();
+        }}>下一页</button
+      >
+    </div>
   </div>
   <footer>
-    <span>已选择 {selected.length} 张</span>{#if kind === 'upload'}<button
-        disabled={!selected.length || uploading}
+    <span>已选择 {selected.length} 项</span>
+    {#if !coverMode && !groupMode && picked.length >= 2 && picked.every((p) => p.kind !== 'group')}<button
+        onclick={() => {
+          groupMode = true;
+        }}>组成图片组</button
+      >{/if}
+    {#if kind === 'upload' && picked.length && picked.every((p) => p.kind === 'upload') && !groupMode}<button
+        disabled={uploading}
         onclick={deleteMaterial}>删除选中素材</button
-      >{/if}<button class="primary" disabled={!selected.length || loading || uploading} onclick={insert}
-      >{coverMode ? '设为封面' : '插入正文'}</button
+      >{/if}
+    <button
+      class="primary"
+      disabled={!selected.length || uploading || (groupMode && (selected.length < 2 || selected.length > 50))}
+      onclick={insert}
+      >{coverMode
+        ? '设为封面'
+        : editPosition !== null
+          ? '保存图片组'
+          : groupMode
+            ? '插入图片组'
+            : picked[0]?.kind === 'group'
+              ? '插入照片组'
+              : '逐张插入'}</button
     >
   </footer>
 </dialog>
 
 <style>
+  .image-picker[open] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .image-picker header,
+  .image-picker footer {
+    flex-shrink: 0;
+  }
+  .picker-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .image-picker footer {
+    border-top: 1px solid #e2e7dc;
+    padding-top: 16px;
+  }
+
+  .selected-images {
+    margin: 12px 0 20px;
+    padding: 14px;
+    background: #f0f3eb;
+    border-radius: 8px;
+  }
+  .selected-images label {
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 13px;
+  }
+  .selected-strip {
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 8px;
+  }
+  .selected-strip > div {
+    flex: 0 0 132px;
+    background: white;
+    padding: 5px;
+    border-radius: 5px;
+    cursor: grab;
+  }
+  .selected-strip img {
+    display: block;
+    width: 100%;
+    height: 80px;
+    object-fit: contain;
+    margin-bottom: 5px;
+  }
+  .selected-strip button {
+    padding: 3px 8px;
+    margin-left: 3px;
+  }
+  .image-picker footer {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
   main {
     min-width: 0;
     padding: 34px 40px 70px;

@@ -36,7 +36,9 @@ export async function publicPhotoFeed(
           trx,
         )
       ).rows;
-      const total = months.filter((m) => !month || m.month === month).reduce((n, m) => n + Number(m.count), 0);
+      const total = months
+        .filter((m) => !month || m.month === month)
+        .reduce((n, m) => n + Number(m.count), 0);
       type Row = {
         tags: DisplayPhoto['tags'];
         album_id: string;
@@ -84,7 +86,10 @@ export async function publicPhotoFeed(
         albumSlug: p.album_slug,
         albumTitle: p.album_title,
         occurrences: p.occurrences,
-        group: p.description_document.groups?.find((g) => g.id === p.group_id),
+        group: (() => {
+          const g = p.description_document.groups?.find((g) => g.id === p.group_id);
+          return g ? { ...g, cover: p.photo_id } : undefined;
+        })(),
         thumbnail: `/media/${p.album_id}/${p.photo_id}?variant=thumbnail`,
         src: `/media/${p.album_id}/${p.photo_id}?variant=preview`,
       }));

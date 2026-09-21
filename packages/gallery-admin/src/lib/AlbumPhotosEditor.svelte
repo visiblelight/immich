@@ -397,7 +397,13 @@
                     ? [...selected, p.id]
                     : selected.filter((id) => id !== p.id))}
               /></label
-            >{/if}<small>{index + 1}{g ? ` · 照片组 ${members(g.id).length} 张` : ''}</small>
+            >{/if}<small
+            >{index + 1}{g ? ` · 照片组 ${members(g.id).length} 张` : ''}{(
+              g ? members(g.id).every((p) => p.hiddenFromGallery) : p.hiddenFromGallery
+            )
+              ? ' · 仅文章可见'
+              : ''}</small
+          >
         </div>
         <button
           class="collection-image"
@@ -423,7 +429,10 @@
               aria-label={`后移项目 ${index + 1}`}
               disabled={index === items.length - 1}
               onclick={() => arrow(key, 1)}>后移</button
-            ><button class="text-action" onclick={() => (content.cover = cover(p).asset)}>设为封面</button
+            ><button
+              class="text-action"
+              disabled={cover(p).hiddenFromGallery}
+              onclick={() => (content.cover = cover(p).asset)}>设为封面</button
             >{#if !g}<button aria-label={`移除照片 ${index + 1}`} onclick={() => remove(p)}>移除照片</button
               >{/if}
           </div>
@@ -510,6 +519,9 @@
                     </div>
                   </details>
                   {#if memberEditing === p.id}<div class="member-settings">
+                      <label class="visibility-choice"
+                        ><input type="checkbox" bind:checked={p.hiddenFromGallery} />仅在文章引用时展示</label
+                      >
                       <TagPicker bind:value={p.tags} {tags} {createTag} />
                       <label>画面描述（无障碍）<input maxlength="500" bind:value={p.alt} /></label>
                       <label
@@ -541,6 +553,16 @@
                   >{/each}</select
               ></label
             >
+            <label class="visibility-choice"
+              ><input
+                type="checkbox"
+                checked={members(g.id).every((p) => p.hiddenFromGallery)}
+                onchange={(e) => {
+                  for (const p of members(g.id)) p.hiddenFromGallery = e.currentTarget.checked;
+                }}
+              />全组仅在文章引用时展示</label
+            >
+            <p class="muted">这是每张照片的共用展示范围，随本次保存或发布生效；不会移除相册归属。</p>
             <details class="bulk-tags">
               <summary>批量设置组内照片标签</summary>
               <TagPicker bind:value={bulkTags} {tags} {createTag} label="全组标签" />
@@ -601,6 +623,14 @@
 {/if}
 
 <style>
+  .visibility-choice {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+  }
+  .visibility-choice input {
+    width: auto !important;
+  }
   .group-dialog {
     width: min(1100px, calc(100vw - 48px));
     max-width: none;

@@ -4,7 +4,7 @@
 
 ## 链路与撤销边界
 
-- 每轮通过 `docker compose exec public` 使用前台的只读数据库角色，从 `published_media` / `published_article_media` 枚举候选。逐项复用既有读图函数检查当前发布、祖先、来源范围、资源状态及可信路径。文章中引用的相册照片沿用相册媒体入口。
+- 每轮通过 `docker compose exec public` 使用前台的只读数据库角色，从 `published_media` / `published_article_media` / `published_article_photo_media` 枚举候选。逐项复用既有读图函数检查当前发布、祖先、来源范围、资源状态及可信路径。文章引用的 Gallery 照片使用文章专用媒体入口，逐项校验当前文章引用与来源相册；隐藏作品不会因此获得相册媒体访问权限。
 - Immich Thumbnail / Preview 清理隐私元数据，保留压缩像素、ICC 和尺寸；不读原片、不重新压缩。文章上传图使用既有已处理的 WebP。仅内存管道传送展示字节，不另落一份暂存图片。
 - SHA-256 内容对象名 `gallery/v1/<digest>.jpg|webp`，跨相册与相同字节复用。仅在对象缺失/内容元数据不匹配时上传；每轮 HEAD 检查已同步对象。
 - 前台继续请求自身 `/media/...`。每次仍进行既有数据库与文件授权，读取并校验图像，确认相同内容已同步后才 302 到 CDN。省下的是 ECS 对访客的图片流量，不是所有本地磁盘读取。未同步、配置关闭、清单损坏或超过 180 秒未检查，自动返回原有受控 ECS 图片。

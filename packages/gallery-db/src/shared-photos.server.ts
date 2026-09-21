@@ -9,12 +9,13 @@ type Profile = {
   description_format: string;
   alt_text: string;
   version: string;
+  hidden_from_gallery: boolean;
   tags: string[];
 };
 export async function photoProfiles(db: Db, assets: string[], published = false) {
   if (!assets.length) return new Map<string, Profile>();
   const rows = (
-    await sql<Profile>`SELECT p.immich_asset_id,r.title,r.description,r.description_format,r.alt_text,p.version,
+    await sql<Profile>`SELECT p.immich_asset_id,r.title,r.description,r.description_format,r.alt_text,r.hidden_from_gallery,p.version,
     coalesce((SELECT array_agg(t.tag_id ORDER BY t.tag_id) FROM ${published ? sql`gallery.photo_release_tag` : sql`gallery.photo_tag`} t WHERE ${published ? sql`t.release_id=r.id` : sql`t.immich_asset_id=p.immich_asset_id`}),ARRAY[]::uuid[]) AS tags
     FROM gallery.photo p ${published ? sql`JOIN gallery.photo_release r ON r.id=p.current_release_id` : sql`JOIN gallery.photo r ON r.immich_asset_id=p.immich_asset_id`}
     WHERE p.immich_asset_id=ANY(${assets}::uuid[])`.execute(db)
@@ -38,6 +39,7 @@ export async function hydratePhotoProfiles<T extends DraftPhoto>(db: Db, photos:
           alt: r.alt_text,
           tags: r.tags,
           photoVersion: r.version,
+          hiddenFromGallery: r.hidden_from_gallery,
         }
       : p;
   });
@@ -51,16 +53,19 @@ export async function savePhotoProfiles(db: Db, photos: DraftPhoto[], albumId: s
   for (const p of photos) {
     const old = existing.get(p.asset);
     const tags = validateTagIds(p.tags ?? []);
-    const oldDescription = old?.description_format === 'plain' ? literalMarkdown(old.description) : old?.description;
+    const oldDescription =
+      old?.description_format === 'plain' ? literalMarkdown(old.description) : old?.description;
     const differs =
       !old ||
       old.title !== p.title ||
       oldDescription !== p.description ||
       old.alt_text !== p.alt ||
+      old.hidden_from_gallery !== (p.hiddenFromGallery === true) ||
       JSON.stringify(old.tags) !== JSON.stringify(tags);
     if (old && p.photoVersion !== undefined)
       ensure(p.photoVersion === old.version, '这张照片已在另一个相册或窗口更新，请重新载入后再编辑。', 409);
-    if (old && differs) ensure(p.photoVersion === old.version, '照片已有统一资料，请重新载入后再编辑，避免覆盖。', 409);
+    if (old && differs)
+      ensure(p.photoVersion === old.version, '照片已有统一资料，请重新载入后再编辑，避免覆盖。', 409);
     if (!differs) {
       p.photoVersion = old!.version;
       p.tags = tags;
@@ -80,8 +85,8 @@ export async function savePhotoProfiles(db: Db, photos: DraftPhoto[], albumId: s
     const row = (
       await sql<{
         version: string;
-      }>`INSERT INTO gallery.photo(immich_asset_id,title,description,description_format,alt_text)
-      VALUES(${p.asset}::uuid,${p.title},${p.description},'markdown',${p.alt}) ON CONFLICT(immich_asset_id) DO UPDATE SET title=excluded.title,description=excluded.description,description_format='markdown',alt_text=excluded.alt_text,version=gallery.photo.version+1,updated_at=now() RETURNING version`.execute(
+      }>`INSERT INTO gallery.photo(immich_asset_id,title,description,description_format,alt_text,hidden_from_gallery)
+      VALUES(${p.asset}::uuid,${p.title},${p.description},'markdown',${p.alt},${p.hiddenFromGallery === true}) ON CONFLICT(immich_asset_id) DO UPDATE SET title=excluded.title,description=excluded.description,description_format='markdown',alt_text=excluded.alt_text,hidden_from_gallery=excluded.hidden_from_gallery,version=gallery.photo.version+1,updated_at=now() RETURNING version`.execute(
         db,
       )
     ).rows[0]!;
@@ -106,8 +111,8 @@ export async function publishPhotoProfiles(db: Db, user: GalleryUser, assets: st
   for (const asset of [...new Set(assets)]) {
     const release = randomUUID();
     const result =
-      await sql`INSERT INTO gallery.photo_release(id,immich_asset_id,title,description,description_format,alt_text,source_version,published_by,public_exif)
-      SELECT ${release}::uuid,p.immich_asset_id,p.title,p.description,p.description_format,p.alt_text,p.version,${user.id}::uuid,
+      await sql`INSERT INTO gallery.photo_release(id,immich_asset_id,title,description,description_format,alt_text,source_version,published_by,hidden_from_gallery,public_exif)
+      SELECT ${release}::uuid,p.immich_asset_id,p.title,p.description,p.description_format,p.alt_text,p.version,${user.id}::uuid,p.hidden_from_gallery,
       jsonb_build_object('make',s.make,'model',s.model,'lensModel',s.lens_model,'fNumber',s.f_number,'focalLength',s.focal_length,'iso',s.iso,'exposureTime',s.exposure_time)
       FROM gallery.photo p JOIN gallery.admin_source_asset s ON s.asset_id=p.immich_asset_id WHERE p.immich_asset_id=${asset}::uuid`.execute(
         db,

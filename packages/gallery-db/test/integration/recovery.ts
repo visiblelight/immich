@@ -12,6 +12,7 @@ import {
   sanitizeImage,
   publicArticle,
   readArticleMedia,
+  readArticlePhotoDerivative,
 } from '../../src/index.server.ts';
 
 /** Full database recovery in a second database inside the labelled disposable test container. */
@@ -43,6 +44,8 @@ export async function recovery(
     (SELECT count(*) FROM gallery.article_release) article_releases,
     (SELECT md5(string_agg(id::text||content::text,',' ORDER BY id)) FROM gallery.article_release) article_content,
     (SELECT count(*) FROM gallery.article_media_ref) article_media_refs,
+    (SELECT count(*) FROM gallery.article_group_ref) article_group_refs,
+    (SELECT count(*) FROM gallery.photo_release WHERE hidden_from_gallery) hidden_photo_releases,
     (SELECT count(*) FROM gallery.photo) shared_photos,
     (SELECT count(*) FROM gallery.photo_release) photo_releases,
     (SELECT count(*) FROM gallery.photo_tag) draft_tags,
@@ -84,7 +87,7 @@ export async function recovery(
     const album = catalog.albums.find((a) => a.title === 'HTTP workflow')!;
     assert.ok(album);
     const active = (await publicCatalog(db, album.slug)).active!;
-    assert.equal(active.photos.length, 240);
+    assert.equal(active.photos.length, 239); // One HTTP fixture work is hidden from Gallery.
     const media = await readPublishedDerivative(db, album.id, active.photos[0]!.id, 'thumbnail', {
       sourceRoot: '/data/thumbs',
       mountedRoot: mediaRoot,
@@ -98,6 +101,23 @@ export async function recovery(
         (p) => p.kind === 'upload',
       )!;
       assert.ok(material);
+      const work = (Object.values(article.images) as { kind: string; ref: string; album: string }[]).find(
+        (p) => p.kind === 'photo',
+      )!;
+      assert.ok(work);
+      assert.ok(
+        (
+          await readArticlePhotoDerivative(db, article.id, work.album, work.ref, 'preview', {
+            sourceRoot: '/data/thumbs',
+            mountedRoot: mediaRoot,
+          })
+        ).bytes.length,
+      );
+      assert.equal(
+        (await restored.query('SELECT count(*) FROM gallery.published_photo WHERE asset_id=$1', [work.ref]))
+          .rows[0].count,
+        '0',
+      );
       assert.ok((await readArticleMedia(db, copiedMedia, material.ref, 'preview', article.id)).length);
     } finally {
       await rm(copiedMedia, { recursive: true, force: true });

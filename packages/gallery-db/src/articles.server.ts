@@ -7,6 +7,7 @@ import {
   validateArticleDocument,
   articleText,
   articleImages,
+  articleGroups,
   articleImageKey,
   type ArticleContent,
   type ManagedArticle,
@@ -75,10 +76,10 @@ export function validateArticleContent(value: unknown): ArticleContent {
     document,
     cover,
   };
-  ensure(articleImages(result).length <= 200, '每篇文章最多包含 200 张图片。');
-  for (const { node } of articleImages(result)) {
+  ensure(articleImages(result).length + articleGroups(result).length <= 200, '每篇文章最多包含 200 张图片。');
+  for (const { node } of [...articleImages(result), ...articleGroups(result)]) {
     uuid(node.attrs?.ref);
-    if (node.attrs?.kind === 'photo') uuid(node.attrs.album);
+    if (node.attrs?.kind !== 'upload') uuid(node.attrs?.album);
   }
   return result;
 }
@@ -123,7 +124,7 @@ export async function createArticle(db: Db, user: GalleryUser) {
 }
 async function writeRefs(db: Db, id: string, content: ArticleContent, release: string | null) {
   if (!release)
-    for (const table of ['article_photo_ref', 'article_media_ref', 'article_album_ref'])
+    for (const table of ['article_photo_ref', 'article_media_ref', 'article_album_ref', 'article_group_ref'])
       await sql`DELETE FROM ${sql.table('gallery.' + table)} WHERE article_id=${id}::uuid AND release_id IS NULL`.execute(
         db,
       );
@@ -146,6 +147,11 @@ async function writeRefs(db: Db, id: string, content: ArticleContent, release: s
         db,
       );
     }
+  }
+  for (const { node, key } of articleGroups(content)) {
+    await sql`INSERT INTO gallery.article_group_ref(article_id,release_id,node_key,album_id,group_id) VALUES(${id}::uuid,${release}::uuid,${key},${node.attrs!.album}::uuid,${node.attrs!.ref}::uuid)`.execute(
+      db,
+    );
   }
   for (const [position, album] of content.albums.entries())
     await sql`INSERT INTO gallery.article_album_ref(article_id,release_id,album_id,position) VALUES(${id}::uuid,${release}::uuid,${album}::uuid,${position})`.execute(
@@ -173,12 +179,26 @@ export async function saveArticle(db: Db, user: GalleryUser, input: Record<strin
 }
 export async function articleMediaOptions(
   db: Db,
-  kind: 'photo' | 'upload',
+  kind: 'photo' | 'upload' | 'group',
   query = '',
   album = '',
   page = 1,
 ): Promise<{ items: ArticleMediaOption[]; more: boolean }> {
   const offset = (Math.max(1, Math.min(100000, Math.floor(Number(page) || 1))) - 1) * 48;
+  if (kind === 'group') {
+    if (album) uuid(album);
+    const rows = (
+      await sql<any>`SELECT g.*,a.title AS album_title FROM gallery.article_source_group g JOIN gallery.published_album a ON a.album_id=g.album_id WHERE g.title ILIKE ${'%' + query.slice(0, 200) + '%'} ${album ? sql`AND g.album_id=${album}::uuid` : sql``} ORDER BY g.album_id,g.group_id LIMIT 49 OFFSET ${offset}`.execute(
+        db,
+      )
+    ).rows;
+    const items: ArticleMediaOption[] = [];
+    for (const g of rows.slice(0, 48)) {
+      const item = await resolveArticleGroup(db, '', g.album_id, g.group_id, true);
+      if (item) items.push({ ...item, src:item.src.replace('variant=preview','variant=thumbnail'), albumTitle: g.album_title });
+    }
+    return { items, more: rows.length > 48 };
+  }
   if (kind === 'photo') {
     if (album) uuid(album);
     const rows = (
@@ -191,7 +211,8 @@ export async function articleMediaOptions(
         width: number;
         height: number;
         album_title: string;
-      }>`SELECT p.*,a.title AS album_title FROM gallery.published_photo p JOIN gallery.published_album a ON a.album_id=p.album_id WHERE (p.title ILIKE ${'%' + query.slice(0, 200) + '%'} OR EXISTS (SELECT 1 FROM jsonb_array_elements(p.tags) t WHERE t->>'name' ILIKE ${'%' + query.slice(0, 200) + '%'})) ${album ? sql`AND p.album_id=${album}::uuid` : sql``} ORDER BY p.album_id,p.position,p.photo_id LIMIT 49 OFFSET ${offset}`.execute(
+        hidden_from_gallery: boolean;
+      }>`SELECT p.*,a.title AS album_title FROM gallery.article_source_photo p JOIN gallery.published_album a ON a.album_id=p.album_id WHERE (p.title ILIKE ${'%' + query.slice(0, 200) + '%'} OR EXISTS (SELECT 1 FROM jsonb_array_elements(p.tags) t WHERE t->>'name' ILIKE ${'%' + query.slice(0, 200) + '%'})) ${album ? sql`AND p.album_id=${album}::uuid` : sql``} ORDER BY p.album_id,p.position,p.photo_id LIMIT 49 OFFSET ${offset}`.execute(
         db,
       )
     ).rows;
@@ -203,6 +224,7 @@ export async function articleMediaOptions(
         kind: 'photo',
         album: p.album_id,
         albumTitle: p.album_title,
+        hidden: p.hidden_from_gallery,
         title: p.title || '未命名照片',
         alt: p.alt_text || p.title || '照片',
         src: `/media/source/${p.asset_id}?variant=thumbnail`,
@@ -247,7 +269,7 @@ export async function articleImageMap(db: Db, id: string, content: ArticleConten
     if (node.attrs!.kind === 'photo') {
       const rows = admin
         ? (
-            await sql<any>`SELECT * FROM gallery.published_photo WHERE album_id=${node.attrs!.album}::uuid AND asset_id=${node.attrs!.ref}::uuid LIMIT 1`.execute(
+            await sql<any>`SELECT * FROM gallery.article_source_photo WHERE album_id=${node.attrs!.album}::uuid AND asset_id=${node.attrs!.ref}::uuid LIMIT 1`.execute(
               db,
             )
           ).rows
@@ -259,7 +281,7 @@ export async function articleImageMap(db: Db, id: string, content: ArticleConten
       const p = rows[0];
       if (p)
         images[key] = {
-          id: key,
+          id: `${p.album_id}:${p.asset_id}`,
           ref: p.asset_id,
           kind: 'photo',
           album: p.album_id,
@@ -267,10 +289,10 @@ export async function articleImageMap(db: Db, id: string, content: ArticleConten
           alt: p.alt_text || p.title || '照片',
           src: admin
             ? `/media/source/${p.asset_id}?variant=preview`
-            : `/media/${p.album_id}/${p.photo_id}?variant=preview`,
+            : `/media/article-photos/${id}/${p.album_id}/${p.asset_id}?variant=preview`,
           preview: admin
             ? `/media/source/${p.asset_id}?variant=preview`
-            : `/media/${p.album_id}/${p.photo_id}?variant=preview`,
+            : `/media/article-photos/${id}/${p.album_id}/${p.asset_id}?variant=preview`,
           width: p.width,
           height: p.height,
         };
@@ -303,7 +325,68 @@ export async function articleImageMap(db: Db, id: string, content: ArticleConten
         };
     }
   }
+  for (const { node } of articleGroups(content)) {
+    const key = articleImageKey(node);
+    if (!images[key]) {
+      const group = await resolveArticleGroup(
+        db,
+        id,
+        String(node.attrs!.album),
+        String(node.attrs!.ref),
+        admin,
+      );
+      if (group) images[key] = group;
+    }
+  }
   return images;
+}
+async function resolveArticleGroup(
+  db: Db,
+  article: string,
+  album: string,
+  group: string,
+  admin: boolean,
+): Promise<ArticleMediaOption | null> {
+  const g = (
+    await sql<any>`SELECT * FROM ${sql.table(admin ? 'gallery.article_source_group' : 'gallery.published_article_group')} WHERE album_id=${album}::uuid AND group_id=${group}::uuid ${admin ? sql`` : sql`AND article_id=${article}::uuid`} LIMIT 1`.execute(
+      db,
+    )
+  ).rows[0];
+  if (!g) return null;
+  const photos = (
+    await sql<any>`SELECT * FROM ${sql.table(admin ? 'gallery.article_source_photo' : 'gallery.published_article_photo')} WHERE album_id=${album}::uuid AND group_id=${group}::uuid ${admin ? sql`` : sql`AND article_id=${article}::uuid`} ORDER BY position,photo_id`.execute(
+      db,
+    )
+  ).rows;
+  if (!photos.length) return null;
+  const items: ArticleMediaOption[] = photos.map((p) => ({
+    id: `${album}:${p.asset_id}`,
+    kind: 'photo',
+    ref: p.asset_id,
+    album,
+    title: p.title,
+    alt: p.alt_text || p.title || '照片',
+    hidden: p.hidden_from_gallery,
+    src: admin
+      ? `/media/source/${p.asset_id}?variant=preview`
+      : `/media/article-photos/${article}/${album}/${p.asset_id}?variant=preview`,
+    preview: admin
+      ? `/media/source/${p.asset_id}?variant=preview`
+      : `/media/article-photos/${article}/${album}/${p.asset_id}?variant=preview`,
+    width: p.width,
+    height: p.height,
+  }));
+  const cover = items[photos.findIndex((p) => p.photo_id === g.cover)] ?? items[0]!;
+  return {
+    ...cover,
+    id: `group:${album}:${group}`,
+    ref: group,
+    kind: 'group',
+    album,
+    title: g.title || '照片组',
+    caption: g.description,
+    items,
+  };
 }
 export async function publishArticle(
   db: Db,
@@ -321,30 +404,32 @@ export async function publishArticle(
     ensure(
       content.title &&
         (articleText(content.document.doc).trim().length > 0 ||
-          articleImages(content).some((i) => i.key !== 'cover')),
+          articleImages(content).some((i) => i.key !== 'cover') ||
+          articleGroups(content).length > 0),
       '请填写标题和正文。',
     );
     // Check both current public membership and readable derivatives before publishing.
     const images = await articleImageMap(trx, id, content, true);
-    for (const { node } of articleImages(content)) {
-      ensure(images[articleImageKey(node)], '部分图片已不再公开或素材不可用，请更换后发布。');
-      if (node.attrs!.kind === 'photo') {
+    const expanded: ArticleMediaOption[] = [];
+    for (const { node } of [...articleImages(content), ...articleGroups(content)]) {
+      const item = images[articleImageKey(node)];
+      ensure(item, '部分图片或照片组尚未发布、已移除或来源不可用，请更换后发布。');
+      expanded.push(...(item.kind === 'group' ? (item.items ?? []) : [item]));
+    }
+    ensure(expanded.length <= 200, '包含照片组成员后，每篇文章最多 200 张图片。');
+    for (const item of expanded) {
+      if (item.kind === 'photo') {
         try {
           for (const variant of ['preview', 'thumbnail'] as const)
-            await sanitizeImage(
-              await readSourceDerivative(trx, String(node.attrs!.ref), variant, root),
-              variant,
-            );
+            await sanitizeImage(await readSourceDerivative(trx, item.ref, variant, root), variant);
         } catch {
           throw new GalleryError(400, '照片展示文件不可用，请在 Immich 处理后重试。');
         }
+      } else {
+        await readArticleMedia(trx, mediaRoot, item.ref, 'preview');
+        await readArticleMedia(trx, mediaRoot, item.ref, 'thumbnail');
       }
     }
-    for (const { node } of articleImages(content))
-      if (node.attrs!.kind === 'upload') {
-        await readArticleMedia(trx, mediaRoot, String(node.attrs!.ref), 'preview');
-        await readArticleMedia(trx, mediaRoot, String(node.attrs!.ref), 'thumbnail');
-      }
     for (const album of content.albums)
       ensure(
         (await sql`SELECT 1 FROM gallery.published_album WHERE album_id=${album}::uuid`.execute(trx)).rows
@@ -392,7 +477,7 @@ export async function deleteArticle(db: Db, input: Record<string, unknown>) {
         .rows.length,
       '已发布的文章请使用下线。',
     );
-    for (const table of ['article_photo_ref', 'article_media_ref', 'article_album_ref'])
+    for (const table of ['article_photo_ref', 'article_media_ref', 'article_album_ref', 'article_group_ref'])
       await sql`DELETE FROM ${sql.table('gallery.' + table)} WHERE article_id=${article.id}::uuid`.execute(
         trx,
       );

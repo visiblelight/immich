@@ -57,7 +57,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         parent: r.parent_album_id ?? '',
         blocks: [],
         markdown: documentMarkdown(r.description_document, r.summary),
-        groups: r.description_document.groups ?? [],
+        groups: [],
         cover: r.photo_id ? `/media/${r.photo_album_id}/${r.photo_id}?variant=thumbnail` : null,
         count: Number(r.count),
         photos: [],
@@ -86,6 +86,14 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
             trx,
           )
         ).rows;
+        active.groups = (
+          rows.find((r) => r.album_id === active.id)?.description_document.groups ?? []
+        ).flatMap((g) => {
+          const members = photos.filter((p) => p.group_id === g.id);
+          return members.length
+            ? [{ ...g, cover: members.some((p) => p.photo_id === g.cover) ? g.cover : members[0]!.photo_id }]
+            : [];
+        });
         active.photos = photos.map((p) => ({
           id: p.photo_id,
           tags: p.tags,
@@ -192,7 +200,17 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
         photos.map((p) => p.asset),
       );
       const tags = await adminTags(trx);
-      active.photos = photos.map((original) => {
+      const visiblePhotos = photos.filter((p) => !profiles.get(p.asset)?.hidden_from_gallery);
+      active.groups = (active.groups ?? []).flatMap((g) => {
+        const members = visiblePhotos.filter((p) => p.group_id === g.id);
+        return members.length
+          ? [{ ...g, cover: members.some((p) => p.id === g.cover) ? g.cover : members[0]!.id }]
+          : [];
+      });
+      active.count = visiblePhotos.length;
+      const coverAsset = rows.find((r) => r.id === albumId)?.cover_asset_id;
+      if (coverAsset && profiles.get(coverAsset)?.hidden_from_gallery) active.cover = null;
+      active.photos = visiblePhotos.map((original) => {
         const shared = profiles.get(original.asset);
         const p = shared ? { ...original, ...shared } : original;
         return {

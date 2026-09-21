@@ -19,12 +19,14 @@
     resolveImage,
     onChange,
     onInsertImage,
+    onEditGroup,
   }: {
     editable?: boolean;
     document: ArticleDocument;
     resolveImage: ArticleImageResolver;
     onChange: (document: ArticleDocument) => void;
     onInsertImage: () => void;
+    onEditGroup?: (node: ArticleNode, position: number) => void;
   } = $props();
   let element: HTMLDivElement;
   let editorState = $state.raw<{ editor: Editor | null }>({ editor: null });
@@ -33,11 +35,26 @@
   let link = $state('');
   let linkError = $state('');
   export function insertImages(nodes: ArticleNode[]) {
-    if (editorState.editor?.isActive('imagePlaceholder')) editorState.editor.commands.deleteSelection();
-    editorState.editor
-      ?.chain()
+    const editor = editorState.editor;
+    if (!editor) return;
+    if (editor.isActive('imagePlaceholder')) editor.commands.deleteSelection();
+    const { from, to } = editor.state.selection;
+    const selectedNode = editor.state.doc.nodeAt(from);
+    const content = [...nodes, { type: 'paragraph' }];
+    // Inserting media while a group is selected must not replace that existing group.
+    if (selectedNode?.type.name === 'galleryImageGroup' && to === from + selectedNode.nodeSize)
+      editor.chain().focus().insertContentAt(to, content).run();
+    else editor.chain().focus().insertContent(content).run();
+  }
+  export function replaceGroup(position: number, node: ArticleNode) {
+    const editor = editorState.editor;
+    const old = editor?.state.doc.nodeAt(position);
+    if (!editor || old?.type.name !== 'galleryImageGroup')
+      throw new Error('图片组位置已变化，请重新打开编辑。');
+    editor
+      .chain()
       .focus()
-      .insertContent([...nodes, { type: 'paragraph' }])
+      .insertContentAt({ from: position, to: position + old.nodeSize }, node)
       .run();
   }
   $effect(() => {
@@ -126,6 +143,101 @@
         };
       },
     });
+    const GalleryImageGroup = Node.create({
+      name: 'galleryImageGroup',
+      group: 'block',
+      content: 'galleryImage*',
+      atom: true,
+      draggable: true,
+      addAttributes() {
+        return {
+          kind: { default: 'temporary' },
+          ref: { default: '' },
+          album: { default: '' },
+          caption: { default: '' },
+        };
+      },
+      parseHTML() {
+        return [
+          {
+            tag: 'figure[data-article-group]',
+            getAttrs: (el) => ({
+              kind: el.getAttribute('data-article-group'),
+              ref: el.getAttribute('data-ref') ?? '',
+              album: el.getAttribute('data-album') ?? '',
+              caption: el.getAttribute('data-caption') ?? '',
+            }),
+            contentElement: '.group-members',
+          },
+        ];
+      },
+      renderHTML({ node }) {
+        return [
+          'figure',
+          {
+            'data-article-group': node.attrs.kind,
+            'data-ref': node.attrs.ref,
+            'data-album': node.attrs.album,
+            'data-caption': node.attrs.caption,
+          },
+          ['div', { class: 'group-members' }, 0],
+        ];
+      },
+      addNodeView() {
+        return ({ node, getPos }) => {
+          let current = node;
+          const dom = window.document.createElement('figure');
+          dom.className = 'editor-image-group';
+          dom.contentEditable = 'false';
+          const img = window.document.createElement('img');
+          img.draggable = true;
+          img.dataset.dragHandle = '';
+          const caption = window.document.createElement('figcaption');
+          const button = window.document.createElement('button');
+          button.type = 'button';
+          button.className = 'article-media-control';
+          button.setAttribute('aria-label', '编辑图片组');
+          button.title = '编辑图片组';
+          button.innerHTML =
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>';
+          const stage = window.document.createElement('div');
+          stage.className = 'article-media-stage';
+          button.onclick = () => {
+            const pos = getPos();
+            if (typeof pos === 'number') onEditGroup?.(current.toJSON() as ArticleNode, pos);
+          };
+          function update(next: typeof node) {
+            current = next;
+            const json = next.toJSON() as ArticleNode;
+            const resolved = json.attrs?.kind === 'group' ? resolveImage(json) : null;
+            const items =
+              json.attrs?.kind === 'group' ? (resolved?.items ?? []) : (json.content ?? []).map(resolveImage);
+            const first = items.find(Boolean);
+            if (first) {
+              img.src = first.src;
+              img.alt = first.alt;
+            } else {
+              img.removeAttribute('src');
+              img.alt = '图片组暂不可用';
+            }
+            caption.textContent = String(json.attrs?.caption ?? '');
+            caption.hidden = !caption.textContent;
+          }
+          update(node);
+          stage.append(img, button);
+          dom.append(stage, caption);
+          return {
+            dom,
+            stopEvent: (event) => (event.target as HTMLElement).closest('button') !== null,
+            update(next) {
+              if (next.type !== node.type) return false;
+              update(next);
+              return true;
+            },
+          };
+        };
+      },
+    });
     const ImagePlaceholder = Node.create({
       name: 'imagePlaceholder',
       group: 'block',
@@ -173,6 +285,7 @@
         TaskList,
         TaskItem.configure({ nested: true }),
         GalleryImage,
+        GalleryImageGroup,
         ImagePlaceholder,
       ],
       content: document.doc as JSONContent,
@@ -500,7 +613,6 @@
     color: #909b87;
   }
   .editor-body :global(figure img) {
-    max-height: 420px;
     cursor: grab;
   }
   .link-form {

@@ -154,6 +154,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         '0008',
         '0009',
         '0010',
+        '0011',
       ]);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
@@ -163,7 +164,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
           )
         ).rows[0].count,
-        '30',
+        '31',
       );
     });
     await t.test('runtime compatibility checks validate service roles and view contracts', async () => {
@@ -751,9 +752,10 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       await sharedPhotosAndTags(adminDb, publicDb, owner, ids.user, tagAssets, mediaRoot);
     });
     await t.test('articles: snapshots, media grants, about, concurrency and source revocation', async () => {
-      const asset = randomUUID();
+      const asset = randomUUID(), otherAsset = randomUUID();
       await sourceAsset(asset, ids.owner);
-      await articles(adminDb, publicDb, owner, ids.user, asset, mediaRoot);
+      await sourceAsset(otherAsset, ids.owner);
+      await articles(adminDb, publicDb, owner, ids.user, asset, mediaRoot, otherAsset);
     });
     await t.test('full database backup and isolated recovery', async () => {
       await recovery(config, mediaRoot);

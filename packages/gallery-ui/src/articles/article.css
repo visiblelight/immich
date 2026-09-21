@@ -203,3 +203,98 @@
 .article-prose .tableWrapper {
   overflow-x: auto;
 }
+
+/* Article media stays in the prose flow; controls never add a separate row. */
+.article-prose .article-media-stage {
+  position: relative;
+}
+.article-prose .article-carousel-track {
+  display: flex;
+  max-height: 760px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.article-prose .article-carousel-track::-webkit-scrollbar {
+  display: none;
+}
+.article-prose .article-carousel-track > * {
+  flex: 0 0 100%;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  margin: 0;
+}
+.article-prose .article-carousel-track img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  max-height: none;
+}
+.article-prose .article-media-control {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 24%);
+  color: white;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 160ms,
+    background 160ms;
+}
+.article-prose .article-media-control svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.article-prose [data-carousel-step='-1'] {
+  left: 12px;
+}
+.article-prose [data-carousel-step='1'] {
+  right: 12px;
+}
+.article-prose .article-media-stage:hover .article-media-control,
+.article-prose .article-media-stage:focus-within .article-media-control {
+  opacity: 0.7;
+}
+.article-prose .article-media-control:hover,
+.article-prose .article-media-control:focus-visible {
+  opacity: 1;
+  background: rgb(0 0 0 / 42%);
+}
+.article-prose .article-media-control:disabled {
+  visibility: hidden;
+}
+.article-prose .article-carousel figcaption {
+  white-space: normal;
+}
+.article-prose .editor-image-group .article-media-control {
+  top: 12px;
+  right: 12px;
+  transform: none;
+}
+@media (hover: none) {
+  .article-prose .article-media-control {
+    opacity: 0.65;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .article-prose .article-media-control {
+    transition: none;
+  }
+}

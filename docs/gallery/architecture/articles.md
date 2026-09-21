@@ -59,3 +59,13 @@ site.about_article_version 与原 site.version 分离；关于选篇不会使站
 独立草稿预览位于后台 `/articles/[id]/preview`，读取当前草稿和已有授权素材接口，必须经过后台会话验证，响应 no-store / noindex。前台记录详情与预览共用 ArticlePage / ArticleReader / PublicFrame；预览的主导航及相关相册链接指向配置的公开域名，返回编辑留在后台。进入预览前等待保存成功，失败或冲突时留在编辑页。
 
 H4 在编辑按钮、HTML 粘贴、JSON 校验、发布渲染、桌面与移动目录中贯通；H1 转 H2，H5/H6 转 H4。旧文档不迁移。已有在粘贴中被降级为 H3 的内容须手动重新设为 H4。新增 H4 后如需回退应用，应使用仍支持 H4 的版本，否则旧校验器会拒绝后续保存。
+
+## 0011：隐藏作品与图片组（ADR 0016）
+
+`photo.hidden_from_gallery`、`photo_release.hidden_from_gallery` 为非空 boolean，默认 false，分别为共享草稿和当前发布展示范围。既有相册成员关系不变。
+
+`article_group_ref`：article_id、可空 release_id、node_key、album_id、group_id；文章/发布/相册外键，草稿与发布各自按节点唯一，发布引用禁止删除。组本体仍在相册版本的 description_document.groups，不引入 Immich 外键。
+
+`article_source_photo/group` 仅后台可读，保留当前来源授权及隐藏作品；`published_photo` 排除隐藏作品。`published_article_group/photo/photo_media` 仅允许当前文章发布版本引用的资源。直接组引用动态读取来源组当前发布成员；临时组子节点继续使用 article_photo_ref / article_media_ref。媒体路径仅服务端使用。
+
+正文新增 `galleryImageGroup`：kind=group 时为 album/ref 直接引用；kind=temporary 时包含 2–50 个 galleryImage 子节点。caption 是文章独立说明。旧文章结构不变。迁移为增加字段/表/视图，回滚应用前应禁用新增节点编辑并恢复兼容版本，不直接删除历史引用或用户资料。

@@ -15,6 +15,7 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [文章隐藏作品与图片组](delivery/article-image-groups.md) | 三类图片、两种组引用、权限与本地验收 |
 | [私有访问统计](delivery/analytics.md) | Umami 自托管、统计范围、部署与实际验收 |
 | [OSS / CDN 接入记录](delivery/oss-cdn.md) | 香港 Bucket 与 CDN 实测状态、5 分钟撤销规则、免费证书自动化及待实施事项 |
 | [登录与文章编辑优化](delivery/editor-polish.md) | 长期会话、保存反馈、独立预览、H4 与正文／页脚间距 |

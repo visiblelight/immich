@@ -18,7 +18,12 @@ export {
   type SourceAsset,
   type SourceFilters,
 } from './source.server.ts';
-export { readPublishedDerivative, type MediaRoot, type MediaVariant } from './media.server.ts';
+export {
+  readArticlePhotoDerivative,
+  readPublishedDerivative,
+  type MediaRoot,
+  type MediaVariant,
+} from './media.server.ts';
 export { getMapClusters, type MapRequest, type MapCluster } from './map.server.ts';
 export { assertDatabaseCompatibility } from './compatibility.server.ts';
 export * from './auth.server.ts';
