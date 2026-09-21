@@ -113,4 +113,4 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           printf '%s\n' "$DEPLOY_KEY" > "$work/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$work/known_hosts"
-          printf '%s' "$REGISTRY_TOKEN" | ssh -i "$work/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$work/known_hosts" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA $IMAGE"
+          printf '%s' "$REGISTRY_TOKEN" | ssh -i "$work/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o UserKnownHostsFile="$work/known_hosts" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA $IMAGE"
