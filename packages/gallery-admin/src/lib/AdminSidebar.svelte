@@ -21,6 +21,7 @@
     ["visits", "◎", "到访记录"],
     ["maps", "⌘", "地图设置"],
     ["settings", "⚙", "站点设置"],
+    ["analytics", "↗", "访问统计"],
   ] as const);
   function navigate(target: string) {
     if (onNavigate) onNavigate(target);

@@ -1,0 +1,57 @@
+name: gallery-analytics
+services:
+  database:
+    image: ${ANALYTICS_POSTGRES_IMAGE:?Pinned PostgreSQL image required}
+    env_file: ${ANALYTICS_STATE_ROOT:-/srv/gallery-analytics}/secrets/database.env
+    restart: unless-stopped
+    volumes: ['${ANALYTICS_STATE_ROOT:-/srv/gallery-analytics}/database:/var/lib/postgresql/data']
+    networks: [data]
+    mem_limit: 384m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U umami_owner -d umami']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '3'}}
+  migrate:
+    image: ${ANALYTICS_UMAMI_IMAGE:?Pinned Umami image required}
+    profiles: [maintenance]
+    env_file: ${ANALYTICS_STATE_ROOT:-/srv/gallery-analytics}/secrets/migration.env
+    command: [sh, -c, 'export PATH="/app/node_modules/.bin:$$PATH"; node scripts/check-db.js']
+    networks: [data]
+    mem_limit: 768m
+    cpus: 1
+    depends_on:
+      database: {condition: service_healthy}
+  umami:
+    image: ${ANALYTICS_UMAMI_IMAGE:?Pinned Umami image required}
+    env_file: ${ANALYTICS_STATE_ROOT:-/srv/gallery-analytics}/secrets/runtime.env
+    environment:
+      SKIP_DB_MIGRATION: '1'
+      DISABLE_TELEMETRY: '1'
+      CLIENT_IP_HEADER: x-real-ip
+      HOSTNAME: 0.0.0.0
+      NODE_OPTIONS: --max-old-space-size=512
+    restart: unless-stopped
+    init: true
+    ports: ['127.0.0.1:3300:3000']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks:
+      data: {}
+      edge: {aliases: [gallery-analytics]}
+    mem_limit: 768m
+    cpus: 1
+    depends_on:
+      database: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:3000/api/heartbeat]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '3'}}
+networks:
+  data: {internal: true}
+  edge: {external: true, name: gallery-analytics-edge}
