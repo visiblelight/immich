@@ -1,6 +1,6 @@
 # Umami 私有统计交付
 
-需求已确认，2026-09-21。见 ADR 0015。以下为实现和部署准备；生产验收完成后补充实测记录。
+需求已确认，2026-09-21。见 ADR 0015。已完成生产部署与当前网络浏览器验收，实际结果见末节。
 
 ## 实现
 
@@ -33,4 +33,17 @@ Edge 的域名与两条精确代理路由在独立 edge 仓库维护。仅 Umami
 
 ## 本地验证
 
-Gallery check 零错误零警告，test 与 build 通过；新增公开路由白名单和来源脱敏测试。Edge 新增精确路由及恶意配置拒绝测试通过。生产及浏览器验证待下方记录。
+Gallery check 零错误零警告，test 与 build 通过；新增公开路由白名单和来源脱敏测试。Edge 新增精确路由及恶意配置拒绝测试通过。生产及浏览器验证见下方记录。
+
+## 2026-09-21 生产验收
+
+- Gallery 提交 `96c375175` 经 GitHub 流水线 `35572167800` 完成检查、镜像构建与生产发布，三阶段全部成功。Edge 提交 `83747d4` 通过本地维护线发布，候选及运行中 nginx -t 均通过。
+- Umami 3.4.0 镜像 `ghcr.io/umami-software/umami@sha256:85909afc45bdcda1917394594a087421fdbb05610fded0fa9f6fb861abb2f367`；PostgreSQL 镜像 `postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24`。
+- `stats.vision.ke` HTTPS 登录页可访问，独立 Let’s Encrypt 证书初始到期 2026-12-20，纳入 Edge 原有 Certbot 续期和代理证书重载机制；本轮没有单独重复 ACME dry-run。
+- 正式账号登录和已认证报表 API 成功；匿名报表请求及默认 admin/umami 登录均被 401 拒绝。新密码仅保存在服务器私有 secrets/login.json 和本机被 Git 忽略的 .gallery-local/analytics/login.json。
+- 常驻 umami_runtime 非超级用户，无建库、建角色及 public schema CREATE 权限；数据位于独立 PostgreSQL，与 Gallery/Immich 无数据表关联。
+- 实测浏览器初次打开 `/photos` 只有一次 PV；切换排序零额外上报；打开大图恰有一次 photo_view。直接查询统计数据库确认真实落库。上报 payload 不含原始查询字符串或片段。
+- 浏览器排除设置后访问相册零统计请求；验收后恢复原有允许统计偏好。浏览器模拟阻断 `/analytics/*` 时照片页仍正常；网络阻断在验收后撤销。
+- Gallery 前台、后台登录、Immich、JVS、统计后台和同域脚本均返回 HTTP 200；Gallery 与统计容器 healthy。初始空载 Umami 约 188 MiB、数据库约 32 MiB，仅为当前小样本实测。
+- 初始化备份 `/srv/gallery-analytics/backups/initial-20260921` 成功，在同统计 PostgreSQL 中创建独立一次性验证库并恢复，核对 1 个站点、26 条已应用迁移；随后清理验证库，不操作生产数据。该备份为同机检查点，定时备份与异机保存尚未配置。
+- 本轮浏览器验收数据为少量真实测试浏览，保留在统计中；不伪装成真实访客增长。不同大陆运营商和境外地区的全面可达性仍待用户实测。
