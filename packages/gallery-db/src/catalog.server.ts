@@ -69,6 +69,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
           await sql<{
             tags: DisplayPhoto['tags'];
             photo_id: string;
+            asset_id: string;
             group_id: string | null;
             description_format: string;
             taken_at: Date | null;
@@ -82,10 +83,23 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
             public_exif: DisplayPhoto['exif'];
             latitude: number | null;
             longitude: number | null;
-          }>`SELECT tags,photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(
+          }>`SELECT asset_id,tags,photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(
             trx,
           )
         ).rows;
+        const occurrences = (
+          await sql<{ asset_id: string; albumSlug: string; albumTitle: string; photoId: string }>`
+            SELECT p.asset_id,a.slug AS "albumSlug",a.title AS "albumTitle",p.photo_id AS "photoId"
+            FROM gallery.published_photo p JOIN gallery.published_album a ON a.album_id=p.album_id
+            WHERE p.asset_id IN (SELECT asset_id FROM gallery.published_photo WHERE album_id=${active.id}::uuid)
+            ORDER BY a.position,a.first_published_at,a.album_id,p.photo_id`.execute(trx)
+        ).rows;
+        const byAsset = new Map<string, NonNullable<DisplayPhoto['occurrences']>>();
+        for (const { asset_id, ...occurrence } of occurrences) {
+          const list = byAsset.get(asset_id) ?? [];
+          list.push(occurrence);
+          byAsset.set(asset_id, list);
+        }
         active.groups = (
           rows.find((r) => r.album_id === active.id)?.description_document.groups ?? []
         ).flatMap((g) => {
@@ -97,6 +111,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         active.photos = photos.map((p) => ({
           id: p.photo_id,
           tags: p.tags,
+          occurrences: byAsset.get(p.asset_id) ?? [],
           group: active.groups?.find((g) => g.id === p.group_id),
           takenAt: p.taken_at?.toISOString() ?? null,
           localTakenAt: p.local_taken_at?.toISOString() ?? null,

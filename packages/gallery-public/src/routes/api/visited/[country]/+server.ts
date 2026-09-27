@@ -6,6 +6,8 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ params, url }) => {
   try {
     const q = url.searchParams;
+    const scope = q.get('scope') ?? 'country';
+    ensure(scope === 'country' || scope === 'all', '照片范围无效。');
     let viewport: MapViewport | undefined;
     if (q.has('west')) {
       const fields = ['west', 'south', 'east', 'north', 'zoom'] as const;
@@ -22,6 +24,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
         visitId: q.get('visit'),
         cluster: q.get('cluster'),
         page: Number(q.get('page') ?? 1),
+        scope,
       }),
     );
   } catch (e) {

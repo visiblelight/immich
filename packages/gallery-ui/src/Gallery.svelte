@@ -653,9 +653,9 @@
           {#if photo.occurrences?.length}<section class="photo-context">
               <h3>所在相册</h3>
               {#each photo.occurrences as occurrence}<a
-                  href={`/albums/${occurrence.albumSlug}/photos/${occurrence.photoId}`}
+                  href={`/albums/${occurrence.albumSlug}`}
                   >{occurrence.albumTitle} →</a
-                >{/each}{#if photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
+                >{/each}{#if feed && photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
             </section>{/if}
         </aside>{/if}
     </div>

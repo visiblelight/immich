@@ -657,6 +657,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         adminMapSettings,
         saveMapSettings,
         publicMapSettings,
+        publicCatalog,
       } = await import('../../src/index.server.ts');
       const user = {
         id: ids.user,
@@ -672,6 +673,8 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       const before = await publicVisited(publicDb);
       const duplicate = await album('visited-duplicate', null, 'exact', [mapAssets[0]!]);
       assert.equal((await publicVisited(publicDb)).total, before.total);
+      const relatedAlbums = (await publicCatalog(publicDb, 'visited-test')).active!.photos.flatMap((p) => p.occurrences ?? []);
+      assert.ok(relatedAlbums.some((p) => p.albumSlug === 'visited-duplicate'));
       let ge = await adminVisited(adminDb, 'GE');
       const selected = ge.photos.filter((p) => p.albumSlug === 'visited-test' || p.albumSlug === 'visited-duplicate');
       assert.equal(selected.length, 2);
@@ -699,6 +702,24 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       const photos = await countryPhotos(publicDb, 'FR');
       assert.ok(photos.photos.some((p) => p.albumSlug === 'visited-test' || p.albumSlug === 'visited-duplicate'));
       assert.ok(!JSON.stringify(photos).includes(mapAssets[0]!));
+      const allCountries = await countryPhotos(publicDb, 'FR', { scope: 'all' });
+      const mapPhotoIds = new Set(selected.map((p) => p.id));
+      assert.equal(allCountries.photos.filter((p) => mapPhotoIds.has(p.id)).length, 2);
+      assert.ok(photos.photos.every((p) => p.countryName === '法国'));
+      assert.ok(allCountries.photos.some((p) => mapPhotoIds.has(p.id) && p.countryName === '格鲁吉亚'));
+      await assert.rejects(countryPhotos(publicDb, 'FR', { scope: 'all', visitId: correction }), /单国到访/);
+      await assert.rejects(countryPhotos(publicDb, 'FR', { cluster: '0:0' }), /地图范围/);
+      // Real same-point membership stays enumerable: selecting a marker must
+      // return every distinct photo, including after zooming in all the way.
+      await owner.query('UPDATE public.asset_exif SET latitude=48.8566,longitude=2.3522 WHERE "assetId"=$1', [mapAssets[1]]);
+      const mapViewport = { west: 2.35, east: 2.36, south: 48.85, north: 48.86, zoom: 20 };
+      const mapClusters = await countryPhotos(publicDb, 'GE', { scope: 'all', viewport: mapViewport });
+      const samePoint = mapClusters.clusters.find((c) => Math.abs(c.latitude - 48.8566) < 0.00001 && Math.abs(c.longitude - 2.3522) < 0.00001)!;
+      assert.ok(samePoint && samePoint.count >= 2);
+      const members = await countryPhotos(publicDb, 'GE', { scope: 'all', viewport: mapViewport, cluster: samePoint.id });
+      assert.equal(members.photos.filter((p) => mapPhotoIds.has(p.id)).length, 2);
+      assert.ok(members.photos.every((p) => p.albumSlug && p.albumTitle && p.thumbnail));
+      assert.equal((await countryPhotos(publicDb, 'GE', { scope: 'all', viewport: mapViewport, cluster: samePoint.id, page: 2 })).photos.length, 0);
       await owner.query('UPDATE public.asset_exif SET latitude=NULL,longitude=NULL WHERE "assetId"=$1', [mapAssets[1]]);
       assert.ok(!(await publicVisited(publicDb)).countries.flatMap((c) => c.visits).some((v) => v.id === correction));
       await deleteVisit(adminDb, user, { id: correction, version: 1 });
@@ -745,6 +766,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       await admin.query(`UPDATE gallery.album SET status='offline',offline_at=now() WHERE id=ANY($1::uuid[])`, [
         [a.id, duplicate.id],
       ]);
+      assert.ok(!(await countryPhotos(publicDb, 'FR', { scope: 'all' })).photos.some((p) => mapPhotoIds.has(p.id)));
     });
     await t.test('shared photo publication, tag intersection, concurrency and public scope', async () => {
       const tagAssets = [randomUUID(), randomUUID()];

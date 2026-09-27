@@ -108,6 +108,14 @@ test('clusters retain all counts across wrapped viewport and bound large respons
   assert.equal(photoBounds(dateline).west, 179);
   assert.equal(photoBounds(dateline).east, -179);
 });
+test('identical GPS points remain a selectable cluster even at maximum zoom', () => {
+  const points = Array.from({ length: 65 }, (_, id) => ({ id, longitude: 44.7129, latitude: 41.1006 }));
+  for (const zoom of [3, 12, 18, 20]) {
+    const grouped = clusterPhotos(points, { west: 44.7, east: 44.8, south: 41, north: 41.2, zoom });
+    assert.equal(grouped.size, 1);
+    assert.deepEqual([...grouped.values()][0], points);
+  }
+});
 test('map secrets authenticate ciphertext and key, provider validation rejects unsafe URLs', () => {
   const master = 'ab'.repeat(32),
     cipher = encryptMapSecret('secret-value', master);

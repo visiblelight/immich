@@ -1,5 +1,5 @@
 import { loadOsmStyle, MAP_FALLBACK_MESSAGE } from './map-style';
-import type { MapViewport, PhotoCluster } from '@gallery/core';
+import type { MapViewport, PhotoCluster, MapPhoto } from '@gallery/core';
 export interface Provider {
   provider: 'osm' | 'google' | 'amap';
   browserKey: string;
@@ -62,21 +62,25 @@ function bounds(west: number, south: number, east: number, north: number, zoom: 
     zoom: Math.max(0, Math.min(20, zoom)),
   };
 }
-function pin(c: PhotoCluster, click: (c: PhotoCluster) => void) {
-  const button = document.createElement('button');
+function pin(c: PhotoCluster, click: (c: PhotoCluster) => void, photoLink: (photo: MapPhoto) => string) {
+  const button = document.createElement(c.count === 1 ? 'a' : 'button');
   button.className = 'photo-map-pin';
-  button.type = 'button';
-  button.setAttribute('aria-label', `${c.count} 张照片，${c.photo.title}`);
+  if (button instanceof HTMLAnchorElement) button.href = photoLink(c.photo);
+  else button.type = 'button';
+  button.setAttribute(
+    'aria-label',
+    c.count === 1 ? `查看照片详情：${c.photo.title}` : `查看此处的 ${c.count} 张照片`,
+  );
   const img = document.createElement('img');
   img.src = c.photo.thumbnail;
   img.alt = '';
   button.append(img);
   const count = document.createElement('span');
   count.textContent = String(c.count);
-  button.append(count);
+  if (c.count > 1) button.append(count);
   button.onclick = (e) => {
     e.stopPropagation();
-    click(c);
+    if (c.count > 1) click(c);
   };
   return button;
 }
@@ -87,6 +91,7 @@ export async function createPhotoMap(
   changed: () => void,
   failed: (message: string) => void,
   language: 'en' | 'local' = 'en',
+  photoLink: (photo: MapPhoto) => string = (photo) => `/albums/${photo.albumSlug}/photos/${photo.id}`,
 ): Promise<PhotoMap> {
   if (p.provider === 'osm') {
     const base = '/vendor/maplibre-6.9.0/';
@@ -144,7 +149,9 @@ export async function createPhotoMap(
       async markers(items, click) {
         markers.forEach((m) => m.remove());
         markers = items.map((c) =>
-          new sdk.Marker({ element: pin(c, click) }).setLngLat([c.longitude, c.latitude]).addTo(map),
+          new sdk.Marker({ element: pin(c, click, photoLink) })
+            .setLngLat([c.longitude, c.latitude])
+            .addTo(map),
         );
       },
       destroy() {
@@ -194,7 +201,7 @@ export async function createPhotoMap(
             new sdk.marker.AdvancedMarkerElement({
               map,
               position: { lng: c.longitude, lat: c.latitude },
-              content: pin(c, click),
+              content: pin(c, click, photoLink),
               title: c.photo.title,
             }),
         );
@@ -283,7 +290,12 @@ export async function createPhotoMap(
       if (!alive || seq !== revision) return;
       map.remove(markers);
       markers = items.map(
-        (c, i) => new sdk.Marker({ position: positions[i], content: pin(c, click), anchor: 'bottom-center' }),
+        (c, i) =>
+          new sdk.Marker({
+            position: positions[i],
+            content: pin(c, click, photoLink),
+            anchor: 'bottom-center',
+          }),
       );
       map.add(markers);
     },

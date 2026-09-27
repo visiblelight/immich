@@ -23,6 +23,8 @@ export interface MapPhoto {
   id: string;
   albumId: string;
   albumSlug: string;
+  albumTitle?: string;
+  countryName?: string;
   title: string;
   thumbnail: string;
   latitude: number;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { replaceState, goto } from '$app/navigation';
   import { page as route } from '$app/state';
   import type { MapViewport, MapPhoto, PhotoCluster, VisitedCountry } from '@gallery/core';
@@ -18,15 +18,23 @@
     photos = $state<MapPhoto[]>([]),
     total = $state(0),
     listPage = $state(1),
-    cluster = $state<string | null>(null),
+    showAllCountries = $state(false),
+    selectedCluster = $state<PhotoCluster | null>(null),
+    selectedPhotos = $state<MapPhoto[]>([]),
+    selectedTotal = $state(0),
+    selectedPage = $state(1),
+    selectionLoading = $state(false),
+    selectionError = $state(''),
     listLoading = $state(false);
   let controller: AbortController | undefined,
     listController: AbortController | undefined,
     revision = 0,
     alive = true,
-    viewport: MapViewport | undefined,
     clusterViewport: MapViewport | undefined,
+    selectionController: AbortController | undefined,
+    selectionTrigger: HTMLElement | null = null,
     lastView: View;
+  let selectionClose = $state<HTMLButtonElement>();
   let lastUrl = $state('');
   let timer: ReturnType<typeof setTimeout>;
   const names = { osm: 'OpenStreetMap', google: 'Google 地图', amap: '高德地图' };
@@ -57,11 +65,15 @@
     url.searchParams.set('lat', view.latitude.toFixed(5));
     url.searchParams.set('zoom', view.zoom.toFixed(2));
     url.searchParams.set('provider', provider);
+    if (showAllCountries) url.searchParams.set('scope', 'all');
+    else url.searchParams.delete('scope');
+    url.searchParams.set('language', mapLanguage);
     replaceState(url, route.state);
     lastUrl = url.pathname + url.search;
   }
   async function request(params: URLSearchParams, signal: AbortSignal) {
-    if (visitId) params.set('visit', visitId);
+    if (showAllCountries) params.set('scope', 'all');
+    else if (visitId) params.set('visit', visitId);
     const response = await fetch(`/api/visited/${country.id}?${params}`, { signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message);
@@ -79,11 +91,10 @@
       const [view, v] = await Promise.all([current.view(), current.viewport()]);
       if (!alive || seq !== revision || c.signal.aborted) return;
       lastView = view;
-      viewport = v;
       remember(view);
       const data = await request(rangeParams(v), c.signal);
       if (seq !== revision || c.signal.aborted) return;
-      await current.markers(data.clusters, selectCluster);
+      await current.markers(data.clusters, (c) => void selectCluster(c, v));
       loading = false;
     } catch (e) {
       if (!c.signal.aborted && alive && seq === revision) {
@@ -96,14 +107,11 @@
     clearTimeout(timer);
     timer = setTimeout(() => void refresh(), 160);
   }
-  async function loadList(next = 1, selected: string | null = null, v?: MapViewport) {
+  async function loadList(next = 1) {
     listController?.abort();
     const c = (listController = new AbortController());
     listLoading = true;
-    cluster = selected;
-    clusterViewport = v;
-    const params = selected && v ? rangeParams(v) : new URLSearchParams();
-    if (selected) params.set('cluster', selected);
+    const params = new URLSearchParams();
     params.set('page', String(next));
     try {
       const data = await request(params, c.signal);
@@ -117,14 +125,61 @@
       if (!c.signal.aborted) listLoading = false;
     }
   }
-  function selectCluster(c: PhotoCluster) {
+  function photoHref(photo: MapPhoto) {
+    return `/albums/${photo.albumSlug}/photos/${photo.id}?returnTo=${encodeURIComponent(lastUrl)}`;
+  }
+  function closeSelection(restoreFocus = true) {
+    selectionController?.abort();
+    selectedCluster = null;
+    selectedPhotos = [];
+    selectionError = '';
+    if (restoreFocus && selectionTrigger?.isConnected) selectionTrigger.focus();
+  }
+  async function loadSelection(next = 1) {
+    if (!selectedCluster || !clusterViewport) return;
+    selectionController?.abort();
+    const c = (selectionController = new AbortController());
+    selectionLoading = true;
+    selectionError = '';
+    selectedPhotos = [];
+    const params = rangeParams(clusterViewport);
+    params.set('cluster', selectedCluster.id);
+    params.set('page', String(next));
+    try {
+      const data = await request(params, c.signal);
+      if (!alive || c.signal.aborted) return;
+      selectedPhotos = data.photos;
+      selectedTotal = data.total;
+      selectedPage = next;
+    } catch (e) {
+      if (alive && !c.signal.aborted) selectionError = e instanceof Error ? e.message : '照片暂时无法加载。';
+    } finally {
+      if (!c.signal.aborted) selectionLoading = false;
+    }
+  }
+  async function selectCluster(c: PhotoCluster, v: MapViewport) {
     if (c.count === 1) {
-      void goto(`/albums/${c.photo.albumSlug}/photos/${c.photo.id}?returnTo=${encodeURIComponent(lastUrl)}`);
+      void goto(photoHref(c.photo));
       return;
     }
-    void loadList(1, c.id, viewport);
-    if (c.count > 1 && lastView.zoom < 16)
-      void map?.move({ longitude: c.longitude, latitude: c.latitude, zoom: Math.min(18, lastView.zoom + 2) });
+    selectionTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    selectedCluster = c;
+    selectedTotal = c.count;
+    selectedPage = 1;
+    clusterViewport = { ...v };
+    void loadSelection();
+    await tick();
+    selectionClose?.focus({ preventScroll: true });
+  }
+  function changeScope(all: boolean) {
+    showAllCountries = all;
+    closeSelection(false);
+    controller?.abort();
+    photos = [];
+    total = 0;
+    if (lastView) remember(lastView);
+    void refresh();
+    void loadList();
   }
   let mapLanguage = $state<'en' | 'local'>('en');
   async function start(id: string) {
@@ -132,6 +187,7 @@
     if (!p) return;
     const seq = ++revision;
     controller?.abort();
+    closeSelection(false);
     map?.destroy();
     map = undefined;
     provider = id;
@@ -153,6 +209,7 @@
           }
         },
         mapLanguage,
+        photoHref,
       );
       if (!alive || seq !== revision) {
         created.destroy();
@@ -171,6 +228,8 @@
     lastView = initialView();
     lastUrl = location.pathname + location.search;
     const q = new URLSearchParams(location.search);
+    showAllCountries = q.get('scope') === 'all';
+    mapLanguage = q.get('language') === 'local' ? 'local' : 'en';
     const p =
       providers.find((p) => p.provider === q.get('provider')) ??
       providers.find((p) => p.isDefault) ??
@@ -187,10 +246,20 @@
       clearTimeout(timer);
       controller?.abort();
       listController?.abort();
+      selectionController?.abort();
       map?.destroy();
     };
   });
 </script>
+
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key === 'Escape' && selectedCluster) {
+      event.preventDefault();
+      closeSelection();
+    }
+  }}
+/>
 
 <div class="heading">
   <div>
@@ -200,8 +269,17 @@
   </div>
   <div class="filters">
     <label
+      >照片范围<select
+        value={showAllCountries ? 'all' : 'country'}
+        onchange={(e) => changeScope(e.currentTarget.value === 'all')}
+        ><option value="country">当前国家</option><option value="all">所有国家</option></select
+      ></label
+    >
+    <label
       >到访记录<select
-        value={visitId ?? ''}
+        disabled={showAllCountries}
+        title={showAllCountries ? '所有国家模式下不使用单国到访筛选' : undefined}
+        value={showAllCountries ? '' : (visitId ?? '')}
         onchange={(e) => {
           location.href = `/visited/${country.id}${e.currentTarget.value ? `?visit=${encodeURIComponent(e.currentTarget.value)}` : ''}`;
         }}
@@ -229,34 +307,169 @@
 <div class="map-wrap">
   <div class="map" bind:this={container}></div>
   {#if loading}<div class="loading" role="status">正在加载地图…</div>{/if}
+  {#if selectedCluster}
+    <section class="map-selection" aria-label="选中位置的照片" aria-busy={selectionLoading}>
+      <header>
+        <h2>此处的照片 <span>{selectedTotal}</span></h2>
+        <button
+          bind:this={selectionClose}
+          class="selection-close"
+          aria-label="关闭选片面板"
+          onclick={() => closeSelection()}>×</button
+        >
+      </header>
+      <div class="selection-scroll">
+        {#if selectionLoading}<p role="status">正在读取照片…</p>
+        {:else if selectionError}<p role="status">
+            {selectionError} <button onclick={() => void loadSelection(selectedPage)}>重试</button>
+          </p>
+        {:else if !selectedPhotos.length}<p role="status">此处已没有可公开展示的照片，请重新选择地图标记。</p>
+        {:else}<div class="selection-grid">
+            {#each selectedPhotos as photo}<a
+                href={photoHref(photo)}
+                aria-label={`查看${photo.title}的详情${photo.albumTitle ? ` · ${photo.albumTitle}` : ''}`}
+              >
+                <img src={photo.thumbnail} alt={photo.title} loading="lazy" />
+                {#if photo.title !== '照片'}<strong>{photo.title}</strong>{/if}
+                <span
+                  >{photo.albumTitle}{showAllCountries && photo.countryName
+                    ? ` · ${photo.countryName}`
+                    : ''}</span
+                >
+              </a>{/each}
+          </div>{/if}
+      </div>
+      {#if selectedTotal > 48}<footer>
+          <button
+            disabled={selectionLoading || selectedPage === 1}
+            onclick={() => void loadSelection(selectedPage - 1)}>上一页</button
+          >
+          <span>{selectedPage} / {Math.ceil(selectedTotal / 48)}</span>
+          <button
+            disabled={selectionLoading || selectedPage * 48 >= selectedTotal}
+            onclick={() => void loadSelection(selectedPage + 1)}>下一页</button
+          >
+        </footer>{/if}
+    </section>
+  {/if}
 </div>
 {#if message}<p class="message" role="status">
     {message} <button onclick={() => void start(provider)}>重试</button>
   </p>{/if}
 <div class="list-heading">
-  <h2>{cluster ? '选中位置的照片' : '这个国家的照片'} <span>{total}</span></h2>
-  {#if cluster}<button onclick={() => void loadList()}>查看全部照片</button>{/if}
+  <h2>{showAllCountries ? '所有国家的照片' : '这个国家的照片'} <span>{total}</span></h2>
 </div>
 {#if listLoading}<p role="status">正在读取照片…</p>{/if}
 <div class="photos">
-  {#each photos as photo}<a
-      href={`/albums/${photo.albumSlug}/photos/${photo.id}?returnTo=${encodeURIComponent(lastUrl)}`}
+  {#each photos as photo}<a href={photoHref(photo)}
       ><img src={photo.thumbnail} alt={photo.title} loading="lazy" /><span>{photo.title}</span></a
     >{/each}
 </div>
 {#if total > 48}<div class="pagination">
-    <button
-      disabled={listLoading || listPage === 1}
-      onclick={() => void loadList(listPage - 1, cluster, clusterViewport)}>上一页</button
+    <button disabled={listLoading || listPage === 1} onclick={() => void loadList(listPage - 1)}
+      >上一页</button
     ><span>{listPage} / {Math.ceil(total / 48)}</span><button
       disabled={listLoading || listPage * 48 >= total}
-      onclick={() => void loadList(listPage + 1, cluster, clusterViewport)}>下一页</button
+      onclick={() => void loadList(listPage + 1)}>下一页</button
     >
   </div>{/if}
 
 <style>
+  .map-selection {
+    position: absolute;
+    z-index: 3;
+    top: 16px;
+    right: 56px;
+    width: min(350px, calc(100% - 76px));
+    max-height: calc(100% - 64px);
+    display: flex;
+    flex-direction: column;
+    background: #fffefa;
+    border: 1px solid #dce1d7;
+    border-radius: 8px;
+    box-shadow: 0 6px 28px #18251c26;
+    overflow: hidden;
+  }
+  .map-selection header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 10px 16px;
+    gap: 12px;
+  }
+  .map-selection h2 {
+    font-size: 14px;
+    margin: 0;
+  }
+  .map-selection .selection-close {
+    font-size: 23px;
+    line-height: 1;
+    border: 0;
+    background: transparent;
+    padding: 7px 10px;
+  }
+  .selection-scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    min-height: 0;
+    padding: 0 14px 14px;
+  }
+  .selection-scroll p {
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .selection-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 10px;
+  }
+  .selection-grid a {
+    text-decoration: none;
+    color: #344d3d;
+    min-width: 0;
+  }
+  .selection-grid img {
+    width: 100%;
+    aspect-ratio: 1.25;
+    object-fit: cover;
+    display: block;
+    border-radius: 3px;
+  }
+  .selection-grid strong,
+  .selection-grid span {
+    display: block;
+    font-size: 11px;
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 400;
+  }
+  .selection-grid span {
+    color: #7b8578;
+  }
+  .map-selection footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    padding: 10px 14px;
+    border-top: 1px solid #e7e9e2;
+  }
+  @media (max-width: 700px) {
+    .map-selection {
+      top: auto;
+      bottom: 36px;
+      left: 10px;
+      right: 10px;
+      width: auto;
+      max-height: 58%;
+    }
+  }
+
   .heading {
     display: flex;
+    flex-wrap: wrap;
     align-items: end;
     justify-content: space-between;
     gap: 20px;
@@ -278,6 +491,7 @@
   }
   .filters {
     display: flex;
+    margin-left: auto;
     gap: 15px;
   }
   label {
@@ -295,6 +509,10 @@
     border: 1px solid #dce1d7;
     color: #344d3d;
     border-radius: 3px;
+  }
+  select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .map-wrap {
     position: relative;
@@ -382,6 +600,8 @@
   }
   :global(.photo-map-pin) {
     position: relative;
+    display: block;
+    box-sizing: border-box;
     width: 55px;
     height: 56px;
     border: 3px solid white;
@@ -414,11 +634,12 @@
       display: block;
     }
     .filters {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       margin-top: 20px;
-      gap: 9px;
+      gap: 12px;
     }
-    .filters label:first-child {
-      flex: 1;
+    .filters label {
       min-width: 0;
     }
     select {

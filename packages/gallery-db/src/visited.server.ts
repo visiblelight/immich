@@ -99,7 +99,9 @@ export async function visitedSnapshot(db: Kysely<unknown>) {
       });
     }
     const gap = (
-      await sql<{ visit_gap_days: number }>`SELECT visit_gap_days FROM gallery.map_settings WHERE id=1`.execute(trx)
+      await sql<{
+        visit_gap_days: number;
+      }>`SELECT visit_gap_days FROM gallery.map_settings WHERE id=1`.execute(trx)
     ).rows[0]!.visit_gap_days;
     const overrides = (
       await sql<Override>`SELECT o.id,o.country_code,to_char(o.start_local_date,'YYYY-MM-DD') AS start,to_char(o.end_local_date,'YYYY-MM-DD') AS end,o.label,o.version,
@@ -193,11 +195,12 @@ async function descriptions(db: Kysely<unknown>, points: Evidence[]): Promise<Ma
     await sql<{
       photo_id: string;
       album_id: string;
+      album_title: string;
       title: string;
       alt_text: string;
       group_id: string | null;
       description_document: { groups?: { id: string; title: string }[] };
-    }>`SELECT p.photo_id,p.album_id,p.title,p.alt_text,p.group_id,a.description_document
+    }>`SELECT p.photo_id,p.album_id,a.title AS album_title,p.title,p.alt_text,p.group_id,a.description_document
     FROM gallery.published_photo p JOIN gallery.published_album a ON a.album_id=p.album_id
     WHERE p.photo_id IN (${sql.join(points.map((p) => sql`${p.id}::uuid`))})`.execute(db)
   ).rows;
@@ -211,6 +214,8 @@ async function descriptions(db: Kysely<unknown>, points: Evidence[]): Promise<Ma
         id: p.id,
         albumId: p.albumId,
         albumSlug: p.albumSlug,
+        albumTitle: row.album_title,
+        countryName: names.get(p.country),
         title: group?.title || row.title || row.alt_text || '照片',
         thumbnail: `/media/${p.albumId}/${p.id}?variant=thumbnail`,
         latitude: p.latitude,
@@ -222,7 +227,13 @@ async function descriptions(db: Kysely<unknown>, points: Evidence[]): Promise<Ma
 export async function countryPhotos(
   db: Kysely<unknown>,
   code: string,
-  options: { visitId?: string | null; viewport?: MapViewport; cluster?: string | null; page?: number } = {},
+  options: {
+    visitId?: string | null;
+    viewport?: MapViewport;
+    cluster?: string | null;
+    page?: number;
+    scope?: 'country' | 'all';
+  } = {},
 ): Promise<{ clusters: PhotoCluster[]; photos: MapPhoto[]; total: number; page: number }> {
   if (!db.isTransaction)
     return db
@@ -233,7 +244,12 @@ export async function countryPhotos(
   const snapshot = await visitedSnapshot(db),
     page = options.page ?? 1;
   ensure(Number.isInteger(page) && page >= 1 && page <= 100000, '页码无效。');
-  const visits = snapshot.visits.filter((v) => v.country === code && (!options.visitId || v.id === options.visitId));
+  ensure(!options.scope || ['country', 'all'].includes(options.scope), '照片范围无效。');
+  ensure(options.scope !== 'all' || !options.visitId, '查看所有国家时不使用单国到访筛选。');
+  ensure(!options.cluster || options.viewport, '选择聚合照片需要地图范围。');
+  const visits = snapshot.visits.filter(
+    (v) => options.scope === 'all' || (v.country === code && (!options.visitId || v.id === options.visitId)),
+  );
   ensure(!options.visitId || visits.length, '到访记录已变化，请重新选择。', 404);
   let points = visits
     .flatMap((v) => v.photos)
@@ -351,7 +367,9 @@ export async function saveVisit(db: Kysely<unknown>, user: GalleryUser, input: R
         await sql<{
           version: number;
           country_code: string;
-        }>`SELECT version,country_code FROM gallery.visit_override WHERE id=${id}::uuid FOR UPDATE`.execute(trx)
+        }>`SELECT version,country_code FROM gallery.visit_override WHERE id=${id}::uuid FOR UPDATE`.execute(
+          trx,
+        )
       ).rows[0];
       ensure(
         existing && existing.version === input.version && existing.country_code === code,
@@ -368,7 +386,10 @@ export async function saveVisit(db: Kysely<unknown>, user: GalleryUser, input: R
       );
     for (const record of replaced) {
       const existing = snapshot.visits.find((v) => v.id === record.id && v.manual && v.country === code);
-      ensure(existing && existing.photos.every((p) => photoIds.has(p.id)), '合并需要包含所选人工记录的全部有效照片。');
+      ensure(
+        existing && existing.photos.every((p) => photoIds.has(p.id)),
+        '合并需要包含所选人工记录的全部有效照片。',
+      );
       const removed =
         await sql`DELETE FROM gallery.visit_override WHERE id=${record.id}::uuid AND country_code=${code} AND version=${record.version}`.execute(
           trx,

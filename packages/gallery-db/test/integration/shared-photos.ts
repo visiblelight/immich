@@ -214,5 +214,9 @@ export async function sharedPhotosAndTags(
   await assert.rejects(sql`SELECT * FROM gallery.photo_tag`.execute(pub), /permission denied/);
   await owner.query('UPDATE public.asset SET "deletedAt"=now() WHERE id=$1', [assets[0]]);
   await setAlbumAvailability(db, user, a, { ...(await state(a)).v, action: 'restore' });
+  const restoredCatalog = await publicCatalog(pub, (await state(a)).a.draft.slug);
+  assert.ok(restoredCatalog.active!.photos.length > 0);
+  assert.ok(restoredCatalog.active!.photos.every((photo) =>
+    photo.occurrences?.length === 1 && photo.occurrences[0]!.albumSlug === restoredCatalog.active!.slug));
   assert.equal((await publicPhotoFeed(pub, { tags: [night] })).total, 0);
 }
