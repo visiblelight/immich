@@ -26,3 +26,17 @@
 无需迁移数据库。新入口仅对已登录管理员开放。原有 `mise.lock` 修改不在本轮范围内。
 
 地图的英文标签依赖 OSM 已有翻译数据，缺少英文的对象保留当地名字。官方底图可用性受网络和服务政策影响；本轮解决的是已定位的来源策略问题，不承诺消除第三方全部故障。
+
+## 生产发布结果
+
+用户完成本地验收后，于 2026-09-27 明确授权 commit、push 并上线。
+
+- 应用提交：`9806d3ca6ac80a98e4513df7595f47c64f2a295a`，中文标题及详细中文正文，作者邮箱 `visiblelight@gmail.com`。
+- [GitHub Actions 36285582815](https://github.com/visiblelight/immich/actions/runs/36285582815) 的 foundation、image、deploy 全部成功；包含静态检查、47 项测试、构建、冒烟以及云端证书／媒体自动化测试。
+- 生产固定镜像：`ghcr.io/visiblelight/gallery@sha256:f1a0d3dce06d714a8adaa374424bf7e9169e2fb237f9f55bea21812bfbc1d3e8`。`/srv/vision/releases/current`、前后台容器 revision 标签一致，两个容器均 healthy。
+- 仅替换 Gallery public/admin。与上线前记录对比，Immich、数据库、Redis、Edge 代理、JVS、Umami 共 11 个其它服务容器保持原实例且运行中。
+- 五个前台一级页、后台登录、Immich、JVS、统计站点 HTTPS 均返回 200。前台页面响应的 Referrer-Policy 已为 strict-origin-when-cross-origin。
+- 未登录访问后台 `/photos` 返回 303 跳转登录，`/api/photos` 返回 401；未放宽访问权限。新编辑功能的完整修改／发布行为已在本地和隔离数据库验证，生产未修改或发布用户内容。
+- 现有公开照片缩略图和大预览图均经 `cdn.ke.ink` 返回 200，分别为 WebP 和 JPEG。
+- 无数据库迁移，无生产地图配置改动。管理员可在“地图设置”选择“OSM 矢量 · 英文优先”并保存；标准 OSM 仍可切回。
+- 上一版本保留于 `/srv/vision/releases/previous`。本轮回退只需恢复上一应用镜像，不能覆盖用户随后编辑的数据。
