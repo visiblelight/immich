@@ -126,6 +126,7 @@
     if (c.count > 1 && lastView.zoom < 16)
       void map?.move({ longitude: c.longitude, latitude: c.latitude, zoom: Math.min(18, lastView.zoom + 2) });
   }
+  let mapLanguage = $state<'en' | 'local'>('en');
   async function start(id: string) {
     const p = providers.find((p) => p.provider === id);
     if (!p) return;
@@ -140,12 +141,19 @@
     host.style.cssText = 'width:100%;height:100%';
     container.replaceChildren(host);
     try {
-      const created = await createPhotoMap(host, p, lastView, changed, (m) => {
-        if (alive && seq === revision) {
-          message = m;
-          loading = false;
-        }
-      });
+      const created = await createPhotoMap(
+        host,
+        p,
+        lastView,
+        changed,
+        (m) => {
+          if (alive && seq === revision) {
+            message = m;
+            loading = false;
+          }
+        },
+        mapLanguage,
+      );
       if (!alive || seq !== revision) {
         created.destroy();
         return;
@@ -206,6 +214,16 @@
         >{#each providers as p}<option value={p.provider}>{names[p.provider]}</option>{/each}</select
       ></label
     >
+    {#if provider === 'osm' && providers
+        .find((p) => p.provider === provider)
+        ?.tileUrl.split('?')[0]
+        ?.endsWith('.json')}
+      <label
+        >地名<select bind:value={mapLanguage} onchange={() => void start(provider)}
+          ><option value="en">英文优先</option><option value="local">当地语言</option></select
+        ></label
+      >
+    {/if}
   </div>
 </div>
 <div class="map-wrap">

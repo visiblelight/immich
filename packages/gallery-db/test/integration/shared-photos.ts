@@ -16,6 +16,8 @@ import {
   publicCatalog,
   publicPhotoFeed,
   setAlbumAvailability,
+  photoLibrary,
+  editPhotoLibrary,
 } from '../../src/index.server.ts';
 export async function sharedPhotosAndTags(
   db: Kysely<unknown>,
@@ -42,7 +44,10 @@ export async function sharedPhotosAndTags(
   const night = await saveTag(db, user, { name: 'Night', active: true });
   const secret = await saveTag(db, user, { name: 'Private draft theme', active: true });
   await assert.rejects(saveTag(db, user, { name: ' architecture ', active: true }), /同名/);
-  const a = await createAlbum(db, user, { title: 'Shared A', treeVersion: (await adminState(db)).site.treeVersion });
+  const a = await createAlbum(db, user, {
+    title: 'Shared A',
+    treeVersion: (await adminState(db)).site.treeVersion,
+  });
   let sa = await state(a);
   sa.a.draft.showExif = true;
   sa.a.draft.photos = assets.map((asset, i) => ({
@@ -56,7 +61,10 @@ export async function sharedPhotosAndTags(
   }));
   await saveAlbum(db, user, a, { ...sa.v, content: sa.a.draft });
   await publishAlbum(db, user, a, (await state(a)).v, root);
-  const b = await createAlbum(db, user, { title: 'Shared B', treeVersion: (await adminState(db)).site.treeVersion });
+  const b = await createAlbum(db, user, {
+    title: 'Shared B',
+    treeVersion: (await adminState(db)).site.treeVersion,
+  });
   let sb = await state(b);
   sa = await state(a);
   sb.a.draft.showExif = true;
@@ -105,7 +113,101 @@ export async function sharedPhotosAndTags(
   await assert.rejects(saveTag(db, user, { ...nowTag, remove: true }), /引用/);
   await saveTag(db, user, { ...nowTag, active: false });
   assert.equal((await publicPhotoFeed(pub, { tags: [night] })).total, 1);
-  for (const id of [a, b]) await setAlbumAvailability(db, user, id, { ...(await state(id)).v, action: 'offline' });
+  // The global library deduplicates shared assets and keeps bulk edits atomic.
+  const list = () => photoLibrary(db, new URLSearchParams({ album: a }));
+  let library = await list();
+  assert.equal(library.total, assets.length);
+  assert.equal(library.photos.find((p) => p.asset === assets[0])!.albums.length, 2);
+  const keep = { mode: 'keep' };
+  const batch = (photos: typeof library.photos, publish = false) => ({
+    photos: photos.map((p) => ({ asset: p.asset, version: p.version })),
+    title: keep,
+    description: keep,
+    tags: keep,
+    publish,
+  });
+  const originalTitle = (await publicCatalog(pub, sb.a.draft.slug)).active!.photos[0]!.title;
+  const beforeBatch = structuredClone(library.photos);
+  await editPhotoLibrary(
+    db,
+    user,
+    {
+      ...batch(library.photos),
+      title: { mode: 'replace', value: 'Batch title' },
+      tags: { mode: 'add', value: [tag] },
+    },
+    root,
+  );
+  assert.equal((await state(b)).a.draft.photos[0]!.title, 'Batch title');
+  assert.equal((await publicCatalog(pub, sb.a.draft.slug)).active!.photos[0]!.title, originalTitle);
+  library = await list();
+  assert.ok(library.photos.every((p) => p.tags.includes(tag)));
+  const mixed = library.photos.map((p, i) =>
+    i === 1 ? beforeBatch.find((old) => old.asset === p.asset)! : p,
+  );
+  await assert.rejects(
+    editPhotoLibrary(
+      db,
+      user,
+      { ...batch(mixed), title: { mode: 'replace', value: 'Should roll back' } },
+      root,
+    ),
+    /更新/,
+  );
+  assert.ok((await list()).photos.every((p) => p.title === 'Batch title'));
+  const openAlbum = await state(b);
+  await editPhotoLibrary(db, user, batch(library.photos, true), root);
+  assert.equal((await publicCatalog(pub, sb.a.draft.slug)).active!.photos[0]!.title, 'Batch title');
+  assert.notEqual((await publicCatalog(pub, sb.a.draft.slug)).active!.markdown, 'Private album B journey');
+  await assert.rejects(saveAlbum(db, user, b, { ...openAlbum.v, content: openAlbum.a.draft }), /窗口|更新/);
+  library = await list();
+  await assert.rejects(
+    editPhotoLibrary(db, user, batch([library.photos[0]!, library.photos[0]!]), root),
+    /选择/,
+  );
+  await editPhotoLibrary(
+    db,
+    user,
+    { ...batch(library.photos), title: { mode: 'clear' }, tags: { mode: 'remove', value: [tag] } },
+    root,
+  );
+  assert.ok((await list()).photos.every((p) => p.title === '' && !p.tags.includes(tag)));
+
+  // A folder-only parent may choose a draft descendant cover, but its media is
+  // only public once that descendant is published through the same ancestry.
+  const parent = await createAlbum(db, user, {
+    title: 'Cover parent',
+    treeVersion: (await adminState(db)).site.treeVersion,
+  });
+  const child = await createAlbum(db, user, {
+    title: 'Cover child',
+    treeVersion: (await adminState(db)).site.treeVersion,
+  });
+  let childState = await state(child);
+  childState.a.draft.parent = parent;
+  childState.a.draft.photos = [{ ...(await state(a)).a.draft.photos[0]!, id: randomUUID() }];
+  await saveAlbum(db, user, child, { ...childState.v, content: childState.a.draft });
+  const parentState = await state(parent);
+  parentState.a.draft.cover = assets[0]!;
+  await saveAlbum(db, user, parent, { ...parentState.v, content: parentState.a.draft });
+  await publishAlbum(db, user, parent, (await state(parent)).v, root);
+  assert.equal((await publicCatalog(pub, parentState.a.draft.slug)).active!.cover, null);
+  await publishAlbum(db, user, child, (await state(child)).v, root);
+  assert.ok((await publicCatalog(pub, parentState.a.draft.slug)).active!.cover);
+  const unrelated = await createAlbum(db, user, {
+    title: 'Unrelated cover',
+    treeVersion: (await adminState(db)).site.treeVersion,
+  });
+  const unrelatedState = await state(unrelated);
+  unrelatedState.a.draft.cover = assets[0]!;
+  await assert.rejects(
+    saveAlbum(db, user, unrelated, { ...unrelatedState.v, content: unrelatedState.a.draft }),
+    /封面/,
+  );
+  await setAlbumAvailability(db, user, child, { ...(await state(child)).v, action: 'offline' });
+  assert.equal((await publicCatalog(pub, parentState.a.draft.slug)).active!.cover, null);
+  for (const id of [a, b])
+    await setAlbumAvailability(db, user, id, { ...(await state(id)).v, action: 'offline' });
   const hidden = await publicPhotoFeed(pub, { tags: [night] });
   assert.equal(hidden.total, 0);
   assert.ok(!hidden.availableTags.some((t) => t.id === night));

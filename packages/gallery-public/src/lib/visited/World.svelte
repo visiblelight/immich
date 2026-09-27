@@ -320,13 +320,13 @@
     outline: none;
   }
   path.visited {
-    fill: #8fa99a;
+    fill: #dfac59;
     cursor: pointer;
   }
   path.visited:hover,
   path.visited:focus,
   path.selected {
-    fill: #637f6e;
+    fill: #c98632;
   }
   .borders {
     fill: none;
@@ -341,7 +341,7 @@
     font-family: system-ui, sans-serif;
   }
   .ink {
-    fill: #203f30;
+    fill: #42321c;
   }
   .water {
     fill: #91a8ac;

@@ -11,7 +11,11 @@ export interface MapProvider {
   attribution: string;
 }
 function key(master: string | undefined) {
-  ensure(master && /^[0-9a-f]{64}$/i.test(master), '地图安全密钥存储尚未配置，请设置 GALLERY_MAP_SECRET_KEY。', 503);
+  ensure(
+    master && /^[0-9a-f]{64}$/i.test(master),
+    '地图安全密钥存储尚未配置，请设置 GALLERY_MAP_SECRET_KEY。',
+    503,
+  );
   return Buffer.from(master, 'hex');
 }
 export function encryptMapSecret(value: string, master: string | undefined) {
@@ -65,7 +69,9 @@ export async function adminMapSettings(db: Kysely<unknown>, master: string | und
     secretStorageReady: !!master && /^[0-9a-f]{64}$/i.test(master),
   };
 }
-export function validateMapProvider(raw: unknown): MapProvider & { securityCode: string; clearSecret: boolean } {
+export function validateMapProvider(
+  raw: unknown,
+): MapProvider & { securityCode: string; clearSecret: boolean } {
   ensure(raw && typeof raw === 'object', '底图配置无效。');
   const p = raw as Record<string, unknown>;
   ensure(['osm', 'google', 'amap'].includes(String(p.provider)), '底图类型无效。');
@@ -74,13 +80,18 @@ export function validateMapProvider(raw: unknown): MapProvider & { securityCode:
     tileUrl = String(p.tileUrl ?? '').trim(),
     attribution = String(p.attribution ?? '').trim();
   const securityCode = String(p.securityCode ?? '').trim();
-  ensure(browserKey.length <= 256 && (!browserKey || /^[a-zA-Z0-9_-]+$/.test(browserKey)), 'API Key 格式无效。');
+  ensure(
+    browserKey.length <= 256 && (!browserKey || /^[a-zA-Z0-9_-]+$/.test(browserKey)),
+    'API Key 格式无效。',
+  );
   ensure(attribution.length <= 300 && securityCode.length <= 256, '底图配置过长。');
   ensure(!p.isDefault || p.enabled, '默认底图必须启用。');
   if (p.provider === 'osm') {
     ensure(
-      ['{z}', '{x}', '{y}'].every((token) => tileUrl.includes(token)) && tileUrl.length <= 1000,
-      '瓦片地址需要包含 {z}、{x}、{y}。',
+      (['{z}', '{x}', '{y}'].every((token) => tileUrl.includes(token)) ||
+        /^https:\/\/[^?#]+\.json(?:\?[^#]*)?$/.test(tileUrl)) &&
+        tileUrl.length <= 1000,
+      '请填写包含 {z}、{x}、{y} 的瓦片地址，或 HTTPS 矢量样式 JSON 地址。',
     );
     let url: URL;
     try {
@@ -88,7 +99,10 @@ export function validateMapProvider(raw: unknown): MapProvider & { securityCode:
     } catch {
       ensure(false, '瓦片地址格式无效。');
     }
-    ensure(url.protocol === 'https:' && !url.username && !url.password, '瓦片地址必须使用 HTTPS 且不包含登录信息。');
+    ensure(
+      url.protocol === 'https:' && !url.username && !url.password,
+      '瓦片地址必须使用 HTTPS 且不包含登录信息。',
+    );
     ensure(attribution, '请填写底图署名。');
   } else if (p.enabled) ensure(browserKey, '启用此底图前请填写 API Key。');
   ensure(!securityCode || p.provider === 'amap', '此底图不接受安全密钥。');
@@ -119,7 +133,9 @@ export async function saveMapSettings(
   ensure(Number.isInteger(gap) && gap >= 1 && gap <= 365, '到访间隔需要为 1–365 天。');
   await db.transaction().execute(async (trx) => {
     const state = (
-      await sql<{ version: number }>`SELECT version FROM gallery.map_settings WHERE id=1 FOR UPDATE`.execute(trx)
+      await sql<{ version: number }>`SELECT version FROM gallery.map_settings WHERE id=1 FOR UPDATE`.execute(
+        trx,
+      )
     ).rows[0]!;
     ensure(state.version === input.version, '地图设置已被修改，请重新载入。', 409);
     await sql`UPDATE gallery.map_provider_config SET is_default=false`.execute(trx);
@@ -127,7 +143,9 @@ export async function saveMapSettings(
       const previous = (
         await sql<{
           secret_ciphertext: string | null;
-        }>`SELECT secret_ciphertext FROM gallery.map_provider_config WHERE provider=${p.provider}`.execute(trx)
+        }>`SELECT secret_ciphertext FROM gallery.map_provider_config WHERE provider=${p.provider}`.execute(
+          trx,
+        )
       ).rows[0]!;
       const secret = p.securityCode
         ? encryptMapSecret(p.securityCode, master)

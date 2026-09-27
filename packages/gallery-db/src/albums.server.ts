@@ -213,7 +213,9 @@ async function coverValid(db: Db, id: string, c: AlbumContent, parents: Map<stri
   const rows = (
     await sql<{
       album_id: string;
-    }>`SELECT album_id FROM gallery.published_photo WHERE asset_id=${c.cover}::uuid AND album_id<>${id}::uuid`.execute(
+    }>`SELECT p.album_id FROM gallery.album_photo p JOIN gallery.admin_source_asset s ON s.asset_id=p.immich_asset_id
+    LEFT JOIN gallery.photo profile ON profile.immich_asset_id=p.immich_asset_id
+    WHERE p.immich_asset_id=${c.cover}::uuid AND p.album_id<>${id}::uuid AND NOT coalesce(profile.hidden_from_gallery,false)`.execute(
       db,
     )
   ).rows;
@@ -228,7 +230,7 @@ async function coverValid(db: Db, id: string, c: AlbumContent, parents: Map<stri
       }
       return false;
     }),
-    '封面需要来自本册照片或当前公开的后代相册。',
+    '封面需要来自本册或后代相册的可展示照片。',
     409,
   );
 }
@@ -286,8 +288,9 @@ async function saveAlbumInTransaction(
     c.photos.map((p) => p.asset),
   );
   await coverValid(trx, id, c, tree.draft);
-  const duplicate = (await sql`SELECT id FROM gallery.album WHERE slug=${c.slug} AND id<>${id}::uuid`.execute(trx)).rows
-    .length;
+  const duplicate = (
+    await sql`SELECT id FROM gallery.album WHERE slug=${c.slug} AND id<>${id}::uuid`.execute(trx)
+  ).rows.length;
   ensure(!duplicate, '访问地址已被其他相册使用。', 409);
   await sql`UPDATE gallery.album SET slug=${c.slug},has_unpublished_changes=true,version=version+1,updated_at=now() WHERE id=${id}::uuid`.execute(
     trx,
@@ -300,7 +303,9 @@ async function saveAlbumInTransaction(
       id: string;
       asset: string;
       created_at: Date;
-    }>`SELECT id,immich_asset_id AS asset,created_at FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(trx)
+    }>`SELECT id,immich_asset_id AS asset,created_at FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(
+      trx,
+    )
   ).rows;
   for (const p of c.photos) {
     const old = previous.find((x) => x.id === p.id);
@@ -374,11 +379,14 @@ export async function saveAlbumItem(
     await actor(trx, user);
     const album = await lockAlbum(trx, id, input);
     const draft = await storedContent(trx, id);
-    const published = album.current_release_id ? await storedContent(trx, id, album.current_release_id) : null;
+    const published = album.current_release_id
+      ? await storedContent(trx, id, album.current_release_id)
+      : null;
     if (input.publish)
       ensure(
         published &&
-          (await sql`SELECT album_id FROM gallery.published_album WHERE album_id=${id}::uuid`.execute(trx)).rows.length,
+          (await sql`SELECT album_id FROM gallery.published_album WHERE album_id=${id}::uuid`.execute(trx))
+            .rows.length,
         '请先发布相册并确认所有上级已公开。当前可保存草稿。',
         409,
       );
@@ -527,7 +535,12 @@ export async function publishAlbum(
         ensure(false, `第 ${index + 1} 张照片的预览图不可用，请检查 Immich 或移除该照片。`, 409);
       }
     }
-    await coverValid(trx, id, { cover: draft.cover_asset_id ?? '', photos: members } as AlbumContent, tree.release);
+    await coverValid(
+      trx,
+      id,
+      { cover: draft.cover_asset_id ?? '', photos: members } as AlbumContent,
+      tree.draft,
+    );
     const release = randomUUID();
     await sql`INSERT INTO gallery.album_release(id,album_id,release_number,source_draft_version,published_by,parent_album_id,position,title,summary,description_document,cover_asset_id,cover_focal_point,location_mode,show_exif,seo_title,seo_description) SELECT ${release}::uuid,d.album_id,(SELECT coalesce(max(release_number),0)+1 FROM gallery.album_release WHERE album_id=${id}::uuid),d.version,${user.id}::uuid,d.parent_album_id,d.position,d.title,d.summary,d.description_document,d.cover_asset_id,d.cover_focal_point,d.location_mode,d.show_exif,d.seo_title,d.seo_description FROM gallery.album_draft d WHERE d.album_id=${id}::uuid`.execute(
       trx,
@@ -566,7 +579,12 @@ export async function publishAlbum(
     await audit(trx, user, 'album.publish', id);
   });
 }
-export async function setAlbumAvailability(db: Db, user: GalleryUser, id: string, input: Record<string, unknown>) {
+export async function setAlbumAvailability(
+  db: Db,
+  user: GalleryUser,
+  id: string,
+  input: Record<string, unknown>,
+) {
   ensure(input.action === 'offline' || input.action === 'restore', '操作无效。');
   await db.transaction().execute(async (trx) => {
     await actor(trx, user);
@@ -578,8 +596,11 @@ export async function setAlbumAvailability(db: Db, user: GalleryUser, id: string
       const parent = tree.release.get(id);
       if (parent)
         ensure(
-          (await sql`SELECT album_id FROM gallery.published_album WHERE album_id=${parent}::uuid`.execute(trx)).rows
-            .length,
+          (
+            await sql`SELECT album_id FROM gallery.published_album WHERE album_id=${parent}::uuid`.execute(
+              trx,
+            )
+          ).rows.length,
           '请先恢复父相册。',
           409,
         );
@@ -620,10 +641,16 @@ export async function saveSite(db: Db, user: GalleryUser, input: Record<string, 
           version: string;
         }>`SELECT about_article_version AS version FROM gallery.site WHERE id=1`.execute(trx)
       ).rows[0]!;
-      ensure(String(input.aboutArticleVersion) === String(about.version), '关于选篇已变化，请刷新后再保存。', 409);
+      ensure(
+        String(input.aboutArticleVersion) === String(about.version),
+        '关于选篇已变化，请刷新后再保存。',
+        409,
+      );
       const id = input.aboutArticleId ? uuid(input.aboutArticleId) : null;
       ensure(
-        !id || (await sql`SELECT id FROM gallery.published_article WHERE id=${id}::uuid`.execute(trx)).rows.length > 0,
+        !id ||
+          (await sql`SELECT id FROM gallery.published_article WHERE id=${id}::uuid`.execute(trx)).rows
+            .length > 0,
         '只能选择已发布文章。',
       );
       await sql`UPDATE gallery.site SET about_article_id=${id}::uuid,about_article_version=about_article_version+1 WHERE id=1`.execute(
@@ -639,12 +666,18 @@ export async function saveSite(db: Db, user: GalleryUser, input: Record<string, 
   });
 }
 
-export async function deleteDraftAlbum(db: Db, user: GalleryUser, id: string, input: Record<string, unknown>) {
+export async function deleteDraftAlbum(
+  db: Db,
+  user: GalleryUser,
+  id: string,
+  input: Record<string, unknown>,
+) {
   await db.transaction().execute(async (trx) => {
     await actor(trx, user);
     const album = await lockAlbum(trx, id, input);
     ensure(album.status === 'draft' && !album.current_release_id, '已发布相册请使用下线操作。', 409);
-    const children = await sql`SELECT album_id FROM gallery.album_draft WHERE parent_album_id=${id}::uuid`.execute(trx);
+    const children =
+      await sql`SELECT album_id FROM gallery.album_draft WHERE parent_album_id=${id}::uuid`.execute(trx);
     ensure(!children.rows.length, '请先移走或删除子相册。', 409);
     await sql`DELETE FROM gallery.album WHERE id=${id}::uuid`.execute(trx);
     await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);
@@ -658,7 +691,8 @@ export async function picker(db: Db, filters: URLSearchParams) {
     search = filters.get('search') ?? '',
     since = filters.get('since');
   ensure(search.length <= 200, '文件名过长。');
-  if (since) ensure(/^\d{4}-\d{2}-\d{2}$/.test(since) && Number.isFinite(Date.parse(since)), '日期格式无效。');
+  if (since)
+    ensure(/^\d{4}-\d{2}-\d{2}$/.test(since) && Number.isFinite(Date.parse(since)), '日期格式无效。');
   const rows = (
     await sql<{
       asset_id: string;
@@ -731,7 +765,7 @@ export async function picker(db: Db, filters: URLSearchParams) {
   };
 }
 
-async function refreshSharedFlags(db: Db, assets: string[], albumId: string) {
+export async function refreshSharedFlags(db: Db, assets: string[], albumId: string) {
   const rows = (
     await sql<{
       id: string;

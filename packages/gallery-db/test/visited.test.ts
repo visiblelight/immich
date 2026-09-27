@@ -39,7 +39,10 @@ test('approximate cells spanning a border or enclave never reveal exact national
       [x, y],
     ],
   ];
-  const locate = createCountryLocator({ version: 'test', regions: { AA: [square(0, 0, 1)], BB: [square(1, 0, 1)] } });
+  const locate = createCountryLocator({
+    version: 'test',
+    regions: { AA: [square(0, 0, 1)], BB: [square(1, 0, 1)] },
+  });
   assert.equal(locate(0.995, 0.5), 'AA');
   assert.equal(locate(0.995, 0.5, true), null);
   assert.equal(locate(0.5, 0.5, true), 'AA');
@@ -98,7 +101,8 @@ test('clusters retain all counts across wrapped viewport and bound large respons
     { longitude: -179, latitude: 0 },
   ];
   assert.equal(
-    [...clusterPhotos(dateline, { west: 170, east: -170, south: -10, north: 10, zoom: 2 }).values()].flat().length,
+    [...clusterPhotos(dateline, { west: 170, east: -170, south: -10, north: 10, zoom: 2 }).values()].flat()
+      .length,
     2,
   );
   assert.equal(photoBounds(dateline).west, 179);
@@ -119,4 +123,21 @@ test('map secrets authenticate ciphertext and key, provider validation rejects u
       attribution: 'test',
     }),
   );
+});
+
+test('OSM accepts HTTPS vector styles and rejects insecure or credential-bearing URLs', () => {
+  const config = {
+    provider: 'osm',
+    enabled: true,
+    isDefault: true,
+    attribution: '© OpenStreetMap contributors',
+  };
+  const tileUrl = 'https://vector.openstreetmap.org/styles/shortbread/colorful.json';
+  assert.equal(validateMapProvider({ ...config, tileUrl }).tileUrl, tileUrl);
+  for (const tileUrl of [
+    'http://example.com/style.json',
+    'https://user:secret@example.com/style.json',
+    'https://example.com/style.html',
+  ])
+    assert.throws(() => validateMapProvider({ ...config, tileUrl }));
 });

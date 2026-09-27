@@ -244,10 +244,10 @@
   padding: 10px;
   border: 0;
   border-radius: 50%;
-  background: rgb(0 0 0 / 24%);
+  background: rgb(0 0 0 / 42%);
   color: white;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.7;
   transition:
     opacity 160ms,
     background 160ms;
@@ -290,7 +290,7 @@
 }
 @media (hover: none) {
   .article-prose .article-media-control {
-    opacity: 0.65;
+    opacity: 0.8;
   }
 }
 @media (prefers-reduced-motion: reduce) {

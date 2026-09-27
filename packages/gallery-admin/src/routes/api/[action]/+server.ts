@@ -1,6 +1,8 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { GalleryError, ensure, uuid } from '@gallery/core';
 import {
+  photoLibrary,
+  editPhotoLibrary,
   listArticles,
   getArticle,
   createArticle,
@@ -81,6 +83,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
   try {
     ensure(locals.user, '请先登录。', 401);
     const app = getRuntime();
+    if (params.action === 'photos') return json(await photoLibrary(app.db, url.searchParams));
     if (params.action === 'state')
       return json({ ...(await adminState(app.db)), user: locals.user, publicOrigin: app.publicOrigin });
     if (params.action === 'map-settings') return json(await adminMapSettings(app.db, app.mapSecretKey));
@@ -135,6 +138,8 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
     ensure(locals.user, '请先登录。', 401);
     const user = locals.user;
     switch (params.action) {
+      case 'photos-edit':
+        return json(await editPhotoLibrary(app.db, user, input, app.root));
       case 'article-create':
         return json({ id: await createArticle(app.db, user) });
       case 'article-save':

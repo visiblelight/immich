@@ -2475,3 +2475,62 @@ html {
     margin-bottom: 16px;
   }
 }
+
+/* The album context and action bar stay visible while browsing source photos. */
+dialog.source-picker-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: min(850px, calc(100dvh - 40px));
+  overflow: hidden;
+}
+.source-picker-dialog .picker-layout {
+  min-height: 0;
+  overflow: hidden;
+}
+.source-picker-dialog .picker-sidebar,
+.source-picker-dialog .picker-main {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.source-picker-dialog .picker-footer {
+  position: static;
+  margin: 0;
+}
+@media (max-width: 780px) {
+  .source-picker-dialog .picker-layout {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .source-picker-dialog .picker-sidebar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-height: 70px;
+  }
+  .source-picker-dialog .picker-sidebar > button {
+    flex-shrink: 0;
+  }
+}
+
+.album-cover-picker {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 0;
+}
+.album-cover-picker img {
+  width: 88px;
+  height: 66px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.album-cover-picker label {
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+  min-width: 0;
+  font-size: 13px;
+}
+.album-cover-picker small {
+  color: var(--muted);
+  line-height: 1.6;
+}

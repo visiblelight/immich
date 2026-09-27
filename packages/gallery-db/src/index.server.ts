@@ -39,3 +39,5 @@ export * from './tags.server.ts';
 export * from './articles.server.ts';
 export * from './article-media.server.ts';
 export { publishedCdnRedirect } from './cdn.server.ts';
+
+export * from './photo-library.server.ts';

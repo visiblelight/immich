@@ -62,7 +62,13 @@
       <section>
         <h2>到访推导</h2>
         <label
-          >同一国家照片相隔超过 <input type="number" min="1" max="365" bind:value={settings.gapDays} required /> 天，整理为新的到访</label
+          >同一国家照片相隔超过 <input
+            type="number"
+            min="1"
+            max="365"
+            bind:value={settings.gapDays}
+            required
+          /> 天，整理为新的到访</label
         >
         <p>期间出现其他国家的可靠拍摄记录也会拆分。人工整理的记录保留。</p>
       </section>
@@ -76,14 +82,37 @@
                 checked={p.isDefault}
                 disabled={!p.enabled || busy}
                 onchange={() =>
-                  (providers = providers.map((item) => ({ ...item, isDefault: item.provider === p.provider })))}
+                  (providers = providers.map((item) => ({
+                    ...item,
+                    isDefault: item.provider === p.provider,
+                  })))}
               /> 默认</label
             >
           </div>
-          {#if p.provider === 'osm'}<label class="field">瓦片地址<input bind:value={p.tileUrl} required /></label><label
+          {#if p.provider === 'osm'}<div class="map-presets">
+              <button
+                type="button"
+                disabled={busy}
+                onclick={() => {
+                  p.tileUrl = 'https://vector.openstreetmap.org/styles/shortbread/colorful.json';
+                  p.attribution = '© OpenStreetMap contributors';
+                }}>OSM 矢量 · 英文优先</button
+              ><button
+                type="button"
+                disabled={busy}
+                onclick={() => {
+                  p.tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+                  p.attribution = '© OpenStreetMap contributors';
+                }}>OSM 标准 · 当地语言</button
+              >
+            </div>
+            <label class="field">瓦片或矢量样式地址<input bind:value={p.tileUrl} required /></label><label
               class="field">底图署名<input bind:value={p.attribution} required maxlength="300" /></label
             >
-            <p>默认使用 OpenStreetMap 标准瓦片；保留署名，不预取或批量下载地图。</p>{:else}<label class="field"
+            <p>
+              标准瓦片中的地名无法切换语言；矢量底图支持英文优先，缺少译名时保留原文。两者都使用 OSM
+              官方服务，不需要 API Key，没有可用性保证；保留署名，不预取或批量下载地图。
+            </p>{:else}<label class="field"
               >浏览器 API Key<input
                 bind:value={p.browserKey}
                 autocomplete="off"
@@ -101,20 +130,29 @@
                 placeholder={p.hasSecret ? '已加密保存，留空保留' : '填写 securityJsCode'}
                 maxlength="256"
               /></label
-            >{#if p.hasSecret}<label><input type="checkbox" bind:checked={p.clearSecret} /> 清除已保存的安全密钥</label
+            >{#if p.hasSecret}<label
+                ><input type="checkbox" bind:checked={p.clearSecret} /> 清除已保存的安全密钥</label
               >{/if}
             <p>
               {settings.secretStorageReady
                 ? '安全密钥只在服务器解密，并由受限代理使用。'
                 : '当前环境尚未设置 GALLERY_MAP_SECRET_KEY，配置后才可保存安全密钥。'}
             </p>{/if}
-          {#if p.provider !== 'osm'}<p>配置状态：{p.browserKey ? '已填写，尚需用真实地图验证授权' : '未填写'}</p>{/if}
+          {#if p.provider !== 'osm'}<p>
+              配置状态：{p.browserKey ? '已填写，尚需用真实地图验证授权' : '未填写'}
+            </p>{/if}
         </section>{/each}<button disabled={busy}>{busy ? '正在保存…' : '保存并应用'}</button>
     </form>
   </div></Frame
 >
 
 <style>
+  .map-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 18px 0;
+  }
   section {
     background: #fff;
     border: 1px solid #dfe4da;

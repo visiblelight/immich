@@ -1,3 +1,4 @@
+import { englishNames } from './map-language';
 import type { MapViewport, PhotoCluster } from '@gallery/core';
 export interface Provider {
   provider: 'osm' | 'google' | 'amap';
@@ -85,6 +86,7 @@ export async function createPhotoMap(
   initial: View,
   changed: () => void,
   failed: (message: string) => void,
+  language: 'en' | 'local' = 'en',
 ): Promise<PhotoMap> {
   if (p.provider === 'osm') {
     const base = '/vendor/maplibre-6.9.0/';
@@ -105,17 +107,44 @@ export async function createPhotoMap(
     copyright.rel = 'noopener';
     copyright.textContent = '许可';
     attribution.append(' · ', copyright);
+    let style: SDK = {
+      version: 8,
+      sources: {
+        osm: { type: 'raster', tiles: [p.tileUrl], tileSize: 256, attribution: attribution.innerHTML },
+      },
+      layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+    };
+    if (new URL(p.tileUrl).pathname.endsWith('.json')) {
+      const response = await fetch(p.tileUrl, {
+        referrerPolicy: 'strict-origin-when-cross-origin',
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) throw new Error('矢量底图样式加载失败，请重试或切换底图。');
+      style = await response.json();
+      if (style.version !== 8 || !Array.isArray(style.layers)) throw new Error('矢量底图样式无效。');
+      const absolute = (url: string) =>
+        new URL(url, response.url).href.replace(/%7B/gi, '{').replace(/%7D/gi, '}');
+      if (style.glyphs) style.glyphs = absolute(style.glyphs);
+      if (typeof style.sprite === 'string') style.sprite = absolute(style.sprite);
+      else if (Array.isArray(style.sprite))
+        style.sprite = style.sprite.map((sprite: SDK) => ({ ...sprite, url: absolute(sprite.url) }));
+      for (const source of Object.values(style.sources ?? {}) as SDK[]) {
+        if (source.url) source.url = absolute(source.url);
+        if (source.tiles) source.tiles = source.tiles.map(absolute);
+      }
+      if (language === 'en')
+        for (const layer of style.layers) {
+          if (layer.layout?.['text-field'])
+            layer.layout['text-field'] = englishNames(layer.layout['text-field']);
+        }
+    }
     const map = new sdk.Map({
       container,
       center: [initial.longitude, initial.latitude],
       zoom: initial.zoom,
       maxZoom: 19,
       renderWorldCopies: true,
-      style: {
-        version: 8,
-        sources: { osm: { type: 'raster', tiles: [p.tileUrl], tileSize: 256, attribution: attribution.innerHTML } },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-      },
+      style,
     });
     map.addControl(new sdk.NavigationControl({ showCompass: false }), 'top-right');
     map.on('moveend', changed);
@@ -148,7 +177,7 @@ export async function createPhotoMap(
   }
   if (p.provider === 'google') {
     await script(
-      `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(p.browserKey)}&v=quarterly&loading=async&callback=galleryGoogleReady&libraries=marker`,
+      `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(p.browserKey)}&v=quarterly&loading=async&callback=galleryGoogleReady&libraries=marker&language=zh-CN`,
       'galleryGoogleReady',
     );
     const sdk = (window as SDK).google.maps;
@@ -236,7 +265,9 @@ export async function createPhotoMap(
       if (error < 1e-7) return guess;
     }
     const verified = await convert(guess);
-    if (verified.some((p, i) => Math.abs(p[0] - target[i]![0]) > 1e-5 || Math.abs(p[1] - target[i]![1]) > 1e-5))
+    if (
+      verified.some((p, i) => Math.abs(p[0] - target[i]![0]) > 1e-5 || Math.abs(p[1] - target[i]![1]) > 1e-5)
+    )
       throw new Error('当前区域坐标转换未收敛，请切换底图。');
     return guess;
   };
