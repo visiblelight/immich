@@ -1,5 +1,6 @@
 <script lang="ts">
   import { beforeNavigate } from '$app/navigation';
+  import { OSM_VECTOR_STYLE } from '@gallery/core';
   import { untrack } from 'svelte';
   import Frame from '$lib/MapAdminFrame.svelte';
   let { data } = $props();
@@ -94,7 +95,7 @@
                 type="button"
                 disabled={busy}
                 onclick={() => {
-                  p.tileUrl = 'https://vector.openstreetmap.org/styles/shortbread/colorful.json';
+                  p.tileUrl = OSM_VECTOR_STYLE;
                   p.attribution = '© OpenStreetMap contributors';
                 }}>OSM 矢量 · 英文优先</button
               ><button
@@ -110,8 +111,8 @@
               class="field">底图署名<input bind:value={p.attribution} required maxlength="300" /></label
             >
             <p>
-              标准瓦片中的地名无法切换语言；矢量底图支持英文优先，缺少译名时保留原文。两者都使用 OSM
-              官方服务，不需要 API Key，没有可用性保证；保留署名，不预取或批量下载地图。
+              标准瓦片中的地名无法切换语言；矢量底图支持英文优先，缺少译名时保留原文。矢量样式、字体和图标由本站提供，地图数据使用
+              OSM 官方服务。无需 API Key，但第三方地图数据没有可用性保证；保留署名，不预取或批量下载地图。
             </p>{:else}<label class="field"
               >浏览器 API Key<input
                 bind:value={p.browserKey}

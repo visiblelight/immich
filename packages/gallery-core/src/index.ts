@@ -20,3 +20,4 @@ export * from './visited.ts';
 export * from './admin-albums.ts';
 
 export * from './article.ts';
+export * from './map-presets.ts';

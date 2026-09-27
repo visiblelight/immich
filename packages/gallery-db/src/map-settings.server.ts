@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
-import { ensure, type GalleryUser } from '@gallery/core';
+import { ensure, OSM_VECTOR_STYLE, type GalleryUser } from '@gallery/core';
 export type MapProviderId = 'osm' | 'google' | 'amap';
 export interface MapProvider {
   provider: MapProviderId;
@@ -86,7 +86,7 @@ export function validateMapProvider(
   );
   ensure(attribution.length <= 300 && securityCode.length <= 256, '底图配置过长。');
   ensure(!p.isDefault || p.enabled, '默认底图必须启用。');
-  if (p.provider === 'osm') {
+  if (p.provider === 'osm' && tileUrl !== OSM_VECTOR_STYLE) {
     ensure(
       (['{z}', '{x}', '{y}'].every((token) => tileUrl.includes(token)) ||
         /^https:\/\/[^?#]+\.json(?:\?[^#]*)?$/.test(tileUrl)) &&
@@ -104,7 +104,8 @@ export function validateMapProvider(
       '瓦片地址必须使用 HTTPS 且不包含登录信息。',
     );
     ensure(attribution, '请填写底图署名。');
-  } else if (p.enabled) ensure(browserKey, '启用此底图前请填写 API Key。');
+  } else if (p.provider !== 'osm' && p.enabled) ensure(browserKey, '启用此底图前请填写 API Key。');
+  if (p.provider === 'osm') ensure(attribution, '请填写底图署名。');
   ensure(!securityCode || p.provider === 'amap', '此底图不接受安全密钥。');
   return {
     provider: p.provider as MapProviderId,

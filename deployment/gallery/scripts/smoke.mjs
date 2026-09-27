@@ -54,6 +54,17 @@ async function verify(name, designPreview = false) {
     assert.equal(page.status, 503, 'unconfigured service must not expose a working gallery/admin page');
     await page.text();
     if (name === 'public') {
+      for (const path of [
+        '/vendor/osm-shortbread-v1/style.json',
+        '/vendor/osm-shortbread-v1/fonts/noto_sans_regular/0-255.pbf',
+        '/vendor/osm-shortbread-v1/fonts/noto_sans_bold/1280-1535.pbf',
+        '/vendor/osm-shortbread-v1/sprites/basics/sprites.json',
+        '/vendor/osm-shortbread-v1/sprites/basics/sprites@2x.png',
+      ]) {
+        const asset = await fetch(`${origin}${path}`);
+        assert.equal(asset.status, 200, `bundled map asset: ${path}`);
+        assert.ok((await asset.arrayBuffer()).byteLength > 0);
+      }
       for (const path of ['/design/records', '/design/records/a-road-through-georgia', '/design/records/a-little-time-for-nothing', '/design/records/about', '/design', '/design/visited', '/design/visited/world', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
         const preview = await fetch(`${origin}${path}`);
         assert.equal(preview.status, designPreview ? 200 : 404, `preview gate: ${path}`);

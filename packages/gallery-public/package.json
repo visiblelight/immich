@@ -5,9 +5,9 @@
   "type": "module",
   "license": "AGPL-3.0",
   "scripts": {
-    "dev": "vite dev --host 127.0.0.1 --port 3100 --strictPort",
+    "dev": "node scripts/prepare-map-assets.mjs && vite dev --host 127.0.0.1 --port 3100 --strictPort",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "build": "vite build",
+    "build": "node scripts/prepare-map-assets.mjs && vite build",
     "start": "node build",
     "test": "node --test test/*.test.ts"
   },

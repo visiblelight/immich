@@ -1,4 +1,4 @@
-import { englishNames } from './map-language';
+import { loadOsmStyle, MAP_FALLBACK_MESSAGE } from './map-style';
 import type { MapViewport, PhotoCluster } from '@gallery/core';
 export interface Provider {
   provider: 'osm' | 'google' | 'amap';
@@ -107,49 +107,27 @@ export async function createPhotoMap(
     copyright.rel = 'noopener';
     copyright.textContent = '许可';
     attribution.append(' · ', copyright);
-    let style: SDK = {
-      version: 8,
-      sources: {
-        osm: { type: 'raster', tiles: [p.tileUrl], tileSize: 256, attribution: attribution.innerHTML },
-      },
-      layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-    };
-    if (new URL(p.tileUrl).pathname.endsWith('.json')) {
-      const response = await fetch(p.tileUrl, {
-        referrerPolicy: 'strict-origin-when-cross-origin',
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!response.ok) throw new Error('矢量底图样式加载失败，请重试或切换底图。');
-      style = await response.json();
-      if (style.version !== 8 || !Array.isArray(style.layers)) throw new Error('矢量底图样式无效。');
-      const absolute = (url: string) =>
-        new URL(url, response.url).href.replace(/%7B/gi, '{').replace(/%7D/gi, '}');
-      if (style.glyphs) style.glyphs = absolute(style.glyphs);
-      if (typeof style.sprite === 'string') style.sprite = absolute(style.sprite);
-      else if (Array.isArray(style.sprite))
-        style.sprite = style.sprite.map((sprite: SDK) => ({ ...sprite, url: absolute(sprite.url) }));
-      for (const source of Object.values(style.sources ?? {}) as SDK[]) {
-        if (source.url) source.url = absolute(source.url);
-        if (source.tiles) source.tiles = source.tiles.map(absolute);
-      }
-      if (language === 'en')
-        for (const layer of style.layers) {
-          if (layer.layout?.['text-field'])
-            layer.layout['text-field'] = englishNames(layer.layout['text-field']);
-        }
-    }
+    const loaded = await loadOsmStyle(p.tileUrl, attribution.innerHTML, language, location.origin);
+    let vector = loaded.vector;
+    if (loaded.warning) failed(loaded.warning);
     const map = new sdk.Map({
       container,
       center: [initial.longitude, initial.latitude],
       zoom: initial.zoom,
       maxZoom: 19,
       renderWorldCopies: true,
-      style,
+      style: loaded.style,
     });
     map.addControl(new sdk.NavigationControl({ showCompass: false }), 'top-right');
     map.on('moveend', changed);
     map.on('load', changed);
-    map.on('error', () => failed('底图暂时加载失败，可重试或切换底图；照片列表仍可查看。'));
+    map.on('error', () => {
+      if (vector) {
+        vector = false;
+        failed(MAP_FALLBACK_MESSAGE);
+        map.setStyle(loaded.fallback);
+      } else failed('底图暂时加载失败，可重试或切换底图；照片列表仍可查看。');
+    });
     let markers: SDK[] = [];
     return {
       async view() {

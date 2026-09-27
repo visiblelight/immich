@@ -134,7 +134,12 @@ test('OSM accepts HTTPS vector styles and rejects insecure or credential-bearing
   };
   const tileUrl = 'https://vector.openstreetmap.org/styles/shortbread/colorful.json';
   assert.equal(validateMapProvider({ ...config, tileUrl }).tileUrl, tileUrl);
+  const localStyle = '/vendor/osm-shortbread-v1/style.json';
+  assert.equal(validateMapProvider({ ...config, tileUrl: localStyle }).tileUrl, localStyle);
+  assert.throws(() => validateMapProvider({ ...config, tileUrl: localStyle, attribution: '' }));
   for (const tileUrl of [
+    '/arbitrary/style.json',
+    '//example.com/style.json',
     'http://example.com/style.json',
     'https://user:secret@example.com/style.json',
     'https://example.com/style.html',

@@ -15,3 +15,5 @@
 - OSM 标准栅格图保持可选，其文字已经画在图片中，不能切换语言。增加官方矢量底图预设，英文优先并在没有英文译名时回退当地名字；不承诺全中文。Google SDK 请求中文界面／标签。OSM 官方服务没有 SLA，不增加代理绕过或批量抓取。
 
 本次无数据库结构迁移，Immich 表和媒体不变。实际地图服务说明见 [OSM 瓦片政策](https://operations.osmfoundation.org/policies/tiles/) 与 [矢量服务政策](https://operations.osmfoundation.org/policies/vector/)。
+
+2026-09-27 实施更正：OSM 的演示样式资源并不允许一般生产域名跨域引用；矢量预设改用 Gallery 自托管的 VersaTiles 开源样式、字体与图标，地图瓦片继续直连 OSM 官方公开矢量服务。旧预设兼容映射，不改变已接受的英文优先行为；失败时允许回退标准栅格底图并明确语言限制。详见交付记录的故障修复说明。
