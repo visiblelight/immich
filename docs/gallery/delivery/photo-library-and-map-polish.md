@@ -54,4 +54,14 @@ OSM 的样式服务只允许 OSM 与 localhost/127.0.0.1 等开发来源跨域�
 - 矢量样式／资源加载失败时仅尝试一次标准栅格底图，并提示当地语言限制；标准底图也失败则提示重试，照片列表仍可使用。
 - 增加生产域名／备用域名／localhost 的资源地址回归、网络及格式异常回退测试，以及构建后样式、拉丁／亚美尼亚字形和图标 HTTP 冒烟。
 
-本次无数据库迁移，不修改 Immich、Edge、JVS 或用户文章／相册。免费地图数据仍依赖 OSM 服务可用性。`gallery:check`、`gallery:test`（50 项）、`gallery:build` 和 `gallery:smoke` 通过。浏览器实测自托管矢量底图显示英文及照片聚合，模拟样式请求失败后标准底图成功接管；测试拦截已撤销。生产部署与正式域名浏览器结果待上线后补记。
+本次无数据库迁移，不修改 Immich、Edge、JVS 或用户文章／相册。免费地图数据仍依赖 OSM 服务可用性。`gallery:check`、`gallery:test`（50 项）、`gallery:build` 和 `gallery:smoke` 通过。浏览器实测自托管矢量底图显示英文及照片聚合，模拟样式请求失败后标准底图成功接管；测试拦截已撤销。生产验证已完成，见下。
+
+
+### 修复发布验证
+
+- 应用提交 `aa9b84e9781913e9678577369ec54d75374e5528`；[Actions 36286655903](https://github.com/visiblelight/immich/actions/runs/36286655903) 三个任务全部成功。
+- 镜像 `ghcr.io/visiblelight/gallery@sha256:d34f0dea5eddb65519c618b1fe06cb0e5863c8efd133122f49692d6ae793885a`。生产 release、public/admin revision 一致，均 healthy；其它 11 个服务容器未更换且运行正常。
+- 正式浏览器逐页验证 `https://vision.ke/visited/AZ` 与 `/visited/AM`：矢量底图实际绘制，Baku、Haghpat 等英文地名可见，分别显示 16／7 张公开照片，AM 放大后底图和聚合正常。
+- 浏览器网络记录：两国样式、图标、字形、照片列表及聚合 API 均为 200，没有 `Network.loadingFailed`。显示资源均来自 `vision.ke/vendor/osm-shortbread-v1/`，不再请求受限制的 OSM 演示样式。
+- 生产样式、拉丁字形、亚美尼亚字形、2x 图标 HTTP 检查通过；前台一级页、后台登录、Immich、JVS、统计站点均为 200。后台匿名访问继续为 303/401；公开缩略图／预览经 CDN 正常返回 WebP/JPEG。
+- 本地故障模拟仅作用于测试页，已清除网络拦截。没有更改生产地图设置、发布内容或数据库。
