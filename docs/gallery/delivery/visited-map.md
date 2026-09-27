@@ -78,3 +78,16 @@ Google/高德有效API Key、安全码及域名／账单授权尚未提供，不
 - 本地前后台服务已恢复。本轮尚未 commit/push、尚未部署生产；无关 `mise.lock` 修改保留。
 
 2026-09-27 控件布局补充：已移除独立复选框及提示行，照片范围统一进入右上角筛选区。重新通过 `gallery:check`（零错误／警告）和 `gallery:build`；浏览器验证桌面同排、390px 两列且无横向溢出，切换所有国家显示 11 张，切回当前国家恢复 8 张及到访筛选。本地服务已重启，未提交或上线。
+
+## 生产发布与验收（2026-09-27）
+
+用户完成本地验收后授权发布，本轮地图功能及右上角筛选栏已上线：
+
+- 应用提交：`0a584d679906fa15fc502f5c73529c7d64f43613`，已推送 `codex/gallery`。
+- GitHub Actions [36293613525](https://github.com/visiblelight/immich/actions/runs/36293613525) 的检查、镜像和部署全部成功。
+- 生产镜像：`ghcr.io/visiblelight/gallery@sha256:99eb0059efdfb7bc1f88971166c13a6277124fbdf964e09da53575d652b64630`；服务器 `/srv/vision/releases/current` 已核对一致。
+- 浏览器验证 `/visited/AM` 与 `/visited/AZ` 底图正常，控制台未记录错误；AM 聚合列出 7 张可分别打开的照片，详情存在所属相册链接，关闭详情返回原地图中心与缩放；所有国家范围显示 23 张并暂停单国到访筛选。
+- public/admin 均 healthy。仅 Gallery 前后台容器更新，Immich、数据库、Edge、JVS、Umami 保持原运行实例；未执行数据库迁移。
+- 上一应用 `aa9b84e9781913e9678577369ec54d75374e5528` 和镜像 `sha256:d34f0dea5eddb65519c618b1fe06cb0e5863c8efd133122f49692d6ae793885a` 可用于回退。
+
+以上发布状态取代前述本地验收阶段的“尚未提交／上线”；真实 Google／高德 Key 验收边界不变。
