@@ -232,7 +232,7 @@ export function emptyAlbum(title: string, slug: string, parent = ''): AlbumConte
     photos: [],
     cover: '',
     location: 'exact',
-    showExif: false,
+    showExif: true,
   };
 }
 export function assertTree(parents: Map<string, string>): void {

@@ -443,13 +443,15 @@
                 class="photo"
                 class:stack={!!p.group}
                 onclick={() => show(p)}
-                ><img
-                  src={p.thumbnail}
-                  alt={p.alt || p.title || '查看照片'}
-                  loading="lazy"
-                  width="600"
-                  height="450"
-                />{#if p.group}<span class="stack-label"
+                ><span class="photo-frame"
+                  ><img
+                    src={p.thumbnail}
+                    alt={p.alt || p.title || '查看照片'}
+                    loading="lazy"
+                    width="600"
+                    height="450"
+                  /></span
+                >{#if p.group}<span class="stack-label"
                     >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group
                       .title || '照片组'}</span
                   >{:else if p.title}<span>{p.title}</span>{/if}</button
@@ -652,8 +654,7 @@
             </section>{/if}
           {#if photo.occurrences?.length}<section class="photo-context">
               <h3>所在相册</h3>
-              {#each photo.occurrences as occurrence}<a
-                  href={`/albums/${occurrence.albumSlug}`}
+              {#each photo.occurrences as occurrence}<a href={`/albums/${occurrence.albumSlug}`}
                   >{occurrence.albumTitle} →</a
                 >{/each}{#if feed && photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
             </section>{/if}
@@ -737,15 +738,39 @@
   .timeline small {
     color: #8c9881;
   }
-  .stack img {
-    box-shadow:
-      5px 5px 0 #fafbf9,
-      6px 6px 0 #b9c5b7,
-      11px 11px 0 #fafbf9,
-      12px 12px 0 #c6cec2;
-    width: calc(100% - 12px);
-    margin-bottom: 12px;
+  .photo .photo-frame {
+    position: relative;
+    display: block;
+    padding: 0;
+    isolation: isolate;
+  }
+  .stack .photo-frame {
+    margin: 3px 12px 15px 3px;
+  }
+  .stack .photo-frame::before,
+  .stack .photo-frame::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1px solid #fff;
+    border-radius: 2px;
+    background: #f0eee7;
+    box-shadow: 0 3px 8px #25322526;
+    pointer-events: none;
+  }
+  .stack .photo-frame::before {
+    transform: translate(8px, 8px) rotate(1.5deg);
+    z-index: -2;
+  }
+  .stack .photo-frame::after {
+    transform: translate(4px, 4px) rotate(-1deg);
+    z-index: -1;
+    background: #faf9f5;
+  }
+  .stack .photo-frame img {
     aspect-ratio: auto;
+    border-radius: 2px;
+    box-shadow: 0 2px 7px #25322530;
   }
   .stack-label {
     margin-top: 8px;

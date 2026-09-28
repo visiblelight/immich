@@ -27,6 +27,8 @@
   } = $props();
   let article = $state<ManagedArticle>(structuredClone(untrack(() => initial.article)));
   let images = $state<Record<string, ArticleMediaOption>>({ ...untrack(() => initial.images) });
+  let albums = $state(untrack(() => [...initial.albums]));
+  let refreshedAt = $state('');
   let revision = 0;
   let dirty = $state(false);
   let saving = $state(false);
@@ -236,7 +238,7 @@
       busy = false;
     }
   }
-  async function loadMedia() {
+  async function loadMedia(refresh = false) {
     const id = ++requestId;
     loading = true;
     pickerError = '';
@@ -251,6 +253,8 @@
           }),
       );
       if (id !== requestId) return;
+      albums = result.albums;
+      if (refresh) refreshedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false });
       options = result.items;
       more = result.more;
       for (const p of result.items as ArticleMediaOption[]) {
@@ -489,7 +493,7 @@
             />展示在记录列表</label
           >
           <fieldset disabled={busy}>
-            <legend>相关相册</legend>{#each initial.albums as album}<label class="check"
+            <legend>相关相册</legend>{#each albums as album}<label class="check"
                 ><input
                   type="checkbox"
                   value={album.id}
@@ -636,10 +640,19 @@
             mediaPage = 1;
             void loadMedia();
           }}
-          ><option value="">全部相册</option>{#each initial.albums as a}<option value={a.id}>{a.title}</option
+          ><option value="">全部相册</option>{#each albums as a}<option value={a.id}>{a.title}</option
             >{/each}</select
         >{/if}<button>查找</button>
+      <button
+        type="button"
+        disabled={loading || uploading}
+        onclick={() => {
+          mediaPage = 1;
+          void loadMedia(true);
+        }}>{loading ? '加载中…' : '刷新相册与图片'}</button
+      >
     </form>
+    {#if refreshedAt}<p class="refresh-status" role="status">已刷新 {refreshedAt} · 已选图片保留</p>{/if}
     {#if kind === 'upload'}<label class="upload-zone"
         >＋ 上传插图<input
           type="file"
@@ -987,8 +1000,14 @@
     border-bottom-color: #50784a;
     color: #436b42;
   }
+  .refresh-status {
+    color: #74806e;
+    font-size: 12px;
+    margin: -8px 0 16px;
+  }
   .picker-filters {
     display: flex;
+    flex-wrap: wrap;
     gap: 15px;
     margin-bottom: 20px;
   }

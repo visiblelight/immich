@@ -15,6 +15,7 @@
   import { MarkdownEditor } from '@gallery/ui';
   import TagPicker from './TagPicker.svelte';
   import AlbumPhotosEditor from './AlbumPhotosEditor.svelte';
+  import AlbumCoverPicker from './AlbumCoverPicker.svelte';
   let {
     initial,
     initialPage = 'albums',
@@ -585,27 +586,20 @@
             >{/if}
         </section>
       </details>
-      <section class="album-cover-picker">
-        {#if content.cover}<img src={media(content.cover)} alt="当前封面" />{/if}
-        <label
-          >相册封面<select bind:value={content.cover} aria-label="相册封面">
-            <option value="">暂不设置封面</option>
-            {#each content.photos.filter((p) => !p.hiddenFromGallery) as p, index}<option value={p.asset}
-                >{p.title || `本册照片 ${index + 1}`}</option
-              >{/each}
-            {#each workspaceData.albums.filter((a) => below(a, id)) as child}
-              <optgroup label={child.draft.title}
-                >{#each child.draft.photos.filter((p) => !p.hiddenFromGallery && !content!.photos.some((q) => q.asset === p.asset)) as p, index}<option
-                    value={p.asset}
-                    >{p.title || `照片 ${index + 1}`}{!child.visible ? '（来源待公开）' : ''}</option
-                  >{/each}</optgroup
-              >
-            {/each}
-          </select><small
-            >可以选本册或任意下级相册的照片。保存并发布后生效；来源未公开时，前台暂不展示该封面。</small
-          ></label
-        >
-      </section>
+      <AlbumCoverPicker
+        bind:value={content.cover}
+        groups={[
+          {
+            id: active.id,
+            title: content.title + '（本册）',
+            visible: active.visible,
+            photos: content.photos,
+          },
+          ...workspaceData.albums
+            .filter((a) => below(a, id))
+            .map((a) => ({ id: a.id, title: a.draft.title, visible: a.visible, photos: a.draft.photos })),
+        ]}
+      />
       <div class="editor-tabs">
         {#each [['photos', `照片 (${content.photos.length})`], ['children', `子相册 (${workspaceData.albums.filter((a) => a.draft.parent === id).length})`], ['story', '相册介绍'], ['settings', '基本设置']] as [value, label]}<button
             class:chosen={tab === value}

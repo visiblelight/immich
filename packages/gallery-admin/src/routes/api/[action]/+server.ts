@@ -11,6 +11,7 @@ import {
   offlineArticle,
   deleteArticle,
   articleMediaOptions,
+  articleAlbumOptions,
   aboutArticleSettings,
   saveAboutArticle,
   deleteArticleMedia,
@@ -99,8 +100,9 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
         ),
       );
     if (params.action === 'article-media')
-      return json(
-        await articleMediaOptions(
+      return json({
+        albums: await articleAlbumOptions(app.db),
+        ...(await articleMediaOptions(
           app.db,
           url.searchParams.get('kind') === 'group'
             ? 'group'
@@ -110,8 +112,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
           url.searchParams.get('q') ?? '',
           url.searchParams.get('album') ?? '',
           Number(url.searchParams.get('page') ?? 1),
-        ),
-      );
+        )),
+      });
     if (params.action === 'article-about') return json(await aboutArticleSettings(app.db));
     if (params.action === 'tags') return json(await adminTags(app.db));
     if (params.action === 'source') return json(await picker(app.db, url.searchParams));

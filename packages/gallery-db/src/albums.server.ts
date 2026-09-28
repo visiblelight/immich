@@ -250,7 +250,7 @@ export async function createAlbum(db: Db, user: GalleryUser, input: Record<strin
     await sql`INSERT INTO gallery.album(id,slug,created_by) VALUES(${id}::uuid,${c.slug},${user.id}::uuid)`.execute(
       trx,
     );
-    await sql`INSERT INTO gallery.album_draft(album_id,title,parent_album_id,location_mode,updated_by) VALUES(${id}::uuid,${c.title},${c.parent || null}::uuid,${c.location},${user.id}::uuid)`.execute(
+    await sql`INSERT INTO gallery.album_draft(album_id,title,parent_album_id,location_mode,show_exif,updated_by) VALUES(${id}::uuid,${c.title},${c.parent || null}::uuid,${c.location},${c.showExif},${user.id}::uuid)`.execute(
       trx,
     );
     await sql`UPDATE gallery.site SET tree_version=tree_version+1 WHERE id=1`.execute(trx);

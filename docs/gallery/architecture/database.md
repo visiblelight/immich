@@ -158,7 +158,7 @@ CHECK：draft 时 current_release_id/first_published_at/last_published_at/offlin
 | `cover_asset_id` | uuid，可空 | 明确引用封面 Asset，可为直接照片或有效公开后代照片；无跨库 FK |
 | `cover_focal_point` | jsonb，可空 | {x,y}，各在 [0,1]，未设置时居中 |
 | `location_mode` | text，必填，默认 hidden | CHECK IN ('hidden','approximate','exact')，本相册直接照片的位置公开上限 |
-| `show_exif` | boolean，必填，默认 false | 是否显示筛选后的摄影参数 |
+| `show_exif` | boolean，必填，数据库默认 false | 是否显示筛选后的摄影参数；2026-09-27 起应用新建相册显式写入 true，已有记录保持不变 |
 | `seo_title` | text，可空 | 空时使用相册标题 |
 | `seo_description` | text，可空 | 空时使用简介 |
 | `version` | bigint，必填，默认 1 | 任意正文、照片或草稿结构修改均递增 |
