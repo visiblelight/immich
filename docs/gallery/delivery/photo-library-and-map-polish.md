@@ -77,3 +77,15 @@ OSM 的样式服务只允许 OSM 与 localhost/127.0.0.1 等开发来源跨域�
 - 本地前后台已重启。本轮未提交、推送或部署生产；未修改用户已保存文章及封面。
 
 隔离数据库回归完成：`gallery:test:db` 25 项通过，包含相册创建、发布、来源撤回、文章授权及完整备份恢复；Immich schema/migration 漂移为 0，临时测试容器及数据已清理。
+
+### 2026-09-28 图片选择优化已发布
+
+用户授权 commit & push 后，应用提交 `b0340048d3c620da0deefc0c10c973166fcf8a13` 已推送 `codex/gallery`，使用详细中文说明及 `visiblelight@gmail.com` 作者邮箱。
+
+- [GitHub Actions 36365107587](https://github.com/visiblelight/immich/actions/runs/36365107587) 的检查、镜像和部署全部成功。
+- 固定生产镜像：`ghcr.io/visiblelight/gallery@sha256:a11c5ce55d110a997377a542e6ce256ce5b65506cb6f218b1cf37d2ed7c748ef`；服务器 current 记录与应用提交一致。
+- public/admin healthy；公网相册、相片、亚美尼亚地图和后台登录均 HTTP 200。本轮界面交互验收见前述本地记录，未在生产修改用户文章或封面。
+- 更新前后容器 ID 对比：只有 Gallery public/admin 被替换，其余 11 个容器保持原实例，包括 Immich、数据库、Edge、JVS 和 Umami。无数据库迁移，已有相册 EXIF 设置不变。
+- 上一应用 `0a584d679906fa15fc502f5c73529c7d64f43613`，镜像 `sha256:99eb0059efdfb7bc1f88971166c13a6277124fbdf964e09da53575d652b64630` 保留用于应用回退。
+
+此记录取代上文本地阶段“未提交／上线”的状态。原有 `mise.lock` 本地修改未纳入本轮提交。
