@@ -103,3 +103,11 @@ OSM 的样式服务只允许 OSM 与 localhost/127.0.0.1 等开发来源跨域�
 本轮无数据库迁移，不修改 Immich 对象或测试内容。全屏图标清除普通按钮内边距，进入／退出图标实测水平与垂直中心偏移均为 0；最终构建通过。
 
 用户已完成本地验收并授权 commit & push，按现有 GitHub Actions 流程发布。生产结果以对应 Actions 及服务器 current 记录为准。原有 `mise.lock` 本地修改不纳入提交；应用回退可使用上一发布镜像，无数据回滚步骤。
+
+### 2026-09-28 相册概览与地图全屏已发布
+
+- 应用提交 `30ae31d63be7f7e28a9ecf4bb92f6be4947fbce2` 已推送 `codex/gallery`；[Actions 36395127642](https://github.com/visiblelight/immich/actions/runs/36395127642) 检查、镜像及部署三阶段全部成功。
+- 生产 current 与应用提交一致；镜像 `ghcr.io/visiblelight/gallery@sha256:e0eeb6ed719e041cb92a4fcc346b8184a4d2d045c008d03dc734fcc27a34ca60`。public/admin 均 healthy 且就绪。
+- 公网相册、去过首页、亚美尼亚／阿塞拜疆地图、后台登录均 HTTP 200；相册包含新排序项，国家地图包含全屏入口。正式站目前只公开 AM／AZ，GE 入口为 404，与本地测试图库不同。
+- 仅 Gallery public/admin 容器被替换，其余 12 个容器 ID 保持不变，无数据库迁移。
+- 上一应用 `b0340048d3c620da0deefc0c10c973166fcf8a13` 和镜像 `sha256:a11c5ce55d110a997377a542e6ce256ce5b65506cb6f218b1cf37d2ed7c748ef` 保留用于应用回退。
