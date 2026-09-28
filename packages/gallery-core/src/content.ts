@@ -103,6 +103,10 @@ export interface DisplayAlbum {
   groups?: PhotoGroup[];
   cover: string | null;
   count: number;
+  totalCount?: number;
+  childCount?: number;
+  takenAt?: string | null;
+  updatedAt?: string | null;
   photos: DisplayPhoto[];
 }
 export class GalleryError extends Error {

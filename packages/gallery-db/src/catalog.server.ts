@@ -26,6 +26,10 @@ type AlbumRow = {
   photo_album_id: string | null;
   photo_id: string | null;
   count: string;
+  total_count: string;
+  child_count: string;
+  taken_at: Date | null;
+  updated_at: Date;
 };
 export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
   return db
@@ -45,9 +49,16 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
       ).rows[0];
       ensure(site, 'Gallery 尚未初始化。', 503);
       const rows = (
-        await sql<AlbumRow>`SELECT a.album_id,a.slug,a.title,a.summary,a.parent_album_id,a.description_document,c.photo_album_id,c.photo_id,(SELECT count(*) FROM gallery.published_photo p WHERE p.album_id=a.album_id)::text AS count FROM gallery.published_album a LEFT JOIN gallery.published_cover c ON c.album_id=a.album_id ORDER BY a.position,a.first_published_at,a.album_id`.execute(
-          trx,
-        )
+        await sql<AlbumRow>`WITH visible AS MATERIALIZED (SELECT * FROM gallery.published_album),
+          photos AS MATERIALIZED (SELECT album_id,asset_id,ancestor_ids,local_taken_at,taken_at FROM gallery.published_photo)
+          SELECT a.album_id,a.slug,a.title,a.summary,a.parent_album_id,a.description_document,c.photo_album_id,c.photo_id,
+          (SELECT count(*) FROM photos p WHERE p.album_id=a.album_id)::text AS count,
+          (SELECT count(DISTINCT p.asset_id) FROM photos p WHERE a.album_id=ANY(p.ancestor_ids))::text AS total_count,
+          (SELECT count(*) FROM visible child WHERE child.parent_album_id=a.album_id)::text AS child_count,
+          (SELECT min(coalesce(p.local_taken_at,p.taken_at)) FROM photos p WHERE a.album_id=ANY(p.ancestor_ids)) AS taken_at,
+          (SELECT max(child.published_at) FROM visible child WHERE a.album_id=ANY(child.ancestor_ids)) AS updated_at
+          FROM visible a LEFT JOIN gallery.published_cover c ON c.album_id=a.album_id
+          ORDER BY updated_at DESC,a.album_id`.execute(trx)
       ).rows;
       const albums: DisplayAlbum[] = rows.map((r) => ({
         id: r.album_id,
@@ -60,6 +71,10 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         groups: [],
         cover: r.photo_id ? `/media/${r.photo_album_id}/${r.photo_id}?variant=thumbnail` : null,
         count: Number(r.count),
+        totalCount: Number(r.total_count),
+        childCount: Number(r.child_count),
+        takenAt: r.taken_at?.toISOString() ?? null,
+        updatedAt: r.updated_at.toISOString(),
         photos: [],
       }));
       const active = slug ? albums.find((a) => a.slug === slug) : null;

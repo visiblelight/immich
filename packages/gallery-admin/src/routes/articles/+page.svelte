@@ -44,12 +44,14 @@
     {#if message}<p role="alert">{message}</p>{/if}
     <div class="article-list">
       {#each data.articles as article}<a class="article-row" href={'/articles/' + article.id}
-          >{#if article.coverPreview}<img
-              class="article-cover"
-              src={article.coverPreview}
-              alt=""
-              loading="lazy"
-            />{/if}
+          ><div class="cover-slot" aria-hidden="true">
+            {#if article.coverPreview}<img
+                class="article-cover"
+                src={article.coverPreview}
+                alt=""
+                loading="lazy"
+              />{/if}
+          </div>
           <div class="article-copy">
             <h2>
               {article.title || '未命名文章'}{#if data.about.id === article.id}<small>关于页</small>{/if}
@@ -172,6 +174,11 @@
     text-decoration: none;
     color: inherit;
   }
+  .cover-slot {
+    width: 112px;
+    height: 84px;
+    flex-shrink: 0;
+  }
   .article-cover {
     width: 112px;
     height: 84px;
@@ -232,6 +239,7 @@
       flex-wrap: wrap;
       gap: 10px;
     }
+    .cover-slot,
     .article-cover {
       width: 80px;
       height: 60px;

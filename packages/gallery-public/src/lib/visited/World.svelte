@@ -427,7 +427,6 @@
     display: flex;
     justify-content: space-between;
     padding: 18px 0;
-    border-bottom: 1px solid #e0e4da;
     gap: 10px;
     color: inherit;
     text-decoration: none;

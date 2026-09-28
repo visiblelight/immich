@@ -318,6 +318,8 @@ export async function articles(
     await assert.rejects(readPublishedDerivative(pub, album, photoId, 'preview', root));
     const hiddenCatalog = await publicCatalog(pub, (await albumState()).row.draft.slug);
     assert.equal(hiddenCatalog.active!.photos.length, 0);
+    assert.equal(hiddenCatalog.active!.totalCount, 0);
+    assert.equal(hiddenCatalog.active!.takenAt, null);
     assert.equal(hiddenCatalog.active!.cover, null);
     assert.ok(!(await publicPhotoFeed(pub)).photos.some((p) => p.albumId === album));
     assert.equal(

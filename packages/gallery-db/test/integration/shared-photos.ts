@@ -191,9 +191,32 @@ export async function sharedPhotosAndTags(
   parentState.a.draft.cover = assets[0]!;
   await saveAlbum(db, user, parent, { ...parentState.v, content: parentState.a.draft });
   await publishAlbum(db, user, parent, (await state(parent)).v, root);
-  assert.equal((await publicCatalog(pub, parentState.a.draft.slug)).active!.cover, null);
+  const unpublishedChild = (await publicCatalog(pub, parentState.a.draft.slug)).active!;
+  assert.equal(unpublishedChild.cover, null);
+  assert.equal(unpublishedChild.totalCount, 0);
+  assert.equal(unpublishedChild.childCount, 0);
+  assert.equal(unpublishedChild.takenAt, null);
   await publishAlbum(db, user, child, (await state(child)).v, root);
-  assert.ok((await publicCatalog(pub, parentState.a.draft.slug)).active!.cover);
+  const publishedTree = await publicCatalog(pub, parentState.a.draft.slug);
+  assert.ok(publishedTree.active!.cover);
+  assert.equal(publishedTree.active!.totalCount, 1);
+  assert.equal(publishedTree.active!.count, 0);
+  assert.equal(publishedTree.active!.childCount, 1);
+  assert.equal(publishedTree.active!.takenAt, publishedTree.albums.find(a => a.id === child)!.takenAt);
+  assert.equal(publishedTree.active!.updatedAt, publishedTree.albums.find(a => a.id === child)!.updatedAt);
+  const originalUpdate = publishedTree.active!.updatedAt;
+  childState = await state(child);
+  childState.a.draft.title = 'Unpublished child rename';
+  await saveAlbum(db, user, child, { ...childState.v, content: childState.a.draft });
+  assert.equal((await publicCatalog(pub, parentState.a.draft.slug)).active!.updatedAt, originalUpdate);
+  // The same photo in a grandchild remains one photo in the ancestor total.
+  const grandchild = await createAlbum(db, user, { title: 'Nested duplicate', treeVersion: (await adminState(db)).site.treeVersion });
+  const grandchildState = await state(grandchild);
+  grandchildState.a.draft.parent = child;
+  grandchildState.a.draft.photos = [{ ...childState.a.draft.photos[0]!, id: randomUUID() }];
+  await saveAlbum(db, user, grandchild, { ...grandchildState.v, content: grandchildState.a.draft });
+  await publishAlbum(db, user, grandchild, (await state(grandchild)).v, root);
+  assert.equal((await publicCatalog(pub, parentState.a.draft.slug)).active!.totalCount, 1);
   const unrelated = await createAlbum(db, user, {
     title: 'Unrelated cover',
     treeVersion: (await adminState(db)).site.treeVersion,
@@ -205,7 +228,11 @@ export async function sharedPhotosAndTags(
     /封面/,
   );
   await setAlbumAvailability(db, user, child, { ...(await state(child)).v, action: 'offline' });
-  assert.equal((await publicCatalog(pub, parentState.a.draft.slug)).active!.cover, null);
+  const offlineBranch = (await publicCatalog(pub, parentState.a.draft.slug)).active!;
+  assert.equal(offlineBranch.cover, null);
+  assert.equal(offlineBranch.totalCount, 0);
+  assert.equal(offlineBranch.childCount, 0);
+  assert.equal(offlineBranch.takenAt, null);
   for (const id of [a, b])
     await setAlbumAvailability(db, user, id, { ...(await state(id)).v, action: 'offline' });
   const hidden = await publicPhotoFeed(pub, { tags: [night] });

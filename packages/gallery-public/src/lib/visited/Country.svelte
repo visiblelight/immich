@@ -12,6 +12,32 @@
   }: { country: VisitedCountry; bounds: MapViewport; providers: Provider[]; visitId: string | null } =
     $props();
   let container: HTMLDivElement, map: PhotoMap | undefined;
+  let mapWrap: HTMLDivElement;
+  let fullscreenButton: HTMLButtonElement;
+  let fullscreen = $state(false);
+  let nativeFullscreen = false;
+  let previousOverflow = '';
+  async function leaveFullscreen() {
+    fullscreen = false;
+    document.body.style.overflow = previousOverflow;
+    if (document.fullscreenElement === mapWrap) await document.exitFullscreen().catch(() => {});
+    await tick();
+    if (alive) fullscreenButton?.focus({ preventScroll: true });
+  }
+  async function toggleFullscreen() {
+    if (fullscreen) return leaveFullscreen();
+    previousOverflow = document.body.style.overflow;
+    fullscreen = true;
+    document.body.style.overflow = 'hidden';
+    try {
+      await mapWrap.requestFullscreen?.();
+      if (!alive || !fullscreen) {
+        if (document.fullscreenElement === mapWrap) await document.exitFullscreen();
+      }
+    } catch {
+      /* Unsupported browsers retain the immersive viewport layout. */
+    }
+  }
   let provider = $state(''),
     message = $state(''),
     loading = $state(true),
@@ -225,6 +251,16 @@
     }
   }
   onMount(() => {
+    const resize = new ResizeObserver(() => map?.resize());
+    resize.observe(container);
+    const fullscreenChanged = () => {
+      if (document.fullscreenElement === mapWrap) nativeFullscreen = true;
+      else if (nativeFullscreen) {
+        nativeFullscreen = false;
+        void leaveFullscreen();
+      }
+    };
+    document.addEventListener('fullscreenchange', fullscreenChanged);
     lastView = initialView();
     lastUrl = location.pathname + location.search;
     const q = new URLSearchParams(location.search);
@@ -242,6 +278,9 @@
     void loadList();
     return () => {
       alive = false;
+      resize.disconnect();
+      document.removeEventListener('fullscreenchange', fullscreenChanged);
+      if (fullscreen) void leaveFullscreen();
       revision++;
       clearTimeout(timer);
       controller?.abort();
@@ -254,7 +293,10 @@
 
 <svelte:window
   onkeydown={(event) => {
-    if (event.key === 'Escape' && selectedCluster) {
+    if (event.key === 'Escape' && fullscreen) {
+      event.preventDefault();
+      void leaveFullscreen();
+    } else if (event.key === 'Escape' && selectedCluster) {
       event.preventDefault();
       closeSelection();
     }
@@ -304,7 +346,30 @@
     {/if}
   </div>
 </div>
-<div class="map-wrap">
+<div class="map-wrap" class:fullscreen bind:this={mapWrap}>
+  <button
+    class="map-fullscreen"
+    bind:this={fullscreenButton}
+    onclick={() => void toggleFullscreen()}
+    aria-label={fullscreen ? '退出地图全屏' : '全屏查看地图'}
+    title={fullscreen ? '退出全屏（Esc）' : '全屏查看地图'}
+    aria-pressed={fullscreen}
+  >
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      aria-hidden="true"
+      ><path
+        d={fullscreen
+          ? 'M8 3v5H3 M16 3v5h5 M3 16h5v5 M21 16h-5v5'
+          : 'M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5'}
+      /></svg
+    >
+  </button>
   <div class="map" bind:this={container}></div>
   {#if loading}<div class="loading" role="status">正在加载地图…</div>{/if}
   {#if selectedCluster}
@@ -514,6 +579,40 @@
     opacity: 0.55;
     cursor: not-allowed;
   }
+  .map-fullscreen {
+    position: absolute;
+    z-index: 4;
+    top: 12px;
+    left: 12px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    box-sizing: border-box;
+    display: grid;
+    place-items: center;
+    border: 1px solid #d9ded5;
+    border-radius: 4px;
+    color: #344d3d;
+    background: #fffdf7;
+    box-shadow: 0 2px 8px #18291a20;
+    cursor: pointer;
+  }
+  .map-wrap.fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    width: 100%;
+    height: 100dvh;
+    background: #edf0e9;
+  }
+  .map-wrap.fullscreen .map {
+    height: 100%;
+    min-height: 0;
+    border-radius: 0;
+  }
+  .map-wrap.fullscreen .map-selection {
+    max-height: calc(100dvh - 32px);
+  }
   .map-wrap {
     position: relative;
   }
@@ -527,7 +626,7 @@
   .loading {
     position: absolute;
     top: 12px;
-    left: 12px;
+    left: 60px;
     background: #fffdf7;
     padding: 10px 18px;
     font-size: 12px;

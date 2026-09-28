@@ -17,6 +17,7 @@ export interface PhotoMap {
   viewport(): Promise<MapViewport>;
   move(view: View): Promise<void>;
   markers(clusters: PhotoCluster[], click: (c: PhotoCluster) => void): Promise<void>;
+  resize(): void;
   destroy(): void;
 }
 // Third-party globals are deliberately confined to this bridge. No SDK type or
@@ -154,6 +155,9 @@ export async function createPhotoMap(
             .addTo(map),
         );
       },
+      resize() {
+        map.resize();
+      },
       destroy() {
         markers.forEach((m) => m.remove());
         map.remove();
@@ -206,6 +210,11 @@ export async function createPhotoMap(
             }),
         );
       },
+      resize() {
+        const center = map.getCenter();
+        sdk.event.trigger(map, 'resize');
+        map.setCenter(center);
+      },
       destroy() {
         listener.remove();
         markers.forEach((m) => (m.map = null));
@@ -257,7 +266,7 @@ export async function createPhotoMap(
     return guess;
   };
   const center = (await convert([[initial.longitude, initial.latitude]]))[0]!;
-  const map = new sdk.Map(container, { center, zoom: initial.zoom, zooms: [2, 20], viewMode: '2D' });
+  const map = new sdk.Map(container, { center, zoom: initial.zoom, zooms: [2, 20], viewMode: '2D', resizeEnable: true });
   map.on('moveend', changed);
   map.on('zoomend', changed);
   map.on('complete', changed);
@@ -298,6 +307,9 @@ export async function createPhotoMap(
           }),
       );
       map.add(markers);
+    },
+    resize() {
+      // AMap observes its container when resizeEnable is set; it has no public resize method.
     },
     destroy() {
       alive = false;

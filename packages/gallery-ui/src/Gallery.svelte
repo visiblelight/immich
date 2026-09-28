@@ -180,7 +180,23 @@
     }
   });
   const link = (a: DisplayAlbum) => (preview ? `/preview/${a.id}` : `/albums/${a.slug}`);
-  let children = $derived(albums.filter((a) => a.parent === (active?.id ?? '')));
+  let albumSort = $state<'updated' | 'taken'>('updated');
+  let children = $derived(
+    albums
+      .filter((a) => a.parent === (active?.id ?? ''))
+      .sort((a, b) => {
+        const key = albumSort === 'taken' ? 'takenAt' : 'updatedAt';
+        return (
+          (b[key] ?? '').localeCompare(a[key] ?? '') ||
+          (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') ||
+          a.id.localeCompare(b.id)
+        );
+      }),
+  );
+  function albumSubtitle(album: DisplayAlbum) {
+    const childCount = album.childCount ?? albums.filter((a) => a.parent === album.id).length;
+    return `总共 ${album.totalCount ?? album.count} 张相片${childCount ? `，含 ${childCount} 个子相册` : ''}`;
+  }
   let crumbs = $derived.by(() => {
     const result: DisplayAlbum[] = [];
     let parent = active?.parent;
@@ -379,6 +395,7 @@
       </div>
     {:else if !active}<div class="heading">
         <h1>相册 <small>{children.length} 本</small></h1>
+        {@render albumSorting()}
       </div>
       <div class="album-grid">
         {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
@@ -395,7 +412,7 @@
               </div>{/if}
             <h2>{album.title}</h2>
             <p>
-              {album.count} 张照片{albums.some((a) => a.parent === album.id) ? ' · 含子相册' : ''}
+              {albumSubtitle(album)}
             </p></a
           >{/each}
       </div>
@@ -414,6 +431,7 @@
         <div class="images">
           {#if children.length}<h2 class="section-title">
               子相册 <span>{children.length}</span>
+              {@render albumSorting()}
             </h2>
             <div class="children-grid" class:compact-children={active.photos.length > 0}>
               {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
@@ -429,7 +447,7 @@
                       {album.title.slice(0, 1)}
                     </div>{/if}
                   <h2>{album.title}</h2>
-                  <p>{album.count} 张照片</p></a
+                  <p>{albumSubtitle(album)}</p></a
                 >{/each}
             </div>
             {@render albumPagination()}{/if}
@@ -681,7 +699,54 @@
   {/if}
 </dialog>
 
+{#snippet albumSorting()}
+  <span class="album-sorting" aria-label="相册排序">
+    <button
+      class:chosen={albumSort === 'updated'}
+      aria-pressed={albumSort === 'updated'}
+      onclick={() => {
+        albumSort = 'updated';
+        albumPage = 0;
+      }}>最近更新</button
+    >
+    <button
+      class:chosen={albumSort === 'taken'}
+      aria-pressed={albumSort === 'taken'}
+      onclick={() => {
+        albumSort = 'taken';
+        albumPage = 0;
+      }}>拍摄时间</button
+    >
+  </span>
+{/snippet}
+
 <style>
+  .album-sorting {
+    display: inline-flex;
+    gap: 16px;
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 400;
+  }
+  .album-sorting button {
+    border: 0;
+    padding: 6px 0;
+    background: transparent;
+    color: #818b7c;
+    cursor: pointer;
+  }
+  .album-sorting button.chosen {
+    color: #344d3d;
+    box-shadow: 0 1px currentColor;
+  }
+  .heading,
+  .section-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
   .feed-heading {
     display: flex;
     justify-content: space-between;
@@ -965,7 +1030,7 @@
     letter-spacing: 1px;
     margin: 0 0 22px;
   }
-  .section-title span {
+  .section-title > span:not(.album-sorting) {
     color: #9ca593;
     margin-left: 8px;
     font-size: 12px;
