@@ -209,6 +209,18 @@ export async function workflow(
   const page = await picker(db, new URLSearchParams({ search: 'sample.raw' }));
   assert.ok(page.assets.some((a) => a.id === asset));
   assert.ok(!JSON.stringify(page).includes('/data/thumbs'));
+  // Reversed timestamps and microseconds must dominate UUID order across page boundaries.
+  await owner.query(`UPDATE public.asset SET "originalFileName"='picker-order-fixture.raw', "localDateTime"=CASE WHEN right(id::text,12)::bigint <= 2 THEN '2026-09-29T12:00:00Z'::timestamptz + (right(id::text,12)::bigint * interval '1 microsecond') ELSE '2026-09-28T12:00:00Z'::timestamptz END WHERE id::text LIKE '99999999-%' AND right(id::text,12)::bigint <= 65`);
+  const firstPage = await picker(db, new URLSearchParams({ search: 'picker-order-fixture.raw' }));
+  assert.equal(firstPage.assets.length, 60);
+  assert.ok(firstPage.assets[0]!.id.endsWith('000000000002'));
+  assert.ok(firstPage.assets[1]!.id.endsWith('000000000001'));
+  const secondPage = await picker(db, new URLSearchParams({ search: 'picker-order-fixture.raw', after: firstPage.next! }));
+  assert.equal(secondPage.assets.length, 5);
+  assert.equal(new Set([...firstPage.assets,...secondPage.assets].map(p => p.id)).size, 65);
+  assert.equal(secondPage.next, null);
+  await assert.rejects(picker(db, new URLSearchParams({ after: 'invalid-cursor' })), /分页已失效/);
+  await owner.query(`UPDATE public.asset SET "originalFileName"='synthetic.raw' WHERE "originalFileName"='picker-order-fixture.raw'`);
   await logout(db, session.token);
   assert.equal(await sessionUser(db, session.token), null);
   const second = await login(db, user.email, password, 'synthetic-second');

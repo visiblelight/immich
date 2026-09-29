@@ -693,9 +693,27 @@ export async function picker(db: Db, filters: URLSearchParams) {
   ensure(search.length <= 200, '文件名过长。');
   if (since)
     ensure(/^\d{4}-\d{2}-\d{2}$/.test(since) && Number.isFinite(Date.parse(since)), '日期格式无效。');
+  let cursor: { date: string; id: string } | null = null;
+  if (after) {
+    ensure(after.length <= 1000, '选片分页已失效，请刷新图库。');
+    try {
+      cursor = JSON.parse(Buffer.from(after, 'base64url').toString('utf8'));
+    } catch {
+      /* Validated below. */
+    }
+    ensure(
+      cursor &&
+        typeof cursor.date === 'string' &&
+        Number.isFinite(Date.parse(cursor.date)) &&
+        typeof cursor.id === 'string',
+      '选片分页已失效，请刷新图库。',
+    );
+    uuid(cursor.id);
+  }
   const rows = (
     await sql<{
       asset_id: string;
+      sort_date: string;
       filename: string;
       width: number | null;
       height: number | null;
@@ -708,7 +726,7 @@ export async function picker(db: Db, filters: URLSearchParams) {
       focal_length: number | null;
       iso: number | null;
       exposure_time: string | null;
-    }>`SELECT s.asset_id,s.filename,s.width,s.height,s.taken_at,s.city,s.make,s.model,s.lens_model,s.f_number,s.focal_length,s.iso,s.exposure_time FROM gallery.admin_source_asset s WHERE true ${album ? sql`AND EXISTS(SELECT 1 FROM gallery.admin_source_album_asset a WHERE a.album_id=${uuid(album)}::uuid AND a.asset_id=s.asset_id)` : sql``} ${tag ? sql`AND EXISTS(SELECT 1 FROM gallery.admin_source_tag_asset t WHERE t.tag_id=${uuid(tag)}::uuid AND t.asset_id=s.asset_id)` : sql``} ${after ? sql`AND s.asset_id>${uuid(after)}::uuid` : sql``} ${search ? sql`AND strpos(lower(s.filename),lower(${search}))>0` : sql``} ${since ? sql`AND s.taken_at>=${since}::date` : sql``} ORDER BY s.asset_id LIMIT 61`.execute(
+    }>`SELECT s.asset_id,coalesce(s.local_taken_at,s.taken_at)::text AS sort_date,s.filename,s.width,s.height,s.taken_at,s.city,s.make,s.model,s.lens_model,s.f_number,s.focal_length,s.iso,s.exposure_time FROM gallery.admin_source_asset s WHERE true ${album ? sql`AND EXISTS(SELECT 1 FROM gallery.admin_source_album_asset a WHERE a.album_id=${uuid(album)}::uuid AND a.asset_id=s.asset_id)` : sql``} ${tag ? sql`AND EXISTS(SELECT 1 FROM gallery.admin_source_tag_asset t WHERE t.tag_id=${uuid(tag)}::uuid AND t.asset_id=s.asset_id)` : sql``} ${cursor ? sql`AND (coalesce(s.local_taken_at,s.taken_at),s.asset_id)<(${cursor.date}::timestamptz,${cursor.id}::uuid)` : sql``} ${search ? sql`AND strpos(lower(s.filename),lower(${search}))>0` : sql``} ${since ? sql`AND coalesce(s.local_taken_at,s.taken_at)>=${since}::date` : sql``} ORDER BY coalesce(s.local_taken_at,s.taken_at) DESC,s.asset_id DESC LIMIT 61`.execute(
       db,
     )
   ).rows;
@@ -717,7 +735,7 @@ export async function picker(db: Db, filters: URLSearchParams) {
     filename: s.filename,
     width: s.width,
     height: s.height,
-    takenAt: s.taken_at.toISOString(),
+    takenAt: new Date(s.sort_date).toISOString(),
     city: s.city,
     exif: {
       make: s.make,
@@ -761,7 +779,12 @@ export async function picker(db: Db, filters: URLSearchParams) {
     assets,
     albums,
     tags,
-    next: rows.length > 60 ? assets.at(-1)!.id : null,
+    next:
+      rows.length > 60
+        ? Buffer.from(JSON.stringify({ date: rows[59]!.sort_date, id: rows[59]!.asset_id })).toString(
+            'base64url',
+          )
+        : null,
   };
 }
 

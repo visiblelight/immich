@@ -943,7 +943,9 @@
             >
           </form>
           <p class="muted">
-            {sourceBusy ? '正在读取图库…' : `${sourceAssets.length} 张照片 · 已在本册的照片不会重复添加`}
+            {sourceBusy
+              ? '正在读取图库…'
+              : `${sourceAssets.length} 张照片 · 拍摄时间由新到旧 · 已在本册的照片不会重复添加`}
           </p>
           <div class="asset-grid">
             {#each sourceAssets as asset}{@const added = content?.photos.some(
@@ -1013,12 +1015,6 @@
             maxLength={50000}
             filename="photo.md"
           />
-          <label class="visibility-choice"
-            ><input type="checkbox" bind:checked={edited.hiddenFromGallery} />仅在文章引用时展示</label
-          >
-          <p class="hint">
-            保留在后台相册中；发布后从所有公开相册、相片、地图和照片标签中隐藏。文章引用仍可展示。
-          </p>
           <TagPicker bind:value={edited.tags} tags={workspaceData.tags ?? []} {createTag} />
           <details>
             <summary>高级设置</summary><label
@@ -1094,14 +1090,6 @@
 </dialog>
 
 <style>
-  .visibility-choice {
-    display: flex !important;
-    align-items: center;
-    gap: 10px;
-  }
-  .visibility-choice input {
-    width: auto !important;
-  }
   .live-workspace {
     min-height: 100dvh;
   }

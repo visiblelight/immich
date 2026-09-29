@@ -46,6 +46,16 @@
       editor.chain().focus().insertContentAt(to, content).run();
     else editor.chain().focus().insertContent(content).run();
   }
+  export function locateGroup(index: number) {
+    const editor = editorState.editor;
+    if (!editor) return;
+    let count = 0;
+    let position: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'galleryImageGroup' && ++count === index) position = pos;
+    });
+    if (position !== null) editor.chain().focus().setNodeSelection(position).scrollIntoView().run();
+  }
   export function replaceGroup(position: number, node: ArticleNode) {
     const editor = editorState.editor;
     const old = editor?.state.doc.nodeAt(position);

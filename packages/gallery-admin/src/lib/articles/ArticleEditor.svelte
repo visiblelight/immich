@@ -3,6 +3,7 @@
   import { beforeNavigate, goto } from '$app/navigation';
   import {
     articleImageKey,
+    validateArticleDocument,
     articleTime,
     type ManagedArticle,
     type ArticleMediaOption,
@@ -134,6 +135,13 @@
     if (!dirty) return true;
     const mark = revision;
     const snapshot = content();
+    try {
+      validateArticleDocument(snapshot.document);
+    } catch (error) {
+      status = '保存未完成';
+      message = (error as Error).message;
+      return false;
+    }
     saving = true;
     status = '正在保存…';
     work = (async () => {
@@ -279,7 +287,7 @@
     editPosition = null;
     groupCaption = '';
     originalNodes = {};
-    if (cover) kind = 'photo';
+    kind = 'photo';
     selected = [];
     mediaPage = 1;
     modal.showModal();
@@ -407,7 +415,11 @@
       </div>
     </header>
     {#if message}<div class="message" role="status">
-        {message}{#if conflict}<p>当前文字仍保留在页面中。请先复制需要保留的内容，再重新载入文章。</p>{/if}
+        {message}{#if /正文第 (\d+) 个图片组/.test(message)}<button
+            type="button"
+            onclick={() => editor?.locateGroup(Number(message.match(/正文第 (\d+) 个图片组/)?.[1]))}
+            >定位问题图片组</button
+          >{/if}{#if conflict}<p>当前文字仍保留在页面中。请先复制需要保留的内容，再重新载入文章。</p>{/if}
       </div>{/if}
     <div class="editor-layout-articles" class:without-settings={!settings || focus}>
       <section class="writing-paper">
@@ -544,6 +556,45 @@
     <button onclick={() => modal.close()} aria-label="关闭图片选择">✕</button>
   </header>
   <div class="picker-body">
+    {#if !coverMode && editPosition === null}
+      <div class="picker-tabs" aria-label="图片插入方式">
+        <button
+          class:chosen={!groupMode && kind !== 'group'}
+          onclick={() => {
+            groupMode = false;
+            if (kind === 'group') {
+              kind = 'photo';
+              selected = [];
+              mediaPage = 1;
+              void loadMedia();
+            }
+          }}>单张图片</button
+        >
+        <button
+          class:chosen={groupMode}
+          onclick={() => {
+            groupMode = true;
+            if (kind === 'group') selected = [];
+            kind = 'photo';
+            mediaPage = 1;
+            void loadMedia();
+          }}>临时图片组</button
+        >
+        <button
+          class:chosen={kind === 'group'}
+          onclick={() => {
+            groupMode = false;
+            kind = 'group';
+            selected = [];
+            mediaPage = 1;
+            void loadMedia();
+          }}>已有 Gallery 照片组</button
+        >
+      </div>
+      {#if groupMode}<p class="hint">
+          选择 2–50 张照片，可跨相册或加入上传素材；仅在这篇文章中组合，Gallery 原有分组不变。
+        </p>{/if}
+    {/if}
     {#if selected.length}<section class="selected-images" aria-label="已选图片及顺序">
         <p>已选 {selected.length} 项 · 拖动或用箭头调整顺序</p>
         <div class="selected-strip">
@@ -588,35 +639,27 @@
               : '照片成员跟随来源组的发布更新；图注只在这篇文章中使用。'}
           </p>{/if}
       </section>{/if}
-    <div class="picker-tabs">
-      <button
-        disabled={editPosition !== null && !groupMode}
-        class:chosen={kind === 'photo'}
-        onclick={() => {
-          kind = 'photo';
-          if (selected.some((id) => optionCache[id]?.kind === 'group')) selected = [];
-          mediaPage = 1;
-          void loadMedia();
-        }}>Gallery 照片</button
-      >{#if !coverMode && !groupMode}<button
-          class:chosen={kind === 'group'}
+    {#if kind !== 'group'}<div class="picker-tabs">
+        <button
+          disabled={editPosition !== null && !groupMode}
+          class:chosen={kind === 'photo'}
           onclick={() => {
-            kind = 'group';
-            selected = [];
+            kind = 'photo';
+            if (selected.some((id) => optionCache[id]?.kind === 'group')) selected = [];
             mediaPage = 1;
             void loadMedia();
-          }}>Gallery 照片组</button
-        >{/if}<button
-        disabled={editPosition !== null && !groupMode}
-        class:chosen={kind === 'upload'}
-        onclick={() => {
-          kind = 'upload';
-          if (selected.some((id) => optionCache[id]?.kind === 'group')) selected = [];
-          mediaPage = 1;
-          void loadMedia();
-        }}>上传素材</button
-      >
-    </div>
+          }}>Gallery 照片</button
+        ><button
+          disabled={editPosition !== null && !groupMode}
+          class:chosen={kind === 'upload'}
+          onclick={() => {
+            kind = 'upload';
+            if (selected.some((id) => optionCache[id]?.kind === 'group')) selected = [];
+            mediaPage = 1;
+            void loadMedia();
+          }}>上传素材</button
+        >
+      </div>{/if}
     <form
       class="picker-filters"
       onsubmit={(e) => {
@@ -705,11 +748,6 @@
   </div>
   <footer>
     <span>已选择 {selected.length} 项</span>
-    {#if !coverMode && !groupMode && picked.length >= 2 && picked.every((p) => p.kind !== 'group')}<button
-        onclick={() => {
-          groupMode = true;
-        }}>组成图片组</button
-      >{/if}
     {#if kind === 'upload' && picked.length && picked.every((p) => p.kind === 'upload') && !groupMode}<button
         disabled={uploading}
         onclick={deleteMaterial}>删除选中素材</button

@@ -308,3 +308,21 @@ test('article groups show only article captions, without inherited headings, sep
   );
   assert.match(captioned, /<figcaption>Article &lt;caption&gt;<\/figcaption>/);
 });
+
+
+test('invalid article groups identify their ordinal, nearby heading and member error', async () => {
+  const { ArticleGroupValidationError, articleGroupLocations } = await import('../../gallery-core/src/article.ts');
+  const photo: ArticleNode = { type: 'galleryImage', attrs: { kind: 'photo', ref: 'photo-1', album: 'album-1' } };
+  const first: ArticleNode = { type: 'galleryImageGroup', attrs: { kind: 'temporary' }, content: [photo, photo] };
+  const heading: ArticleNode = { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: '修道院之旅' }] };
+  const bad: ArticleNode = { type: 'galleryImageGroup', attrs: { kind: 'group', ref: '', album: 'album-1', caption: '山间教堂' } };
+  assert.throws(() => validateArticleDocument(doc(first, heading, bad)), (error: unknown) => {
+    assert.ok(error instanceof ArticleGroupValidationError);
+    assert.equal(error.groupIndex, 2);
+    assert.match(error.message, /正文第 2 个图片组.*修道院之旅.*山间教堂.*照片组引用无效/);
+    return true;
+  });
+  const badMember = { ...first, content: [photo, { type: 'galleryImage', attrs: { kind: 'upload', ref: '' } }] };
+  assert.throws(() => validateArticleDocument(doc(heading, badMember)), /正文第 1 个图片组.*修道院之旅.*图片引用无效/);
+  assert.equal(articleGroupLocations(doc(first, heading, { ...bad, attrs: { ...bad.attrs, ref: 'group-1' } }))[1]!.index, 2);
+});

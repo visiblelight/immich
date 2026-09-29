@@ -46,6 +46,12 @@
         : [...new Set([...(p.tags ?? []), ...bulkTags])].sort();
     bulkTags = [];
   }
+  function toggleVisibility(photos: DraftPhoto[]) {
+    const hidden = !photos.every((p) => p.hiddenFromGallery);
+    for (const photo of photos) photo.hiddenFromGallery = hidden;
+    if (hidden && photos.some((p) => p.asset === working().cover)) working().cover = '';
+    notice = '展示范围已修改，保存或发布后生效；同一照片在所有相册中共用。';
+  }
   let discardGroup = $state(false);
   let memberEditing = $state('');
   const working = () => groupDraft ?? content;
@@ -433,6 +439,10 @@
               class="text-action"
               disabled={cover(p).hiddenFromGallery}
               onclick={() => (content.cover = cover(p).asset)}>设为封面</button
+            ><button onclick={() => toggleVisibility(g ? members(g.id) : [p])}
+              >{(g ? members(g.id).every((p) => p.hiddenFromGallery) : p.hiddenFromGallery)
+                ? '恢复图库展示'
+                : '设为仅文章可见'}</button
             >{#if !g}<button aria-label={`移除照片 ${index + 1}`} onclick={() => remove(p)}>移除照片</button
               >{/if}
           </div>
@@ -514,14 +524,12 @@
                         aria-label={`后移组内照片 ${index + 1}`}
                         onclick={() => arrow(p.id, 1, g.id)}>后移</button
                       ><button onclick={() => (g.cover = p.id)}>组封面</button><button
-                        onclick={() => detach(p)}>移出组</button
-                      >
+                        onclick={() => toggleVisibility([p])}
+                        >{p.hiddenFromGallery ? '恢复图库展示' : '设为仅文章可见'}</button
+                      ><button onclick={() => detach(p)}>移出组</button>
                     </div>
                   </details>
                   {#if memberEditing === p.id}<div class="member-settings">
-                      <label class="visibility-choice"
-                        ><input type="checkbox" bind:checked={p.hiddenFromGallery} />仅在文章引用时展示</label
-                      >
                       <TagPicker bind:value={p.tags} {tags} {createTag} />
                       <label>画面描述（无障碍）<input maxlength="500" bind:value={p.alt} /></label>
                       <label
@@ -553,16 +561,6 @@
                   >{/each}</select
               ></label
             >
-            <label class="visibility-choice"
-              ><input
-                type="checkbox"
-                checked={members(g.id).every((p) => p.hiddenFromGallery)}
-                onchange={(e) => {
-                  for (const p of members(g.id)) p.hiddenFromGallery = e.currentTarget.checked;
-                }}
-              />全组仅在文章引用时展示</label
-            >
-            <p class="muted">这是每张照片的共用展示范围，随本次保存或发布生效；不会移除相册归属。</p>
             <details class="bulk-tags">
               <summary>批量设置组内照片标签</summary>
               <TagPicker bind:value={bulkTags} {tags} {createTag} label="全组标签" />
@@ -623,14 +621,6 @@
 {/if}
 
 <style>
-  .visibility-choice {
-    display: flex !important;
-    align-items: center;
-    gap: 10px;
-  }
-  .visibility-choice input {
-    width: auto !important;
-  }
   .group-dialog {
     width: min(1100px, calc(100vw - 48px));
     max-width: none;

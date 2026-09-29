@@ -33,6 +33,35 @@ export function articleLink(value: unknown): string | null {
   }
 }
 
+export class ArticleGroupValidationError extends Error {
+  groupIndex: number;
+  constructor(message: string, groupIndex: number) {
+    super(message);
+    this.groupIndex = groupIndex;
+  }
+}
+export function articleGroupLocations(document: ArticleDocument) {
+  const groups: { node: ArticleNode; index: number; label: string }[] = [];
+  let heading = '';
+  function walk(node: ArticleNode) {
+    if (node.type === 'heading') heading = articleText(node).slice(0, 60);
+    if (node.type === 'galleryImageGroup') {
+      const index = groups.length + 1;
+      const caption = String(node.attrs?.caption ?? '')
+        .trim()
+        .slice(0, 40);
+      groups.push({
+        node,
+        index,
+        label: `正文第 ${index} 个图片组${heading ? `（章节“${heading}”）` : ''}${caption ? `，图注“${caption}”` : ''}`,
+      });
+    }
+    node.content?.forEach(walk);
+  }
+  walk(document.doc);
+  return groups;
+}
+
 /** Reject unknown content; never trust pasted HTML or editor-side validation. */
 export function validateArticleDocument(input: unknown): ArticleDocument {
   if (new TextEncoder().encode(JSON.stringify(input) ?? '').length > 1_000_000)
@@ -54,7 +83,28 @@ export function validateArticleDocument(input: unknown): ArticleDocument {
     'taskList',
     'table',
   ]);
+  let groupCount = 0;
+  let heading = '';
   function visit(value: ArticleNode, depth: number, parent: string): ArticleNode {
+    if (value?.type === 'heading' && Array.isArray(value.content))
+      heading = value.content
+        .map((n) => (typeof n?.text === 'string' ? n.text : ''))
+        .join('')
+        .slice(0, 60);
+    const index = value?.type === 'galleryImageGroup' ? ++groupCount : 0;
+    const nearbyHeading = heading;
+    try {
+      return validateNode(value, depth, parent);
+    } catch (error) {
+      if (!index || error instanceof ArticleGroupValidationError) throw error;
+      const caption = typeof value.attrs?.caption === 'string' ? value.attrs.caption.trim().slice(0, 40) : '';
+      throw new ArticleGroupValidationError(
+        `正文第 ${index} 个图片组${nearbyHeading ? `（章节“${nearbyHeading}”）` : ''}${caption ? `，图注“${caption}”` : ''}：${error instanceof Error ? error.message : '内容无效'}。请定位后重新选择或移除该组。`,
+        index,
+      );
+    }
+  }
+  function validateNode(value: ArticleNode, depth: number, parent: string): ArticleNode {
     if (++count > 10000 || depth > 20 || !value || typeof value !== 'object')
       throw new Error('文章结构过于复杂');
     const type = value.type;

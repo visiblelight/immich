@@ -6,6 +6,7 @@ import {
   GalleryError,
   validateArticleDocument,
   articleText,
+  articleGroupLocations,
   articleImages,
   articleGroups,
   articleImageKey,
@@ -195,7 +196,12 @@ export async function articleMediaOptions(
     const items: ArticleMediaOption[] = [];
     for (const g of rows.slice(0, 48)) {
       const item = await resolveArticleGroup(db, '', g.album_id, g.group_id, true);
-      if (item) items.push({ ...item, src:item.src.replace('variant=preview','variant=thumbnail'), albumTitle: g.album_title });
+      if (item)
+        items.push({
+          ...item,
+          src: item.src.replace('variant=preview', 'variant=thumbnail'),
+          albumTitle: g.album_title,
+        });
     }
     return { items, more: rows.length > 48 };
   }
@@ -413,7 +419,12 @@ export async function publishArticle(
     const expanded: ArticleMediaOption[] = [];
     for (const { node } of [...articleImages(content), ...articleGroups(content)]) {
       const item = images[articleImageKey(node)];
-      ensure(item, '部分图片或照片组尚未发布、已移除或来源不可用，请更换后发布。');
+      ensure(
+        item,
+        node.type === 'galleryImageGroup'
+          ? `${articleGroupLocations(content.document).find((g) => g.node === node)?.label ?? '引用的图片组'}：来源照片组尚未发布、已移除或不可用，请定位后更换或移除。`
+          : '部分图片尚未发布、已移除或来源不可用，请更换后发布。',
+      );
       expanded.push(...(item.kind === 'group' ? (item.items ?? []) : [item]));
     }
     ensure(expanded.length <= 200, '包含照片组成员后，每篇文章最多 200 张图片。');
