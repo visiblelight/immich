@@ -12,11 +12,13 @@ export function galleryInventory(albums: ManagedAlbum[]) {
     groups: albums.reduce((n, a) => n + albumPhotoCounts(a.draft).groups, 0),
   };
 }
+export type AlbumListSort = 'position' | 'created-desc' | 'created-asc';
 export function albumTreeRows(
   albums: ManagedAlbum[],
   search = '',
   filter = 'all',
   collapsed: ReadonlySet<string> = new Set(),
+  sort: AlbumListSort = 'position',
 ) {
   const byId = new Map(albums.map((a) => [a.id, a]));
   const matches = new Set(
@@ -46,15 +48,32 @@ export function albumTreeRows(
     list.push(a);
     children.set(parent, list);
   }
-  for (const list of children.values()) list.sort((a, b) => a.draft.position - b.draft.position);
-  const rows: { album: ManagedAlbum; depth: number; hasChildren: boolean; expanded: boolean; context: boolean }[] = [],
+  for (const list of children.values())
+    list.sort((a, b) => {
+      if (sort === 'position') return a.draft.position - b.draft.position;
+      const delta = (Date.parse(a.createdAt ?? '') || 0) - (Date.parse(b.createdAt ?? '') || 0);
+      return (sort === 'created-desc' ? -delta : delta) || a.id.localeCompare(b.id);
+    });
+  const rows: {
+      album: ManagedAlbum;
+      depth: number;
+      hasChildren: boolean;
+      expanded: boolean;
+      context: boolean;
+    }[] = [],
     seen = new Set<string>();
   const visit = (a: ManagedAlbum, depth: number) => {
     if (seen.has(a.id) || !included.has(a.id)) return;
     seen.add(a.id);
     const descendants = (children.get(a.id) ?? []).filter((c) => included.has(c.id));
     const expanded = !!search.trim() || filter !== 'all' || !collapsed.has(a.id);
-    rows.push({ album: a, depth, hasChildren: descendants.length > 0, expanded, context: !matches.has(a.id) });
+    rows.push({
+      album: a,
+      depth,
+      hasChildren: descendants.length > 0,
+      expanded,
+      context: !matches.has(a.id),
+    });
     if (expanded) for (const child of descendants) visit(child, depth + 1);
   };
   for (const a of children.get('') ?? []) visit(a, 0);

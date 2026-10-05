@@ -10,6 +10,7 @@
     articleLink,
     type ArticleDocument,
     type ArticleImageResolver,
+    type ArticleImage,
     type ArticleNode,
   } from '@gallery/core';
   import '@gallery/ui/article-style.css';
@@ -45,6 +46,21 @@
     if (selectedNode?.type.name === 'galleryImageGroup' && to === from + selectedNode.nodeSize)
       editor.chain().focus().insertContentAt(to, content).run();
     else editor.chain().focus().insertContent(content).run();
+  }
+  export function locateHeading(index: number) {
+    const editor = editorState.editor;
+    if (!editor) return;
+    let count = 0,
+      position: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'heading' && [2, 3, 4].includes(node.attrs.level) && count++ === index)
+        position = pos + 1;
+    });
+    if (position !== null) {
+      editor.chain().focus().setTextSelection(position).run();
+      const node = editor.view.nodeDOM(position - 1);
+      if (node instanceof HTMLElement) node.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
   }
   export function locateGroup(index: number) {
     const editor = editorState.editor;
@@ -205,7 +221,7 @@
           const caption = window.document.createElement('figcaption');
           const button = window.document.createElement('button');
           button.type = 'button';
-          button.className = 'article-media-control';
+          button.className = 'article-media-control editor-group-edit';
           button.setAttribute('aria-label', '编辑图片组');
           button.title = '编辑图片组';
           button.innerHTML =
@@ -216,29 +232,95 @@
             const pos = getPos();
             if (typeof pos === 'number') onEditGroup?.(current.toJSON() as ArticleNode, pos);
           };
-          function update(next: typeof node) {
-            current = next;
-            const json = next.toJSON() as ArticleNode;
-            const resolved = json.attrs?.kind === 'group' ? resolveImage(json) : null;
-            const items =
-              json.attrs?.kind === 'group' ? (resolved?.items ?? []) : (json.content ?? []).map(resolveImage);
-            const first = items.find(Boolean);
-            if (first) {
-              img.src = first.src;
-              img.alt = first.alt;
+          let index = 0;
+          let firstSource = '';
+          let items: ArticleImage[] = [];
+          stage.tabIndex = 0;
+          stage.setAttribute('role', 'group');
+          stage.setAttribute('aria-label', '图片组预览');
+          const status = window.document.createElement('span');
+          status.className = 'editor-group-status';
+          status.setAttribute('aria-live', 'polite');
+          const arrow = (step: number, label: string) => {
+            const control = window.document.createElement('button');
+            control.type = 'button';
+            control.className = 'article-media-control';
+            control.dataset.carouselStep = String(step);
+            control.setAttribute('aria-label', label);
+            control.title = label;
+            control.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${step < 0 ? 'm14 6-6 6 6 6' : 'm10 6 6 6-6 6'}"/></svg>`;
+            control.onclick = () => move(step);
+            return control;
+          };
+          const previous = arrow(-1, '图片组上一张');
+          const nextButton = arrow(1, '图片组下一张');
+          function render() {
+            const item = items[index];
+            if (item) {
+              if (img.getAttribute('src') !== item.src) img.src = item.src;
+              img.alt = item.alt || '图片';
             } else {
               img.removeAttribute('src');
               img.alt = '图片组暂不可用';
             }
+            previous.disabled = index <= 0;
+            nextButton.disabled = index >= items.length - 1;
+            previous.hidden = nextButton.hidden = items.length < 2;
+            status.textContent = items.length
+              ? `第 ${index + 1} 张，共 ${items.length} 张`
+              : '图片组暂不可用';
+            if (
+              (previous.disabled && window.document.activeElement === previous) ||
+              (nextButton.disabled && window.document.activeElement === nextButton)
+            )
+              stage.focus({ preventScroll: true });
+          }
+          function move(step: number) {
+            const target = index + step;
+            if (target < 0 || target >= items.length) return;
+            index = target;
+            render();
+          }
+          stage.onkeydown = (event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+              event.preventDefault();
+              event.stopPropagation();
+              move(event.key === 'ArrowLeft' ? -1 : 1);
+            }
+          };
+          img.onload = () => {
+            if (!stage.style.aspectRatio && index === 0 && img.naturalWidth && img.naturalHeight)
+              stage.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+          };
+          function update(next: typeof node) {
+            current = next;
+            const shown = items[index]?.src;
+            const json = next.toJSON() as ArticleNode;
+            const resolved = json.attrs?.kind === 'group' ? resolveImage(json) : null;
+            items = (
+              json.attrs?.kind === 'group' ? (resolved?.items ?? []) : (json.content ?? []).map(resolveImage)
+            ).filter((item): item is ArticleImage => !!item);
+            const retained = items.findIndex((item) => item.src === shown);
+            index = retained >= 0 ? retained : Math.min(index, Math.max(0, items.length - 1));
+            const first = items[0];
+            if (first?.src !== firstSource) stage.style.aspectRatio = '';
+            firstSource = first?.src ?? '';
+            if (first?.width && first?.height) stage.style.aspectRatio = `${first.width} / ${first.height}`;
+            render();
             caption.textContent = String(json.attrs?.caption ?? '');
             caption.hidden = !caption.textContent;
           }
           update(node);
-          stage.append(img, button);
+          stage.append(img, previous, nextButton, button, status);
           dom.append(stage, caption);
           return {
             dom,
-            stopEvent: (event) => (event.target as HTMLElement).closest('button') !== null,
+            // Carousel state is presentation only: never let DOMObserver parse it
+            // into the article or trigger autosave/undo entries.
+            ignoreMutation: () => true,
+            stopEvent: (event) =>
+              (event.target as Element).closest('button') !== null ||
+              (event.type === 'keydown' && event.target === stage),
             update(next) {
               if (next.type !== node.type) return false;
               update(next);

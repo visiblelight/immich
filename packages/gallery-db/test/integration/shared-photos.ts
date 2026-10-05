@@ -112,6 +112,13 @@ export async function sharedPhotosAndTags(
   const nowTag = (await adminTags(db)).find((t) => t.id === night)!;
   await assert.rejects(saveTag(db, user, { ...nowTag, remove: true }), /引用/);
   await saveTag(db, user, { ...nowTag, active: false });
+  assert.equal((await publicPhotoFeed(pub, { tags: [night] })).total, 0);
+  assert.ok(!(await publicPhotoFeed(pub)).availableTags.some((t) => t.id === night));
+  assert.ok(
+    !(await publicCatalog(pub, sb.a.draft.slug)).active!.photos[0]!.tags!.some((t) => t.id === night),
+  );
+  assert.ok((await publicPhotoFeed(pub, { tags: [night] })).unavailableTags.includes(night));
+  await saveTag(db, user, { ...(await adminTags(db)).find((t) => t.id === night)!, active: true });
   assert.equal((await publicPhotoFeed(pub, { tags: [night] })).total, 1);
   // The global library deduplicates shared assets and keeps bulk edits atomic.
   const list = () => photoLibrary(db, new URLSearchParams({ album: a }));
@@ -202,15 +209,18 @@ export async function sharedPhotosAndTags(
   assert.equal(publishedTree.active!.totalCount, 1);
   assert.equal(publishedTree.active!.count, 0);
   assert.equal(publishedTree.active!.childCount, 1);
-  assert.equal(publishedTree.active!.takenAt, publishedTree.albums.find(a => a.id === child)!.takenAt);
-  assert.equal(publishedTree.active!.updatedAt, publishedTree.albums.find(a => a.id === child)!.updatedAt);
+  assert.equal(publishedTree.active!.takenAt, publishedTree.albums.find((a) => a.id === child)!.takenAt);
+  assert.equal(publishedTree.active!.updatedAt, publishedTree.albums.find((a) => a.id === child)!.updatedAt);
   const originalUpdate = publishedTree.active!.updatedAt;
   childState = await state(child);
   childState.a.draft.title = 'Unpublished child rename';
   await saveAlbum(db, user, child, { ...childState.v, content: childState.a.draft });
   assert.equal((await publicCatalog(pub, parentState.a.draft.slug)).active!.updatedAt, originalUpdate);
   // The same photo in a grandchild remains one photo in the ancestor total.
-  const grandchild = await createAlbum(db, user, { title: 'Nested duplicate', treeVersion: (await adminState(db)).site.treeVersion });
+  const grandchild = await createAlbum(db, user, {
+    title: 'Nested duplicate',
+    treeVersion: (await adminState(db)).site.treeVersion,
+  });
   const grandchildState = await state(grandchild);
   grandchildState.a.draft.parent = child;
   grandchildState.a.draft.photos = [{ ...childState.a.draft.photos[0]!, id: randomUUID() }];
@@ -243,7 +253,11 @@ export async function sharedPhotosAndTags(
   await setAlbumAvailability(db, user, a, { ...(await state(a)).v, action: 'restore' });
   const restoredCatalog = await publicCatalog(pub, (await state(a)).a.draft.slug);
   assert.ok(restoredCatalog.active!.photos.length > 0);
-  assert.ok(restoredCatalog.active!.photos.every((photo) =>
-    photo.occurrences?.length === 1 && photo.occurrences[0]!.albumSlug === restoredCatalog.active!.slug));
+  assert.ok(
+    restoredCatalog.active!.photos.every(
+      (photo) =>
+        photo.occurrences?.length === 1 && photo.occurrences[0]!.albumSlug === restoredCatalog.active!.slug,
+    ),
+  );
   assert.equal((await publicPhotoFeed(pub, { tags: [night] })).total, 0);
 }

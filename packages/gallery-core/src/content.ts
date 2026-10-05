@@ -36,6 +36,7 @@ export interface AlbumContent {
 }
 export interface ManagedAlbum {
   id: string;
+  createdAt?: string;
   version: string;
   draftVersion: string;
   releaseVersion: string | null;
@@ -71,6 +72,7 @@ export interface SourcePhoto {
   exif: Record<string, string | number | null>;
 }
 export interface DisplayPhoto {
+  places?: { id: string; name: string; kind: string }[];
   tags?: PhotoTag[];
   group?: PhotoGroup;
   takenAt?: string | null;

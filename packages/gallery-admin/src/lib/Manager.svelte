@@ -4,6 +4,7 @@
   import AdminSidebar from './AdminSidebar.svelte';
   import { sameAlbumContent, galleryInventory, albumPhotoCounts, albumTreeRows } from '@gallery/core';
   import type {
+    AlbumListSort,
     AlbumContent,
     DraftPhoto,
     GallerySite,
@@ -47,6 +48,7 @@
   let busy = $state(false);
   let search = $state('');
   let filter = $state('all');
+  let albumSort = $state<AlbumListSort>('created-desc');
   let active = $derived(workspaceData.albums.find((a) => a.id === id));
   let dirty = $derived.by(() => {
     if (!active || !content) return false;
@@ -111,7 +113,7 @@
     }
     return false;
   };
-  let rows = $derived(albumTreeRows(workspaceData.albums, search, filter, collapsed));
+  let rows = $derived(albumTreeRows(workspaceData.albums, search, filter, collapsed, albumSort));
   function toggleAlbum(id: string) {
     const next = new Set(collapsed);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -450,12 +452,31 @@
         ).length} 个
       </p>
       <section class="panel">
-        <div class="list-tools">
+        <div class="list-tools album-list-tools">
           <div class="filter-tabs">
             {#each [['all', '全部'], ['online', '已公开'], ['draft', '草稿'], ['offline', '不可见']] as [value, label]}<button
                 class:chosen={filter === value}
                 onclick={() => (filter = value!)}>{label}</button
               >{/each}
+          </div>
+          <div class="album-sort">
+            <select
+              aria-label="相册排序"
+              title="在同一层级内排序，子相册保留在父相册下"
+              bind:value={albumSort}
+            >
+              <option value="created-desc">创建时间 · 新到旧</option>
+              <option value="created-asc">创建时间 · 旧到新</option>
+              <option value="position">原有顺序</option>
+            </select><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"
+              ><path
+                d="m4 6 4 4 4-4"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              /></svg
+            >
           </div>
           <input aria-label="搜索相册" class="search" bind:value={search} placeholder="搜索相册名称…" />
         </div>
@@ -1090,6 +1111,34 @@
 </dialog>
 
 <style>
+  .album-list-tools {
+    flex-wrap: wrap;
+  }
+  .album-sort {
+    position: relative;
+    margin-left: auto;
+    flex: 0 0 180px;
+  }
+  .album-sort select {
+    appearance: none;
+    padding: 9px 34px 9px 12px;
+    font-size: 12px;
+  }
+  .album-sort svg {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: #879387;
+  }
+  @media (max-width: 900px) {
+    .album-sort {
+      flex-basis: auto;
+      margin-left: 0;
+    }
+  }
+
   .live-workspace {
     min-height: 100dvh;
   }

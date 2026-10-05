@@ -3,6 +3,7 @@
   import { beforeNavigate, goto } from '$app/navigation';
   import {
     articleImageKey,
+    articleHeadings,
     validateArticleDocument,
     articleTime,
     type ManagedArticle,
@@ -34,6 +35,9 @@
   let dirty = $state(false);
   let saving = $state(false);
   let busy = $state(false);
+  let publishPhase = $state<'saving' | 'publishing' | null>(null);
+  let publishSeconds = $state(0);
+  let publishTimer: ReturnType<typeof setInterval> | undefined;
   let conflict = $state(false);
   let message = $state('');
   let status = $state('已保存');
@@ -200,19 +204,31 @@
     }
   }
   async function publish() {
+    if (busy) return;
     busy = true;
+    message = '';
+    publishPhase = 'saving';
+    publishSeconds = 0;
+    const started = Date.now();
+    publishTimer = setInterval(() => {
+      publishSeconds = Math.floor((Date.now() - started) / 1000);
+    }, 1000);
     try {
       if (!(await save())) return;
+      publishPhase = 'publishing';
       const result = await articleRequest('article-publish', { id: article.id, version: article.version });
       article.version = result.version;
       article.status = result.status;
       article.hasChanges = result.hasChanges;
       article.firstPublishedAt = result.firstPublishedAt;
       article.publishedAt = result.publishedAt;
+      article.updatedAt = result.updatedAt;
       message = '文章已发布，前台已更新。';
     } catch (e) {
       message = (e as Error).message;
     } finally {
+      clearInterval(publishTimer);
+      publishPhase = null;
       busy = false;
     }
   }
@@ -369,19 +385,24 @@
       pickerError = (e as Error).message;
     }
   }
+  let outlineOpen = $state(true);
+  const outline = $derived(articleHeadings(article.document));
   beforeNavigate(({ cancel }) => {
     if (saving || busy) {
       cancel();
       message = '正在保存或发布，请稍等片刻再离开。';
     } else if (dirty && !confirm('正文尚未保存，确定离开并放弃未保存修改？')) cancel();
   });
-  onDestroy(() => clearTimeout(timer));
+  onDestroy(() => {
+    clearTimeout(timer);
+    clearInterval(publishTimer);
+  });
 </script>
 
 <svelte:head><title>{article.title || '编辑文章'} · Gallery</title></svelte:head>
 <svelte:window
   onbeforeunload={(e) => {
-    if (dirty || saving) {
+    if (dirty || saving || busy) {
       e.preventDefault();
       e.returnValue = '';
     }
@@ -395,12 +416,15 @@
   <main>
     <header class="edit-top">
       <a href="/articles">← 文章</a><span class="save-status" role="status"
-        >{status}{#if article.updatedAt}<time
+        >{publishPhase === 'publishing' ? '正在发布…' : status}{#if publishPhase}<span aria-hidden="true"
+            >已等待 {publishSeconds} 秒</span
+          >{:else if article.updatedAt}<time
             datetime={article.updatedAt}
             title="最近保存时间 · 北京时间 UTC+8">最近保存 {savedTime(article.updatedAt)}</time
           >{/if}</span
       >
       <div class="actions">
+        <button onclick={() => (outlineOpen = !outlineOpen)} aria-expanded={outlineOpen}>文章目录</button>
         <button
           onclick={() => {
             void manualSave();
@@ -410,10 +434,25 @@
           onclick={() => (settings = !settings)}
           aria-expanded={settings}>文章设置</button
         ><button class="primary" onclick={publish} disabled={busy || saving || conflict}
-          >{busy ? '处理中…' : article.status === 'published' ? '更新发布' : '发布文章'}</button
+          >{publishPhase
+            ? '发布中…'
+            : busy
+              ? '处理中…'
+              : article.status === 'published'
+                ? '更新发布'
+                : '发布文章'}</button
         >
       </div>
     </header>
+    {#if publishPhase}<div class="publish-progress" aria-busy="true">
+        <span role="status"
+          >{publishPhase === 'saving' ? '正在保存最新草稿…' : '正在校验文章图片并发布…'}</span
+        >
+        <span class="publish-elapsed" aria-live="off">已等待 {publishSeconds} 秒</span>
+        {#if publishSeconds >= 10}<p>
+            图片较多时校验需要一些时间，请保留此页面；发布结果将在这里显示，无需重复点击。
+          </p>{/if}
+      </div>{/if}
     {#if message}<div class="message" role="status">
         {message}{#if /正文第 (\d+) 个图片组/.test(message)}<button
             type="button"
@@ -421,110 +460,127 @@
             >定位问题图片组</button
           >{/if}{#if conflict}<p>当前文字仍保留在页面中。请先复制需要保留的内容，再重新载入文章。</p>{/if}
       </div>{/if}
-    <div class="editor-layout-articles" class:without-settings={!settings || focus}>
-      <section class="writing-paper">
-        <div class="writing-title">
-          <div class="writing-caption">
-            <span>文章正文</span><button onclick={() => (focus = !focus)}
-              >{focus ? '退出专注' : '专注写作'}</button
+    <div class="editor-with-outline" class:has-outline={outlineOpen}>
+      {#if outlineOpen}<aside class="editor-outline" aria-label="编辑文章目录">
+          <strong>文章目录</strong>
+          <nav>
+            {#each outline as item, index}<button
+                style:padding-left={`${(item.level - 2) * 12}px`}
+                onclick={() => editor?.locateHeading(index)}>{item.text || '未命名章节'}</button
+              >{/each}
+          </nav>
+          {#if !outline.length}<p>添加 H2、H3 或 H4 标题后显示章节。</p>{/if}
+        </aside>{/if}
+      <div class="editor-layout-articles" class:without-settings={!settings || focus}>
+        <section class="writing-paper">
+          <div class="writing-title">
+            <div class="writing-caption">
+              <span>文章正文</span><button onclick={() => (focus = !focus)}
+                >{focus ? '退出专注' : '专注写作'}</button
+              >
+            </div>
+            <label
+              ><span class="sr-only">文章标题</span><textarea
+                rows="2"
+                class="title-input"
+                maxlength="200"
+                placeholder="给文章起个标题…"
+                bind:value={article.title}
+                oninput={changed}
+                disabled={busy}></textarea></label
             >
           </div>
-          <label
-            ><span class="sr-only">文章标题</span><textarea
-              rows="2"
-              class="title-input"
-              maxlength="200"
-              placeholder="给文章起个标题…"
-              bind:value={article.title}
-              oninput={changed}
-              disabled={busy}></textarea></label
-          >
-        </div>
-        <fieldset class="editor-lock" disabled={busy}>
-          <RichTextEditor
-            editable={!busy && !pickerOpen}
-            bind:this={editor}
-            document={article.document}
-            resolveImage={resolve}
-            onChange={(doc) => {
-              article.document = doc;
-              changed();
-            }}
-            onInsertImage={() => openPicker()}
-            onEditGroup={editGroup}
-          />
-        </fieldset>
-      </section>
-      {#if settings && !focus}<aside class="article-settings">
-          <h2>文章设置</h2>
-          {#if article.firstPublishedAt}<p class="hint">
-              首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(
-                article.publishedAt!,
-              )}<br />北京时间 UTC+8，发布后自动记录。
-            </p>{:else}<p class="hint">尚未发布。首次发布与最近更新时间由系统自动记录。</p>{/if}
-          <label
-            >摘要<textarea
-              rows="4"
-              maxlength="1000"
-              bind:value={article.summary}
-              oninput={changed}
-              disabled={busy}></textarea></label
-          ><label
-            >写作日期<input type="date" bind:value={article.date} onchange={changed} disabled={busy} /></label
-          ><label
-            >文章链接<input
-              bind:value={article.slug}
-              onchange={changed}
-              readonly={article.status !== 'draft'}
-              disabled={busy}
-            /></label
-          >
-          <p class="setting-label">封面</p>
-          {#if article.cover && resolve(article.cover)}<img
-              class="cover-preview"
-              src={resolve(article.cover)!.src}
-              alt="封面预览"
-            />{/if}
-          <div class="cover-actions">
-            <button onclick={() => openPicker(true)} disabled={busy}
-              >{article.cover ? '更换封面' : '选择封面'}</button
-            >{#if article.cover}<button
-                onclick={() => {
-                  article.cover = null;
-                  changed();
-                }}
-                disabled={busy}>移除</button
-              >{/if}
-          </div>
-          <label class="check"
-            ><input
-              type="checkbox"
-              bind:checked={article.listed}
-              onchange={changed}
-              disabled={busy}
-            />展示在记录列表</label
-          >
-          <fieldset disabled={busy}>
-            <legend>相关相册</legend>{#each albums as album}<label class="check"
-                ><input
-                  type="checkbox"
-                  value={album.id}
-                  bind:group={article.albums}
-                  onchange={changed}
-                />{album.title}</label
-              >{:else}<p class="hint">公开相册后，可在这里关联。</p>{/each}
+          <fieldset class="editor-lock" disabled={busy}>
+            <RichTextEditor
+              editable={!busy && !pickerOpen}
+              bind:this={editor}
+              document={article.document}
+              resolveImage={resolve}
+              onChange={(doc) => {
+                article.document = doc;
+                changed();
+              }}
+              onInsertImage={() => openPicker()}
+              onEditGroup={editGroup}
+            />
           </fieldset>
-          <p class="hint">图注属于这篇文章，不修改照片本身的资料。</p>
-          {#if article.status === 'published'}<button
-              class="withdraw"
-              onclick={offline}
-              disabled={busy || saving}>下线文章</button
-            >{:else if article.status === 'draft'}<button
-              class="withdraw"
-              onclick={remove}
-              disabled={busy || saving}>删除草稿</button
-            >{/if}
-        </aside>{/if}
+        </section>
+        {#if settings && !focus}<aside class="article-settings">
+            <h2>文章设置</h2>
+            {#if article.firstPublishedAt}<p class="hint">
+                首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(
+                  article.publishedAt!,
+                )}<br />北京时间 UTC+8，发布后自动记录。
+              </p>{:else}<p class="hint">尚未发布。首次发布与最近更新时间由系统自动记录。</p>{/if}
+            <label
+              >摘要<textarea
+                rows="4"
+                maxlength="1000"
+                bind:value={article.summary}
+                oninput={changed}
+                disabled={busy}></textarea></label
+            ><label
+              >写作日期<input
+                type="date"
+                bind:value={article.date}
+                onchange={changed}
+                disabled={busy}
+              /></label
+            ><label
+              >文章链接<input
+                bind:value={article.slug}
+                onchange={changed}
+                readonly={article.status !== 'draft'}
+                disabled={busy}
+              /></label
+            >
+            <p class="setting-label">封面</p>
+            {#if article.cover && resolve(article.cover)}<img
+                class="cover-preview"
+                src={resolve(article.cover)!.src}
+                alt="封面预览"
+              />{/if}
+            <div class="cover-actions">
+              <button onclick={() => openPicker(true)} disabled={busy}
+                >{article.cover ? '更换封面' : '选择封面'}</button
+              >{#if article.cover}<button
+                  onclick={() => {
+                    article.cover = null;
+                    changed();
+                  }}
+                  disabled={busy}>移除</button
+                >{/if}
+            </div>
+            <label class="check"
+              ><input
+                type="checkbox"
+                bind:checked={article.listed}
+                onchange={changed}
+                disabled={busy}
+              />展示在记录列表</label
+            >
+            <fieldset disabled={busy}>
+              <legend>相关相册</legend>{#each albums as album}<label class="check"
+                  ><input
+                    type="checkbox"
+                    value={album.id}
+                    bind:group={article.albums}
+                    onchange={changed}
+                  />{album.title}</label
+                >{:else}<p class="hint">公开相册后，可在这里关联。</p>{/each}
+            </fieldset>
+            <p class="hint">图注属于这篇文章，不修改照片本身的资料。</p>
+            {#if article.status === 'published'}<button
+                class="withdraw"
+                onclick={offline}
+                disabled={busy || saving}>下线文章</button
+              >{:else if article.status === 'draft'}<button
+                class="withdraw"
+                onclick={remove}
+                disabled={busy || saving}>删除草稿</button
+              >{/if}
+          </aside>{/if}
+      </div>
     </div>
   </main>
 </div>
@@ -770,6 +826,86 @@
 </dialog>
 
 <style>
+  .publish-progress {
+    margin: 0 0 1rem;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    background: #eef3ed;
+    color: #365c49;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    flex-wrap: wrap;
+  }
+  .publish-elapsed {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+  }
+  .publish-progress p {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .editor-with-outline {
+    display: grid;
+    min-width: 0;
+    gap: 24px;
+  }
+  .editor-with-outline.has-outline {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .editor-outline {
+    position: sticky;
+    top: 24px;
+    max-height: calc(100dvh - 48px);
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    color: #6a7765;
+    font-size: 13px;
+  }
+  .editor-outline nav {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .editor-outline button {
+    text-align: left;
+    border: 0;
+    background: none;
+    line-height: 1.6;
+    padding: 6px 8px;
+  }
+  .editor-outline p {
+    line-height: 1.8;
+  }
+  @media (max-width: 1500px) {
+    .editor-with-outline.has-outline {
+      grid-template-columns: 190px minmax(0, 1fr);
+      gap: 16px;
+    }
+    .has-outline .editor-layout-articles {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 1000px) {
+    .editor-with-outline.has-outline {
+      grid-template-columns: 1fr;
+    }
+    .editor-outline {
+      position: static;
+      max-height: 40dvh;
+      padding: 16px;
+      background: #f4f6f1;
+    }
+  }
+
   .image-picker[open] {
     display: flex;
     flex-direction: column;

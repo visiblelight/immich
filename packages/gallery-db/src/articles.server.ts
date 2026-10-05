@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 import {
   ensure,
@@ -394,6 +394,43 @@ async function resolveArticleGroup(
     items,
   };
 }
+async function publicationImages(db: Db, id: string, content: ArticleContent) {
+  const images = await articleImageMap(db, id, content, true);
+  const expanded: ArticleMediaOption[] = [];
+  for (const { node } of [...articleImages(content), ...articleGroups(content)]) {
+    const item = images[articleImageKey(node)];
+    ensure(
+      item,
+      node.type === 'galleryImageGroup'
+        ? `${articleGroupLocations(content.document).find((g) => g.node === node)?.label ?? '引用的图片组'}：来源照片组尚未发布、已移除或不可用，请定位后更换或移除。`
+        : '部分图片尚未发布、已移除或来源不可用，请更换后发布。',
+    );
+    expanded.push(...(item.kind === 'group' ? (item.items ?? []) : [item]));
+  }
+  ensure(expanded.length <= 200, '包含照片组成员后，每篇文章最多 200 张图片。');
+  return {
+    count: expanded.length,
+    // Preserve album context and live group membership, not just asset IDs.
+    signature: JSON.stringify(expanded.map((item) => [item.kind, item.album, item.ref])),
+    unique: [...new Map(expanded.map((item) => [item.kind + ':' + item.ref, item])).values()],
+  };
+}
+async function publicationBytes(
+  db: Db,
+  item: ArticleMediaOption,
+  variant: 'preview' | 'thumbnail',
+  root: MediaRoot,
+  mediaRoot: string,
+) {
+  try {
+    return item.kind === 'photo'
+      ? await readSourceDerivative(db, item.ref, variant, root)
+      : await readArticleMedia(db, mediaRoot, item.ref, variant);
+  } catch {
+    throw new GalleryError(400, '照片展示文件不可用，请检查 Immich 或文章素材后重试。');
+  }
+}
+const mediaDigest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 export async function publishArticle(
   db: Db,
   user: GalleryUser,
@@ -402,9 +439,11 @@ export async function publishArticle(
   mediaRoot = '',
 ) {
   const id = uuid(input.id);
-  return db.transaction().execute(async (trx) => {
-    await articleLock(trx);
-    const article = await getArticle(trx, id);
+  const started = performance.now();
+  const timings: Record<string, number> = {};
+  let outcome = 'failed';
+  try {
+    const article = await getArticle(db, id);
     ensure(article.version === String(input.version), '文章版本已变化，请重新预览后发布。', 409);
     const content = validateArticleContent(article);
     ensure(
@@ -414,51 +453,81 @@ export async function publishArticle(
           articleGroups(content).length > 0),
       '请填写标题和正文。',
     );
-    // Check both current public membership and readable derivatives before publishing.
-    const images = await articleImageMap(trx, id, content, true);
-    const expanded: ArticleMediaOption[] = [];
-    for (const { node } of [...articleImages(content), ...articleGroups(content)]) {
-      const item = images[articleImageKey(node)];
-      ensure(
-        item,
-        node.type === 'galleryImageGroup'
-          ? `${articleGroupLocations(content.document).find((g) => g.node === node)?.label ?? '引用的图片组'}：来源照片组尚未发布、已移除或不可用，请定位后更换或移除。`
-          : '部分图片尚未发布、已移除或来源不可用，请更换后发布。',
-      );
-      expanded.push(...(item.kind === 'group' ? (item.items ?? []) : [item]));
-    }
-    ensure(expanded.length <= 200, '包含照片组成员后，每篇文章最多 200 张图片。');
-    for (const item of expanded) {
-      if (item.kind === 'photo') {
-        try {
-          for (const variant of ['preview', 'thumbnail'] as const)
-            await sanitizeImage(await readSourceDerivative(trx, item.ref, variant, root), variant);
-        } catch {
-          throw new GalleryError(400, '照片展示文件不可用，请在 Immich 处理后重试。');
+    const prepared = await publicationImages(db, id, content);
+    timings.references = prepared.count;
+    timings.uniqueImages = prepared.unique.length;
+    const proofs = new Map<string, string>();
+    let cursor = 0;
+    const check = async () => {
+      while (cursor < prepared.unique.length) {
+        const item = prepared.unique[cursor++]!;
+        for (const variant of ['preview', 'thumbnail'] as const) {
+          const bytes = await publicationBytes(db, item, variant, root, mediaRoot);
+          if (item.kind === 'photo') {
+            try {
+              await sanitizeImage(bytes, variant);
+            } catch {
+              throw new GalleryError(400, '照片展示文件不可用，请在 Immich 处理后重试。');
+            }
+          }
+          proofs.set(`${item.kind}:${item.ref}:${variant}`, mediaDigest(bytes));
         }
-      } else {
-        await readArticleMedia(trx, mediaRoot, item.ref, 'preview');
-        await readArticleMedia(trx, mediaRoot, item.ref, 'thumbnail');
       }
-    }
-    for (const album of content.albums)
+    };
+    // Bound I/O and decoder memory; settle workers before returning a failure.
+    // Expensive validation happens before taking the shared publication lock.
+    const checks = await Promise.allSettled([check(), check()]);
+    for (const result of checks) if (result.status === 'rejected') throw result.reason;
+    timings.preflightMs = Math.round(performance.now() - started);
+    const commitStarted = performance.now();
+    const result = await db.transaction().execute(async (trx) => {
+      await articleLock(trx);
+      timings.lockWaitMs = Math.round(performance.now() - commitStarted);
+      const current = await getArticle(trx, id);
+      ensure(current.version === String(input.version), '文章版本已变化，请重新预览后发布。', 409);
+      // Reauthorize under the lock: a source album/group may have changed during decoding.
+      const verified = await publicationImages(trx, id, content);
       ensure(
-        (await sql`SELECT 1 FROM gallery.published_album WHERE album_id=${album}::uuid`.execute(trx)).rows
-          .length,
-        '关联相册尚未公开。',
+        verified.signature === prepared.signature,
+        '引用的图片组在校验期间发生变化，请确认后重新发布。',
+        409,
       );
-    // Each publication gets a new source version, even when restoring identical content.
-    const release = randomUUID();
-    const version = String(BigInt(article.version) + 1n);
-    await sql`INSERT INTO gallery.article_release(id,article_id,source_version,content,published_by) VALUES(${release}::uuid,${id}::uuid,${version}::bigint,${JSON.stringify(content)}::jsonb,${user.id}::uuid)`.execute(
-      trx,
+      for (const item of verified.unique) {
+        for (const variant of ['preview', 'thumbnail'] as const) {
+          const bytes = await publicationBytes(trx, item, variant, root, mediaRoot);
+          ensure(
+            proofs.get(`${item.kind}:${item.ref}:${variant}`) === mediaDigest(bytes),
+            '图片文件在校验期间发生变化，请重新发布。',
+            409,
+          );
+        }
+      }
+      for (const album of content.albums)
+        ensure(
+          (await sql`SELECT 1 FROM gallery.published_album WHERE album_id=${album}::uuid`.execute(trx)).rows
+            .length,
+          '关联相册尚未公开。',
+        );
+      const release = randomUUID();
+      const version = String(BigInt(article.version) + 1n);
+      await sql`INSERT INTO gallery.article_release(id,article_id,source_version,content,published_by) VALUES(${release}::uuid,${id}::uuid,${version}::bigint,${JSON.stringify(content)}::jsonb,${user.id}::uuid)`.execute(
+        trx,
+      );
+      await writeRefs(trx, id, content, release);
+      await sql`UPDATE gallery.article SET current_release_id=${release}::uuid,status='published',version=${version}::bigint,updated_by=${user.id}::uuid,updated_at=now() WHERE id=${id}::uuid`.execute(
+        trx,
+      );
+      return getArticle(trx, id);
+    });
+    timings.commitMs = Math.round(performance.now() - commitStarted);
+    outcome = 'published';
+    return result;
+  } finally {
+    console.info(
+      '[gallery] article-publish',
+      JSON.stringify({ outcome, ...timings, totalMs: Math.round(performance.now() - started) }),
     );
-    await writeRefs(trx, id, content, release);
-    await sql`UPDATE gallery.article SET current_release_id=${release}::uuid,status='published',version=${version}::bigint,updated_by=${user.id}::uuid,updated_at=now() WHERE id=${id}::uuid`.execute(
-      trx,
-    );
-    return getArticle(trx, id);
-  });
+  }
 }
 export async function offlineArticle(db: Db, input: Record<string, unknown>) {
   return db.transaction().execute(async (trx) => {

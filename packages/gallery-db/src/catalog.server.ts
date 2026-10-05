@@ -1,3 +1,4 @@
+import { publicPhotoPlaces } from './places.server.ts';
 import { photoProfiles } from './shared-photos.server.ts';
 import { adminTags } from './tags.server.ts';
 import { sql, type Kysely } from 'kysely';
@@ -80,6 +81,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
       const active = slug ? albums.find((a) => a.slug === slug) : null;
       if (slug) ensure(active, '相册不存在或尚未公开。', 404);
       if (active) {
+        const geo = await publicPhotoPlaces(trx, active.id);
         const photos = (
           await sql<{
             tags: DisplayPhoto['tags'];
@@ -126,6 +128,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
         active.photos = photos.map((p) => ({
           id: p.photo_id,
           tags: p.tags,
+          places: geo.byPhoto.get(`${active.id}/${p.photo_id}`) ?? [],
           occurrences: byAsset.get(p.asset_id) ?? [],
           group: active.groups?.find((g) => g.id === p.group_id),
           takenAt: p.taken_at?.toISOString() ?? null,

@@ -15,6 +15,9 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [地点与目录 ADR 0018](decisions/0018-places-filters-and-article-outline.md) | 地名、实际焦距组合筛选和目录交互 |
+| [地点数据字典](architecture/places.md) | 0012 新增表、实时GPS与权限边界 |
+| [地点与目录交付](delivery/places-and-outline.md) | 本地迁移、验证与生产状态 |
 | [全部相片与浏览细节](delivery/photo-library-and-map-polish.md) | 跨相册批量编辑、父相册封面、地图语言与界面修订 |
 | [文章隐藏作品与图片组](delivery/article-image-groups.md) | 三类图片、两种组引用、权限与本地验收 |
 | [私有访问统计](delivery/analytics.md) | Umami 自托管、统计范围、部署与实际验收 |

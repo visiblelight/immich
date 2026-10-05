@@ -14,6 +14,41 @@
   import Icon from '../Icon.svelte';
   import { exitViewerFullscreen, enterViewerFullscreen } from '../viewer-fullscreen';
   let copied = $state(false);
+  let activeHeading = $state('');
+  let tocHeight = $state('calc(100dvh - 220px)');
+  let readerElement: HTMLDivElement;
+  onMount(() => {
+    const update = () => {
+      const toc = readerElement.querySelector<HTMLElement>('.desktop-toc');
+      if (toc)
+        tocHeight = `${Math.max(120, window.innerHeight - Math.max(35, toc.getBoundingClientRect().top) - 24)}px`;
+      const nodes = [
+        ...readerElement.querySelectorAll<HTMLElement>(
+          '.article-prose h2, .article-prose h3, .article-prose h4',
+        ),
+      ];
+      activeHeading =
+        (nodes.filter((n) => n.getBoundingClientRect().top <= 140).at(-1) ?? nodes[0])?.id ?? '';
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  });
+  $effect(() => {
+    if (!activeHeading) return;
+    const link = readerElement?.querySelector<HTMLElement>('.desktop-toc a[aria-current="location"]');
+    const nav = link?.parentElement;
+    if (link && nav) {
+      const box = link.getBoundingClientRect(),
+        bounds = nav.getBoundingClientRect();
+      if (box.top < bounds.top) nav.scrollTop -= bounds.top - box.top;
+      else if (box.bottom > bounds.bottom) nav.scrollTop += box.bottom - bounds.bottom;
+    }
+  });
   let focusView = $state(false);
   function focusImage(value: boolean) {
     focusView = value;
@@ -116,7 +151,7 @@
     }
   }}
 />
-<div class="article-layout">
+<div class="article-layout" bind:this={readerElement}>
   <article>
     <header class="article-heading">
       <h1>{title}</h1>
@@ -135,6 +170,7 @@
         <summary>文章目录</summary>
         <nav aria-label="文章目录">
           {#each headings as item}<a
+              aria-current={activeHeading === item.id ? 'location' : undefined}
               class:sub={item.level === 3}
               class:deep={item.level === 4}
               href={'#' + item.id}>{item.text}</a
@@ -169,10 +205,11 @@
         </div>
       </footer>{/if}
   </article>
-  {#if headings.length}<aside class="desktop-toc">
+  {#if headings.length}<aside class="desktop-toc" style:max-height={tocHeight}>
       <span>本文目录</span>
       <nav aria-label="文章目录">
         {#each headings as item}<a
+            aria-current={activeHeading === item.id ? 'location' : undefined}
             class:sub={item.level === 3}
             class:deep={item.level === 4}
             href={'#' + item.id}>{item.text}</a
@@ -229,11 +266,11 @@
 
 <style>
   .article-layout {
-    max-width: 1090px;
+    max-width: 1160px;
     margin: 42px auto 100px;
     display: grid;
-    grid-template-columns: minmax(0, 740px) 180px;
-    gap: 80px;
+    grid-template-columns: minmax(0, 740px) 280px;
+    gap: 56px;
     justify-content: center;
   }
   article {
@@ -261,9 +298,23 @@
     align-self: start;
     position: sticky;
     top: 35px;
+    max-height: calc(100dvh - 70px);
+    display: flex;
+    flex-direction: column;
     border-left: 1px solid #e0e5db;
     padding-left: 22px;
     margin-top: 7px;
+  }
+  .desktop-toc nav {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    min-height: 0;
+    padding-right: 12px;
+  }
+  nav a[aria-current='location'] {
+    color: #274d35;
+    font-weight: 600;
   }
   .desktop-toc > span {
     font-size: 12px;
@@ -288,6 +339,11 @@
   }
   nav a.deep {
     padding-left: 24px;
+  }
+  .mobile-toc nav {
+    max-height: 55dvh;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
   }
   .mobile-toc {
     display: none;
@@ -359,7 +415,7 @@
   @media (max-width: 1000px) {
     .article-layout {
       gap: 36px;
-      grid-template-columns: minmax(0, 720px) 155px;
+      grid-template-columns: minmax(0, 720px) 230px;
     }
   }
   @media (max-width: 780px) {

@@ -5,6 +5,8 @@
   import Markdown from './Markdown.svelte';
   import PublicFrame from './PublicFrame.svelte';
   import Icon from './Icon.svelte';
+  import PhotoRefinements from './PhotoRefinements.svelte';
+  import { appendPhotoFilters, type PhotoFilters } from '../../gallery-core/src/photo-filters';
   let filtersOpen = $state(false);
   import { documentMarkdown } from '../../gallery-core/src/markdown';
   import type { DisplayAlbum, DisplayPhoto } from '../../gallery-core/src/content';
@@ -40,6 +42,19 @@
     immersive?: boolean;
     relatedArticles?: { title: string; slug: string }[];
     feed?: {
+      filters?: PhotoFilters;
+      availablePlaces?: {
+        id: string;
+        name: string;
+        count: number;
+        path: string;
+        kind: string;
+        parent: string;
+      }[];
+      availableCameras?: { id: string; name: string; count: number }[];
+      availableLenses?: { id: string; name: string; count: number }[];
+      focalBounds?: { min: number; max: number } | null;
+      unavailableTags?: string[];
       tags?: string[];
       availableTags?: { id: string; name: string; count: number }[];
       months: { month: string; count: number }[];
@@ -137,6 +152,7 @@
   ) => {
     const q = new URLSearchParams({ sort, month, page: String(page) });
     for (const tag of tags) q.append('tag', tag);
+    appendPhotoFilters(q, feed?.filters);
     return `/photos?${q}`;
   };
   const toggleTag = (id: string) =>
@@ -195,7 +211,7 @@
   );
   function albumSubtitle(album: DisplayAlbum) {
     const childCount = album.childCount ?? albums.filter((a) => a.parent === album.id).length;
-    return `总共 ${album.totalCount ?? album.count} 张相片${childCount ? `，含 ${childCount} 个子相册` : ''}`;
+    return `共${album.totalCount ?? album.count}张照片${childCount ? `，含 ${childCount} 个子相册` : ''}`;
   }
   let crumbs = $derived.by(() => {
     const result: DisplayAlbum[] = [];
@@ -318,6 +334,16 @@
               <a class:chosen={feed.sort === 'added'} href={feedLink(1, '', 'added')}>最近加入</a>
             </nav>
           </section>
+          {#if feed.filters}<PhotoRefinements
+              filters={feed.filters}
+              places={feed.availablePlaces ?? []}
+              cameras={feed.availableCameras ?? []}
+              lenses={feed.availableLenses ?? []}
+              bounds={feed.focalBounds ?? null}
+              sort={feed.sort}
+              month={feed.month}
+              tags={feed.tags ?? []}
+            />{/if}
           <section class="timeline">
             <label
               >跳转年月<select
@@ -364,6 +390,17 @@
           </div>
         </aside>
         <div class="timeline-photos">
+          {#if feed.unavailableTags?.length}<p role="status">
+              所选标签已停用或不再公开。<a
+                href={feedLink(
+                  1,
+                  feed.month,
+                  feed.sort,
+                  (feed.tags ?? []).filter((t) => !feed.unavailableTags?.includes(t)),
+                )}>清除失效标签</a
+              >
+            </p>{/if}
+          {#if !items.length}<p>没有符合当前筛选条件的照片。<a href="/photos">清除筛选</a></p>{/if}
           {#each items as p, index (p.id)}{@const month =
               (feed.sort === 'added' ? p.addedAt : p.localTakenAt)?.slice(0, 7) || 'unknown'}
             {#if index === 0 || month !== ((feed.sort === 'added' ? items[index - 1]?.addedAt : items[index - 1]?.localTakenAt)?.slice(0, 7) || 'unknown')}<h2
@@ -630,6 +667,20 @@
               </p>{/if}
             {#if photo.latitude !== null && photo.longitude !== null}<section class="location-facts">
                 <h3>拍摄位置</h3>
+                {#if photo.places?.length}<nav class="place-trail" aria-label="按拍摄地点筛选">
+                    {#each photo.places.filter((p, i, all) => p.name !== all[i + 1]?.name) as place, index}<span
+                        class="place-step"
+                      >
+                        {#if index > 0}<span class="place-separator" aria-hidden="true">›</span>{/if}<a
+                          href={`/photos?${new URLSearchParams({ place: place.id })}`}>{place.name}</a
+                        >
+                      </span>{/each}
+                  </nav>{/if}
+                {#if photo.places?.[0]?.kind === 'country'}<a
+                    class="place-map"
+                    href={`/visited/${photo.places[0].id.split(':')[1]}?${new URLSearchParams({ lat: String(photo.latitude), lng: String(photo.longitude), zoom: '11' })}`}
+                    >查看地图</a
+                  >{/if}
                 <p class="coordinates">
                   {photo.latitude.toFixed(4)}, {photo.longitude.toFixed(4)}
                 </p>
@@ -721,6 +772,49 @@
 {/snippet}
 
 <style>
+  .place-trail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 8px;
+    align-items: baseline;
+    line-height: 1.6;
+    margin: 8px 0 12px;
+  }
+  .place-step {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+  .place-separator {
+    color: #819079;
+    font-size: 13px;
+  }
+  .place-trail a {
+    padding: 0;
+    color: #aebca6;
+    font-size: 13px;
+    text-decoration: none;
+    border: 0;
+    transition: color 0.15s;
+  }
+  .place-step:last-child a {
+    color: #e2e9dc;
+    font-size: 16px;
+  }
+  .place-trail a:hover {
+    color: #fff;
+  }
+  .place-map {
+    font-size: 12px;
+    color: #8f9f84;
+    text-decoration: none;
+    border: 0;
+  }
+  .place-map:hover {
+    color: #d6e0ca;
+  }
+
   .album-sorting {
     display: inline-flex;
     gap: 16px;

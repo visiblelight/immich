@@ -1,8 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyAlbum, albumPhotoCounts, galleryInventory, albumTreeRows, type ManagedAlbum } from '@gallery/core';
+import {
+  emptyAlbum,
+  albumPhotoCounts,
+  galleryInventory,
+  albumTreeRows,
+  type ManagedAlbum,
+} from '@gallery/core';
 function album(id: string, parent = '', visible = true): ManagedAlbum {
-  return { id, draft: emptyAlbum(id, id, parent), visible, status: visible ? 'published' : 'draft' } as ManagedAlbum;
+  return {
+    id,
+    draft: emptyAlbum(id, id, parent),
+    visible,
+    status: visible ? 'published' : 'draft',
+  } as ManagedAlbum;
 }
 test('inventory deduplicates cross-album assets and counts group members as photographs', () => {
   const a = album('A'),
@@ -47,4 +58,30 @@ test('new albums explicitly default to exact location without altering older con
   assert.equal(emptyAlbum('new', 'new').location, 'exact');
   galleryInventory([{ ...album('old'), draft: old as ManagedAlbum['draft'] }]);
   assert.equal(old.location, 'hidden');
+});
+
+test('creation ordering sorts siblings in either direction without detaching children', () => {
+  const old = { ...album('old'), createdAt: '2026-01-01T00:00:00Z' };
+  const recent = { ...album('recent'), createdAt: '2026-03-01T00:00:00Z' };
+  const child = { ...album('child', old.id), createdAt: '2026-04-01T00:00:00Z' };
+  const earlierChild = { ...album('earlier-child', old.id), createdAt: '2026-02-01T00:00:00Z' };
+  const input = [old, earlierChild, child, recent];
+  const ordered = (direction: 'created-desc' | 'created-asc') =>
+    albumTreeRows(input, '', 'all', new Set(), direction).map((r) => [r.album.id, r.depth]);
+  assert.deepEqual(ordered('created-desc'), [
+    ['recent', 0],
+    ['old', 0],
+    ['child', 1],
+    ['earlier-child', 1],
+  ]);
+  assert.deepEqual(ordered('created-asc'), [
+    ['old', 0],
+    ['earlier-child', 1],
+    ['child', 1],
+    ['recent', 0],
+  ]);
+  assert.deepEqual(
+    input.map((a) => a.id),
+    ['old', 'earlier-child', 'child', 'recent'],
+  );
 });

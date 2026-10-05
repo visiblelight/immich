@@ -52,6 +52,8 @@ export async function readSourceDerivative(
 // Content hashing also invalidates a replaced derivative with unchanged DB metadata.
 const sanitized = new Map<string, Buffer>();
 const pending = new Map<string, Promise<Buffer>>();
+// Small content proofs survive output-buffer eviction; never cache authorization.
+const validated = new Set<string>();
 let cacheBytes = 0;
 let pendingBytes = 0;
 let encoding = 0;
@@ -86,7 +88,7 @@ export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promi
   const work = (async () => {
     const release = await encodingSlot();
     try {
-      const result = await prepareImage(bytes);
+      const result = await prepareImage(bytes, key);
       if (result.length <= MAX_CACHE) {
         sanitized.set(key, result);
         cacheBytes += result.length;
@@ -109,14 +111,22 @@ export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promi
     pendingBytes -= bytes.length;
   }
 }
-async function prepareImage(bytes: Buffer): Promise<Buffer> {
-  const options = { limitInputPixels: 100_000_000, failOn: 'error' as const };
-  const metadata = await sharp(bytes, options).metadata();
-  // Immich applies orientation when generating derivatives. Refuse unexpected
-  // unnormalised sources rather than rotating/re-encoding or displaying them wrong.
-  if ((metadata.orientation ?? 1) !== 1 || (metadata.pages ?? 1) !== 1) throw new Error('Invalid derivative');
+async function prepareImage(bytes: Buffer, key: string): Promise<Buffer> {
   const result = stripImageMetadata(bytes);
-  await sharp(result, options).stats(); // Validate the whole compressed stream without an output encoder.
+  if (validated.has(key)) {
+    validated.delete(key);
+    validated.add(key);
+    return result;
+  }
+  const options = { limitInputPixels: 100_000_000, failOn: 'warning' as const };
+  const metadata = await sharp(bytes, options).metadata();
+  // Immich normalises orientation. Validate the compressed stream, without
+  // computing unused entropy/sharpness/channel statistics for every 4K image.
+  if ((metadata.orientation ?? 1) !== 1 || (metadata.pages ?? 1) !== 1) throw new Error('Invalid derivative');
+  await sharp(result, options).resize(1, 1, { fit: 'inside', fastShrinkOnLoad: false }).raw().toBuffer();
+  // The one-pixel decode is discarded. Serve the original compressed pixels/ICC.
+  validated.add(key);
+  if (validated.size > 2048) validated.delete(validated.values().next().value!);
   return result;
 }
 const inside = (root: string, file: string) => {

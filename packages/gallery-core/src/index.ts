@@ -21,3 +21,5 @@ export * from './admin-albums.ts';
 
 export * from './article.ts';
 export * from './map-presets.ts';
+
+export * from './photo-filters.ts';

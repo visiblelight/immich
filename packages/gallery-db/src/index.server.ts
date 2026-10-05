@@ -41,3 +41,5 @@ export * from './article-media.server.ts';
 export { publishedCdnRedirect } from './cdn.server.ts';
 
 export * from './photo-library.server.ts';
+
+export * from './places.server.ts';

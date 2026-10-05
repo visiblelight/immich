@@ -45,7 +45,9 @@
 <MapAdminFrame active="tags" user={data.user} publicOrigin={data.publicOrigin}>
   <section class="map-admin tags-page">
     <h1>照片标签</h1>
-    <p>为照片整理主题。标签在所有相册中统一使用；重命名会同步更新前台名称。</p>
+    <p>
+      为照片整理主题。标签在所有相册中统一使用；重命名会同步更新前台名称。停用立即从前台隐藏，已有关联保留，重新启用后恢复。
+    </p>
     {#if message}<p class="notice" class:error={failed} role="status">{message}</p>{/if}
     <form
       onsubmit={(e) => {
@@ -59,7 +61,9 @@
     </form>
     <label>检索标签<input placeholder="输入标签名称" bind:value={search} /></label>
     <div class="tag-list">
-      {#each data.tags.filter((t) => t.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) as tag}
+      {#each data.tags.filter((t) => t.name
+          .toLocaleLowerCase()
+          .includes(search.trim().toLocaleLowerCase())) as tag}
         <article>
           <div>
             <strong>{tag.name}</strong>{#if !tag.active}<span class="badge">已停用</span>{/if}
@@ -70,7 +74,8 @@
             <button disabled={busy} onclick={() => save({ ...tag, active: !tag.active })}
               >{tag.active ? '停用' : '启用'}</button
             >
-            {#if !tag.referenced}<button disabled={busy} onclick={() => save({ ...tag, remove: true })}>删除</button
+            {#if !tag.referenced}<button disabled={busy} onclick={() => save({ ...tag, remove: true })}
+                >删除</button
               >{/if}
           </div>
         </article>
@@ -85,8 +90,8 @@
             if (editing) void save(editing);
           }}
         >
-          <label>标签名称<input bind:value={editing.name} maxlength="60" required /></label><button disabled={busy}
-            >保存名称</button
+          <label>标签名称<input bind:value={editing.name} maxlength="60" required /></label><button
+            disabled={busy}>保存名称</button
           ><button type="button" disabled={busy} onclick={() => dialog.close()}>取消</button>
         </form>{/if}
     </dialog>

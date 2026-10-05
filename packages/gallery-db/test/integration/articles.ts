@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, writeFile, rm, rename, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, rename, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -54,6 +54,42 @@ export async function articles(
     type: 'paragraph',
     content: [{ type: 'text', text: s }],
   });
+  // Hold only the final commit lock, allowing preflight to finish first. This
+  // deterministically exercises changes between validation and atomic release.
+  async function duringCommitWait(
+    start: () => Promise<unknown>,
+    change: () => Promise<unknown>,
+    expected: RegExp,
+  ) {
+    await owner.query('BEGIN');
+    await owner.query('SELECT id FROM gallery.site WHERE id=1 FOR UPDATE');
+    const attempt = start().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    try {
+      let waiting = false;
+      for (let i = 0; i < 200; i++) {
+        await owner.query('SELECT pg_stat_clear_snapshot()');
+        waiting = (
+          await owner.query(
+            `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pg_backend_pid()=ANY(pg_blocking_pids(pid))) AS waiting`,
+          )
+        ).rows[0].waiting;
+        if (waiting) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.ok(waiting, 'Publication should finish preflight before waiting for the commit lock');
+      await change();
+      await owner.query('COMMIT');
+      const error = await attempt;
+      assert.ok(error instanceof Error);
+      assert.match(error.message, expected);
+    } finally {
+      await owner.query('ROLLBACK');
+      await attempt;
+    }
+  }
   try {
     const bytes = await sharp({
       create: { width: 100, height: 80, channels: 3, background: '#658068' },
@@ -134,6 +170,34 @@ export async function articles(
     await assert.rejects(publicArticle(pub, 'article-test'));
     await assert.rejects(deleteArticleMedia(db, dir, upload.id), /引用/);
     await assert.rejects(saveArticle(db, user, { id, version: '1', slug: a.slug, content: a }), /其他页面/);
+    await duringCommitWait(
+      () => publishArticle(db, user, { id, version: a.version }, root, dir),
+      () => owner.query('UPDATE gallery.article SET version=version+1 WHERE id=$1', [id]),
+      /版本/,
+    );
+    a = await getArticle(db, id);
+    const uploadKey = (
+      await owner.query('SELECT storage_key FROM gallery.article_media WHERE id=$1', [upload.id])
+    ).rows[0].storage_key;
+    const uploadPath = path.join(dir, uploadKey, 'preview.webp');
+    const originalUpload = await readFile(uploadPath);
+    try {
+      await duringCommitWait(
+        () => publishArticle(db, user, { id, version: a.version }, root, dir),
+        () => writeFile(uploadPath, Buffer.concat([originalUpload, Buffer.from('changed')])),
+        /文件在校验期间发生变化/,
+      );
+    } finally {
+      await writeFile(uploadPath, originalUpload);
+    }
+    assert.equal(
+      (
+        await owner.query('SELECT count(*)::int AS count FROM gallery.article_release WHERE article_id=$1', [
+          id,
+        ])
+      ).rows[0].count,
+      0,
+    );
     a = await publishArticle(db, user, { id, version: a.version }, root, dir);
     const firstPublished = a.firstPublishedAt;
     assert.ok(firstPublished);
@@ -395,6 +459,15 @@ export async function articles(
       readArticlePhotoDerivative(pub, id2, album, otherAsset, 'preview', root),
       'draft group does not grant a newly selected member',
     );
+    try {
+      await duringCommitWait(
+        () => publishArticle(db, user, { id: id2, version: second.version }, root, dir),
+        () => owner.query("UPDATE gallery.album SET status='offline',offline_at=now() WHERE id=$1", [album]),
+        /尚未发布|来源不可用|不可用/,
+      );
+    } finally {
+      await owner.query("UPDATE gallery.album SET status='published',offline_at=NULL WHERE id=$1", [album]);
+    }
     second = await publishArticle(db, user, { id: id2, version: second.version }, root, dir);
     let shown = await publicArticle(pub, second.slug);
     assert.equal(shown.images[articleImageKey(live)]!.items!.length, 2);

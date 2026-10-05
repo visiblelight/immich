@@ -31,6 +31,7 @@ import {
 type Db = Kysely<unknown>;
 interface DraftRow {
   id: string;
+  created_at: Date;
   slug: string;
   status: ManagedAlbum['status'];
   version: string;
@@ -84,7 +85,7 @@ export async function adminState(db: Db) {
     .execute(async (trx) => {
       const site = await siteRow(trx);
       const rows = (
-        await sql<DraftRow>`SELECT a.id,a.slug,a.status,a.version,a.has_unpublished_changes,d.version AS draft_version,r.source_draft_version,r.parent_album_id AS release_parent_album_id,d.parent_album_id,d.position,d.title,d.summary,d.description_document,d.cover_asset_id,d.location_mode,d.show_exif,EXISTS(SELECT 1 FROM gallery.published_album p WHERE p.album_id=a.id) AS visible FROM gallery.album a JOIN gallery.album_draft d ON d.album_id=a.id LEFT JOIN gallery.album_release r ON r.id=a.current_release_id ORDER BY d.position,a.created_at,a.id`.execute(
+        await sql<DraftRow>`SELECT a.id,a.created_at,a.slug,a.status,a.version,a.has_unpublished_changes,d.version AS draft_version,r.source_draft_version,r.parent_album_id AS release_parent_album_id,d.parent_album_id,d.position,d.title,d.summary,d.description_document,d.cover_asset_id,d.location_mode,d.show_exif,EXISTS(SELECT 1 FROM gallery.published_album p WHERE p.album_id=a.id) AS visible FROM gallery.album a JOIN gallery.album_draft d ON d.album_id=a.id LEFT JOIN gallery.album_release r ON r.id=a.current_release_id ORDER BY d.position,a.created_at,a.id`.execute(
           trx,
         )
       ).rows;
@@ -98,6 +99,7 @@ export async function adminState(db: Db) {
       const sharedPhotos = await hydratePhotoProfiles(trx, photos);
       const albums: ManagedAlbum[] = rows.map((r) => ({
         id: r.id,
+        createdAt: r.created_at.toISOString(),
         version: r.version,
         draftVersion: r.draft_version,
         releaseVersion: r.source_draft_version,

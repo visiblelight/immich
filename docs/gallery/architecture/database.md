@@ -434,3 +434,7 @@ ADR 0012 已确认。拟新增文章、发布版本、独立素材及引用关�
 `gallery.site` 新增 `copyright_name text NOT NULL DEFAULT ''`（最多 100 字，空值表示使用站点名称）和 `footer_text text NOT NULL DEFAULT ''`（最多 300 字，可选页脚短句）。`gallery.published_site` 在原有字段末尾公开这两个字段，权限及 security barrier 保持原状。
 
 统一保存使用站点 version 和 about_article_version 检查并发，在锁定 site 行的同一事务中校验已发布文章并更新全部设置。旧 about 接口同步推进 site.version，避免旧页面覆盖新保存。失败不会产生部分保存。兼容旧客户端省略新增页脚字段。迁移为增量扩展，旧应用可忽略新增列；回滚优先回滚应用，不删除配置。
+
+## 0012：地点词典与标签实时停用（2026-10-05）
+
+新增 `place_label` 和 `photo_place`；完整字段、约束、权限及GPS失效语义见 [地点数据字典](places.md)。标签公开视图过滤active，关联和历史发布保留。本地已迁移，生产未迁移；见 [交付记录](../delivery/places-and-outline.md)。

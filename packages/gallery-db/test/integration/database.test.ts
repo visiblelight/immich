@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { placesAndFilters } from './places.ts';
 import { articles } from './articles.ts';
 import { sharedPhotosAndTags } from './shared-photos.ts';
 import { itemPublication } from './item-publication.ts';
@@ -155,6 +156,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         '0009',
         '0010',
         '0011',
+        '0012',
       ]);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
@@ -164,7 +166,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
           )
         ).rows[0].count,
-        '31',
+        '33',
       );
     });
     await t.test('runtime compatibility checks validate service roles and view contracts', async () => {
@@ -772,6 +774,11 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       const tagAssets = [randomUUID(), randomUUID()];
       for (const asset of tagAssets) await sourceAsset(asset, ids.owner);
       await sharedPhotosAndTags(adminDb, publicDb, owner, ids.user, tagAssets, mediaRoot);
+    });
+    await t.test('places, live GPS invalidation, dictionary corrections and equipment facets', async () => {
+      const photoAssets = [randomUUID(), randomUUID(), randomUUID()];
+      for (const asset of photoAssets) await sourceAsset(asset, ids.owner);
+      await placesAndFilters(adminDb, publicDb, owner, ids.user, photoAssets, mediaRoot);
     });
     await t.test('articles: snapshots, media grants, about, concurrency and source revocation', async () => {
       const asset = randomUUID(), otherAsset = randomUUID();

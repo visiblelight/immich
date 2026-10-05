@@ -79,9 +79,13 @@ for (const lossless of [false, true]) {
     await unchangedPixels(input, output);
     assert.equal((await sharp(output).metadata()).hasAlpha, true);
     const kind = lossless ? 'VP8L' : 'VP8 ';
-    const start = original.indexOf(kind), size = original.readUInt32LE(start + 4);
+    const start = original.indexOf(kind),
+      size = original.readUInt32LE(start + 4);
     const outputStart = output.indexOf(kind);
-    assert.deepEqual(output.subarray(outputStart, outputStart + 8 + size), original.subarray(start, start + 8 + size));
+    assert.deepEqual(
+      output.subarray(outputStart, outputStart + 8 + size),
+      original.subarray(start, start + 8 + size),
+    );
   });
 }
 
@@ -105,4 +109,18 @@ test('malformed, unsupported and unnormalised sources fail closed', async () => 
   await assert.rejects(sanitizeImage(rotated, 'preview'));
   const png = await sharp(jpeg).png().toBuffer();
   await assert.rejects(sanitizeImage(png, 'preview'));
+});
+
+test('valid image headers cannot hide truncated JPEG pixel data, including repeat attempts', async () => {
+  const pixels = Buffer.from(Array.from({ length: 320 * 240 * 3 }, (_, i) => (i * 71 + (i >> 6)) % 256));
+  const original = await sharp(pixels, { raw: { width: 320, height: 240, channels: 3 } })
+    .jpeg()
+    .toBuffer();
+  const scan = original.indexOf(Buffer.from([0xff, 0xda]));
+  const start = scan + 2 + original.readUInt16BE(scan + 2);
+  const damaged = Buffer.concat([original.subarray(0, start + 12), Buffer.from([0xff, 0xd9])]);
+  assert.equal((await sharp(damaged).metadata()).width, 320);
+  await sanitizeImage(original, 'preview');
+  await assert.rejects(sanitizeImage(damaged, 'preview'));
+  await assert.rejects(sanitizeImage(damaged, 'preview'));
 });

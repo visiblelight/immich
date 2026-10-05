@@ -10,7 +10,7 @@
     publicOrigin,
   }: {
     children: Snippet;
-    active: 'photos' | 'maps' | 'visits' | 'tags' | 'analytics';
+    active: 'places' | 'photos' | 'maps' | 'visits' | 'tags' | 'analytics';
     user: GalleryUser;
     publicOrigin: string;
   } = $props();
@@ -21,15 +21,17 @@
   <main class="main">
     <div class="topline">
       <span
-        >工作台 / {active === 'photos'
-          ? '全部相片'
-          : active === 'analytics'
-            ? '访问统计'
-            : active === 'maps'
-              ? '地图设置'
-              : active === 'tags'
-                ? '标签管理'
-                : '到访记录'}</span
+        >工作台 / {active === 'places'
+          ? '地点管理'
+          : active === 'photos'
+            ? '全部相片'
+            : active === 'analytics'
+              ? '访问统计'
+              : active === 'maps'
+                ? '地图设置'
+                : active === 'tags'
+                  ? '标签管理'
+                  : '到访记录'}</span
       ><a href="/login" target="_blank" rel="noreferrer">登录页</a>
     </div>
     {@render children()}

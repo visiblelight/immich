@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Gallery } from '@gallery/ui';
+  import { appendPhotoFilters } from '@gallery/core';
   import type { DisplayPhoto, DisplayAlbum } from '@gallery/core';
   import { goto } from '$app/navigation';
   let { data } = $props();
@@ -22,7 +23,7 @@
       page: String(page),
     });
     for (const tag of data.feed.tags) q.append('tag', tag);
-    return q;
+    return appendPhotoFilters(q, data.feed.filters);
   }
   function navigatePhoto(p: DisplayPhoto | null, replace = false) {
     const q = query();
@@ -47,7 +48,7 @@
     content={data.site.tagline || '按时间浏览旅途与日常中的照片'}
   /><link rel="canonical" href={`${data.origin}/photos`} /></svelte:head
 >
-{#key `${data.feed.tags.join(',')}:${data.feed.sort}:${data.feed.month}:${data.feed.page}:${data.photoId}`}<Gallery
+{#key `${JSON.stringify(data.feed.filters)}:${data.feed.tags.join(',')}:${data.feed.sort}:${data.feed.month}:${data.feed.page}:${data.photoId}`}<Gallery
     site={data.site}
     albums={data.albums}
     {active}

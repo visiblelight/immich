@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-05",
+  "license": "CC BY 4.0",
+  "source": "https://download.geonames.org/export/dump/",
+  "inputs": {
+    "admin1CodesASCII.txt": "1da92a6323a5fec3176f3f743bf4cf4040fd56a876da55e46fbca23c863aa60a",
+    "cities500.zip": "c99d2ac9b7c38090053c89cf5e384d01fae7c1cb82e4171dd9a1e7504728e1db",
+    "alternateNamesV2.zip": "00541c69ae9e1bfef9092d8f3cdaa60f474eaec94954f72f8c02139dcf0706ef"
+  },
+  "outputSha256": "5ab041a3a84887107f14b3c35216cfb665e5a5cafa986fadfb7ab7c56c3c46c7",
+  "cities": 235917,
+  "localized": 77737
+}
