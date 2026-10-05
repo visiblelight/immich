@@ -44,3 +44,13 @@ Gallery check 无错误/警告；单元测试54项通过；隔离PostgreSQL集�
 - 照片详情恢复轻量 `国家 › 省州 › 城市` 路径分隔，每一级保留原筛选链接，不添加下划线或独立箭头按钮。
 - 新增创建时间双向排序且保留父子归属、地点树搜索上下文、上级包含子区域的回归测试。`gallery:check`、`gallery:build`、57 项单元测试通过。浏览器验证真实省州选择返回 6 张下属城市照片；后台排序双向切换且郊区保留在父册下；390px 前后台控件无横向溢出，地点弹层宽 343px。
 - 截图：`.gallery-local/album-sort-review.png`、`.gallery-local/place-hierarchy-review.png`、`.gallery-local/place-breadcrumb-review.png`。本地服务已更新；没有更改用户相册或照片资料，本轮未提交、推送或部署生产。
+
+## 2026-10-05 生产发布完成
+
+- 应用提交 `044eef36a16c092176ce217e53e36d5409ae4ead` 已推送 `codex/gallery`；[Gallery CI #37259990218](https://github.com/visiblelight/immich/actions/runs/37259990218) 的检查、镜像与生产部署全部成功。运行镜像为 `ghcr.io/visiblelight/gallery@sha256:35111e787d4a8da0119a12e4a1777f931944f198fee2c1cd2f9cb22fa06d1378`。以上“未部署”描述保留为当时的阶段记录，以本节为当前状态。
+- 迁移前在 ECS 私有目录 `/srv/vision/backups/before-places-20261005-044eef36a` 保存完整一致性数据库转储（19,729,019 字节）、私有配置、旧版本和迁移校验记录，转储目录可读验证通过。此为同机迁移备份，不替代异机灾备。
+- 通过一次性容器及专用迁移凭据执行 0012；全部 12 个迁移校验和与提交一致。剔除 pg_dump 随机生成的 restrict 标记后，迁移前后 Immich public schema 完全一致。运行前后台仍只使用受限角色，未注入迁移或 owner 凭据。
+- 本地追加 `gallery:smoke` 通过。生产只读验证 99 张公开照片、29 个地点节点、2 个相机型号和 3 个镜头选项；父级区域筛选正确返回其下属 17 张照片，20–50mm 实际焦距筛选返回 54 张，所有结果符合范围。
+- 公网照片页、国家与焦距组合筛选、亚美尼亚/阿塞拜疆国家页、既有亚美尼亚游记及前后台 readiness 均返回 200；未登录访问后台地点管理正确跳转登录。仅替换 Gallery public/admin，Immich、Edge、JVS、Umami 及数据库容器保持原实例。
+- 没有修改或重新发布生产用户内容；文章发布的端到端实耗仍待下一次真实发布观察，不能将只读图片预检耗时当作完整发布耗时。
+- 回滚可恢复上一应用镜像并保留兼容的 0012 表与视图；不要直接删除地点资料。既有 `mise.lock` 本地改动未提交。
