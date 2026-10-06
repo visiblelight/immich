@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack, onDestroy } from 'svelte';
+  import { untrack, onDestroy, onMount, tick } from 'svelte';
   import { beforeNavigate, goto } from '$app/navigation';
   import {
     articleImageKey,
@@ -43,6 +43,11 @@
   let status = $state('已保存');
   let focus = $state(false);
   let settings = $state(true);
+  let topbarHeight = $state(72);
+  let topbar: HTMLElement;
+  onMount(() => {
+    if (window.matchMedia('(max-width: 1200px)').matches) settings = false;
+  });
   let modal: HTMLDialogElement;
   let editor = $state<RichTextEditor>();
   let coverMode = $state(false);
@@ -385,8 +390,32 @@
       pickerError = (e as Error).message;
     }
   }
-  let outlineOpen = $state(true);
+  let outlineOpen = $state(false);
   const outline = $derived(articleHeadings(article.document));
+  async function toggleOutline() {
+    outlineOpen = focus || !outlineOpen;
+    if (outlineOpen) {
+      focus = false;
+      if (window.matchMedia('(max-width: 1200px)').matches) settings = false;
+      await tick();
+      if (window.matchMedia('(max-width: 1500px)').matches)
+        topbar.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }
+  async function toggleSettings() {
+    settings = focus || !settings;
+    if (settings) {
+      focus = false;
+      if (window.matchMedia('(max-width: 1200px)').matches) outlineOpen = false;
+      await tick();
+      if (window.matchMedia('(max-width: 1200px)').matches)
+        topbar.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }
+  function locateHeading(index: number) {
+    editor?.locateHeading(index);
+    if (window.matchMedia('(max-width: 1500px)').matches) outlineOpen = false;
+  }
   beforeNavigate(({ cancel }) => {
     if (saving || busy) {
       cancel();
@@ -408,13 +437,17 @@
     }
   }}
   onkeydown={(e) => {
-    if (e.key === 'Escape') focus = false;
+    if (e.key === 'Escape') {
+      focus = false;
+      if (window.matchMedia('(max-width: 1500px)').matches) outlineOpen = false;
+      if (window.matchMedia('(max-width: 1200px)').matches) settings = false;
+    }
   }}
 />
-<div class="workspace" class:focused={focus}>
+<div class="workspace" class:focused={focus} style:--article-topbar-height={`${topbarHeight}px`}>
   {#if !focus}<AdminSidebar active="articles" user={initial.user} publicOrigin={initial.publicOrigin} />{/if}
   <main>
-    <header class="edit-top">
+    <header class="edit-top" bind:this={topbar} bind:offsetHeight={topbarHeight}>
       <a href="/articles">← 文章</a><span class="save-status" role="status"
         >{publishPhase === 'publishing' ? '正在发布…' : status}{#if publishPhase}<span aria-hidden="true"
             >已等待 {publishSeconds} 秒</span
@@ -424,15 +457,15 @@
           >{/if}</span
       >
       <div class="actions">
-        <button onclick={() => (outlineOpen = !outlineOpen)} aria-expanded={outlineOpen}>文章目录</button>
+        <button onclick={toggleOutline} aria-expanded={outlineOpen && !focus}>文章目录</button>
         <button
           onclick={() => {
             void manualSave();
           }}
           disabled={busy || saving || conflict}>{saving ? '正在保存…' : '保存草稿'}</button
         ><button onclick={openPreview} disabled={busy || conflict}>独立预览 ↗</button><button
-          onclick={() => (settings = !settings)}
-          aria-expanded={settings}>文章设置</button
+          onclick={toggleSettings}
+          aria-expanded={settings && !focus}>文章设置</button
         ><button class="primary" onclick={publish} disabled={busy || saving || conflict}
           >{publishPhase
             ? '发布中…'
@@ -460,13 +493,17 @@
             >定位问题图片组</button
           >{/if}{#if conflict}<p>当前文字仍保留在页面中。请先复制需要保留的内容，再重新载入文章。</p>{/if}
       </div>{/if}
-    <div class="editor-with-outline" class:has-outline={outlineOpen}>
-      {#if outlineOpen}<aside class="editor-outline" aria-label="编辑文章目录">
-          <strong>文章目录</strong>
+    <div class="editor-with-outline" class:has-outline={outlineOpen && !focus}>
+      {#if outlineOpen && !focus}<aside class="editor-outline" aria-label="编辑文章目录">
+          <div class="panel-heading">
+            <strong>文章目录</strong><button aria-label="收起文章目录" onclick={() => (outlineOpen = false)}
+              >×</button
+            >
+          </div>
           <nav>
             {#each outline as item, index}<button
                 style:padding-left={`${(item.level - 2) * 12}px`}
-                onclick={() => editor?.locateHeading(index)}>{item.text || '未命名章节'}</button
+                onclick={() => locateHeading(index)}>{item.text || '未命名章节'}</button
               >{/each}
           </nav>
           {#if !outline.length}<p>添加 H2、H3 或 H4 标题后显示章节。</p>{/if}
@@ -506,7 +543,10 @@
           </fieldset>
         </section>
         {#if settings && !focus}<aside class="article-settings">
-            <h2>文章设置</h2>
+            <div class="panel-heading">
+              <h2>文章设置</h2>
+              <button aria-label="收起文章设置" onclick={() => (settings = false)}>×</button>
+            </div>
             {#if article.firstPublishedAt}<p class="hint">
                 首次发布：{articleTime(article.firstPublishedAt)}<br />最近更新：{articleTime(
                   article.publishedAt!,
@@ -854,56 +894,42 @@
     gap: 24px;
   }
   .editor-with-outline.has-outline {
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-columns: 180px minmax(0, 1fr);
   }
   .editor-outline {
     position: sticky;
-    top: 24px;
-    max-height: calc(100dvh - 48px);
+    top: calc(var(--article-topbar-height) + 16px);
+    max-height: calc(100dvh - var(--article-topbar-height) - 32px);
     align-self: start;
     display: flex;
     flex-direction: column;
     min-height: 0;
     color: #6a7765;
     font-size: 13px;
+    min-width: 0;
   }
   .editor-outline nav {
     overflow-y: auto;
     overscroll-behavior-y: contain;
     scrollbar-width: thin;
     display: grid;
-    gap: 8px;
-    margin-top: 16px;
+    gap: 4px;
+    margin-top: 12px;
+    min-height: 0;
   }
   .editor-outline button {
     text-align: left;
     border: 0;
     background: none;
-    line-height: 1.6;
+    font-size: 13px;
+    font-weight: 400;
+    color: #6a7765;
+    line-height: 1.7;
     padding: 6px 8px;
+    overflow-wrap: anywhere;
   }
   .editor-outline p {
     line-height: 1.8;
-  }
-  @media (max-width: 1500px) {
-    .editor-with-outline.has-outline {
-      grid-template-columns: 190px minmax(0, 1fr);
-      gap: 16px;
-    }
-    .has-outline .editor-layout-articles {
-      grid-template-columns: 1fr;
-    }
-  }
-  @media (max-width: 1000px) {
-    .editor-with-outline.has-outline {
-      grid-template-columns: 1fr;
-    }
-    .editor-outline {
-      position: static;
-      max-height: 40dvh;
-      padding: 16px;
-      background: #f4f6f1;
-    }
   }
 
   .image-picker[open] {
@@ -993,10 +1019,16 @@
     padding-right: 34px;
   }
   .edit-top {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f5f6f4;
+    padding: 14px 0;
+    border-bottom: 1px solid #e5e9e4;
     display: flex;
     gap: 15px;
     align-items: center;
-    margin: -10px 0 24px;
+    margin: -20px 0 24px;
     flex-wrap: wrap;
   }
   .edit-top .actions {
@@ -1022,9 +1054,10 @@
     grid-template-columns: minmax(0, 1fr) 250px;
     gap: 24px;
     align-items: start;
+    min-width: 0;
   }
   .editor-layout-articles.without-settings {
-    grid-template-columns: minmax(0, 900px);
+    grid-template-columns: minmax(0, 1fr);
     justify-content: center;
   }
   .writing-paper {
@@ -1066,13 +1099,41 @@
     outline: none;
   }
   .article-settings {
+    position: sticky;
+    top: calc(var(--article-topbar-height) + 16px);
+    max-height: calc(100dvh - var(--article-topbar-height) - 32px);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    min-width: 0;
     background: #edf0e8;
     padding: 24px 20px;
     border-radius: 8px;
   }
   .article-settings h2 {
     font-size: 14px;
-    margin-bottom: 24px;
+    margin: 0;
+  }
+  .panel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .article-settings .panel-heading {
+    margin-bottom: 20px;
+  }
+  .panel-heading button {
+    background: transparent;
+    border: 0;
+    padding: 0 6px;
+    font-size: 20px;
+    line-height: 1.4;
+    color: #7b847f;
+  }
+  .focused {
+    grid-template-columns: minmax(0, 1fr);
   }
   .article-settings label {
     display: grid;
@@ -1255,24 +1316,34 @@
       padding: 24px;
     }
     .editor-layout-articles {
-      grid-template-columns: minmax(0, 1fr) 215px;
+      grid-template-columns: minmax(0, 1fr);
       gap: 16px;
     }
     .writing-title {
       padding: 22px 28px 10px;
     }
-  }
-  @media (max-width: 1000px) {
-    .editor-layout-articles {
-      grid-template-columns: 1fr;
-    }
     .article-settings {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0 24px;
+      position: fixed;
+      right: 16px;
+      width: min(300px, calc(100vw - 32px));
+      z-index: 9;
+      box-shadow: 0 12px 40px #24332926;
+      border: 1px solid #dce2d8;
     }
-    .article-settings h2 {
-      grid-column: 1/-1;
+  }
+  @media (max-width: 1500px) {
+    .editor-with-outline.has-outline {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .editor-outline {
+      position: fixed;
+      width: min(240px, calc(100vw - 32px));
+      padding: 16px;
+      background: #f5f6f4;
+      border: 1px solid #dce2d8;
+      border-radius: 8px;
+      box-shadow: 0 12px 40px #24332926;
+      z-index: 9;
     }
   }
   @media (max-width: 780px) {

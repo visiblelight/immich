@@ -98,7 +98,7 @@
           </article>{/each}
       </div>
     {:else}
-      <div class="photo-grid">
+      <div class="place-photo-list">
         {#each data.photos as photo}<article class="photo-review">
             <img
               src={`/media/source/${photo.asset_id}?variant=thumbnail`}
@@ -234,6 +234,11 @@
     background: #eaf0e5;
     color: #52684c;
   }
+  .tabs button.chosen,
+  .tabs button.chosen:hover {
+    background: #36593e;
+    color: white;
+  }
   .search input {
     min-width: 180px;
     width: min(360px, 100%);
@@ -257,12 +262,14 @@
   .dictionary p {
     margin: 8px 0;
   }
-  .photo-grid {
+  .place-photo-list {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
     margin-top: 24px;
   }
   .photo-review {
+    min-width: 0;
     display: grid;
     grid-template-columns: 180px minmax(0, 1fr);
     gap: 24px;
@@ -272,6 +279,7 @@
     border-radius: 8px;
   }
   .photo-review img {
+    display: block;
     width: 180px;
     max-height: 160px;
     object-fit: contain;
@@ -281,9 +289,24 @@
     align-items: end;
     gap: 12px;
     margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .photo-review > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .photo-review strong {
+    display: block;
+  }
+  .photo-review button {
+    white-space: nowrap;
   }
   .photo-review label {
-    flex: 1;
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  .photo-review select {
+    width: 100%;
   }
   label {
     display: grid;

@@ -657,7 +657,7 @@
     border-top: 1px solid #e4e8e1;
     padding: 10px 16px;
     position: sticky;
-    top: 0;
+    top: var(--article-topbar-height, 0px);
     z-index: 2;
     background: #fffefc;
   }
