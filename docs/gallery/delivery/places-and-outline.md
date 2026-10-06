@@ -63,3 +63,7 @@ Gallery check 无错误/警告；单元测试54项通过；隔离PostgreSQL集�
 - `gallery:check` 0 错误/0 警告，`gallery:build` 通过。浏览器验证 1280px 长文滚动时顶部栏位于 y=0，格式栏与设置依次避让；设置内部滚动 545px 时正文 scrollY 保持 1440。1680px 展开目录时正文宽 885px，目录宽 180px。
 - 390px 下没有横向溢出，设置面板顶部在操作栏底部之下；目录和设置互斥，点击“十四日行程速览”正确定位 H3 后关闭目录，原保存时间未变化。地点卡片桌面文字宽 721px，手机文字宽 305px，无竖排挤压。
 - 本地后台已更新，截图位于忽略目录 `.gallery-local/article-layout-review.jpg` 与 `.gallery-local/place-cards-review.jpg`。未修改文章或照片资料，无数据库迁移；本轮尚未提交或部署生产。
+
+### 2026-10-06 本轮布局修复已上线
+
+应用 `8d5a764d9331b403c32f23f1d10677184da01a38` 已推送并由 [CI #37412439420](https://github.com/visiblelight/immich/actions/runs/37412439420) 自动部署成功，检查、镜像及部署阶段全部通过。正式镜像 `ghcr.io/visiblelight/gallery@sha256:600a19f743c99a1fa464092f4285d541f2d2dae98ec5f7488037b127cf7ab789`，服务器版本已核对，前后台容器健康。公网照片页与前后台 readiness 返回 200，未登录访问文章和地点管理正确跳转登录。仅 Gallery public/admin 容器更换，其它服务实例保持不变；本次无数据库迁移。以上本地阶段的“尚未提交或部署”已由本节更新。
