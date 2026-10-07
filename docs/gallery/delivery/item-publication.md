@@ -44,3 +44,9 @@
 - 文章编辑工作区与吸顶操作栏共享背景色，保留正文纸面与侧栏原有层次。
 
 验证：Gallery 类型／Svelte 检查、生产构建、57 项单元测试通过；隔离 PostgreSQL 验收 26 项通过，包含失效来源草稿修改、禁止失效发布和伪造身份、无关目标发布、清理并解散后的发布，以及数据库备份恢复、Immich 零漂移。浏览器验证看大图不改变选择、嵌套预览关闭、图选加片、取消恢复和解散待保存状态。未修改本地或生产 Immich 照片；不需要迁移。当前仅本地，尚未提交／发布。
+
+### 2026-10-07 本轮修复已上线
+
+应用提交 `870327f29cbf2e0fedd300edd0b0e00d01b1bff7` 已推送 `codex/gallery`，并由 [Gallery CI #37644650824](https://github.com/visiblelight/immich/actions/runs/37644650824) 自动部署成功；检查、镜像构建和生产部署三个阶段全部通过。以上“当前仅本地”为阶段记录，以本节为最新状态。
+
+生产镜像为 `ghcr.io/visiblelight/gallery@sha256:432667d8e5f2af1a8126d93dd64511e1fd993ce7543613208b2aa2b5e88a7465`。前后台容器 revision 与应用提交一致且均 healthy；公网照片页、前后台 readiness 返回 200，未登录访问后台相册返回 303 至登录页。此次只更换 Gallery public/admin 容器，Immich、数据库、Edge、JVS、Umami 实例保持不变，无数据库迁移，也没有修改或重新发布用户内容。生产交互由用户继续验收；既有 `mise.lock` 改动未提交。
