@@ -9,6 +9,9 @@ export interface PhotoGroup {
 }
 export type PhotoTag = { id: string; name: string };
 export interface DraftPhoto {
+  /** Read-only admin source diagnostics; never trusted or persisted from client input. */
+  sourceAvailable?: boolean;
+  filename?: string | null;
   photoVersion?: string;
   hiddenFromGallery?: boolean;
   tags?: string[];

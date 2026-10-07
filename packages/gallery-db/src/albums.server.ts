@@ -92,7 +92,7 @@ export async function adminState(db: Db) {
       const photos = (
         await sql<
           DraftPhoto & { album_id: string; description_format: string }
-        >`SELECT id,album_id,immich_asset_id AS asset,title,description,alt_text AS alt,location_mode AS location,group_id AS "group",description_format FROM gallery.album_photo ORDER BY album_id,position`.execute(
+        >`SELECT p.id,p.album_id,p.immich_asset_id AS asset,p.title,p.description,p.alt_text AS alt,p.location_mode AS location,p.group_id AS "group",p.description_format,s.asset_id IS NOT NULL AS "sourceAvailable",s.filename FROM gallery.album_photo p LEFT JOIN gallery.admin_source_asset s ON s.asset_id=p.immich_asset_id ORDER BY p.album_id,p.position`.execute(
           trx,
         )
       ).rows;
@@ -285,10 +285,27 @@ async function saveAlbumInTransaction(
   const previousParent = tree.draft.get(id);
   tree.draft.set(id, c.parent);
   assertTree(tree.draft);
+  const previous = (
+    await sql<{
+      id: string;
+      asset: string;
+      created_at: Date;
+    }>`SELECT id,immich_asset_id AS asset,created_at FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(
+      trx,
+    )
+  ).rows;
+  // Existing draft references can be repaired even after their source disappears.
+  // Newly introduced identities still require live source authorization; publication rechecks all targets.
   await sources(
     trx,
-    c.photos.map((p) => p.asset),
+    c.photos
+      .filter((p) => !previous.some((old) => old.id === p.id && old.asset === p.asset))
+      .map((p) => p.asset),
   );
+  for (const p of c.photos) {
+    const old = previous.find((x) => x.id === p.id);
+    ensure(!old || old.asset === p.asset, '照片身份不能更换来源。', 409);
+  }
   await coverValid(trx, id, c, tree.draft);
   const duplicate = (
     await sql`SELECT id FROM gallery.album WHERE slug=${c.slug} AND id<>${id}::uuid`.execute(trx)
@@ -300,19 +317,6 @@ async function saveAlbumInTransaction(
   await sql`UPDATE gallery.album_draft SET title=${c.title},summary=${c.summary},description_document=${JSON.stringify({ schemaVersion: 1, blocks: [], markdown: c.markdown, groups: c.groups })}::jsonb,parent_album_id=${c.parent || null}::uuid,position=${c.position},cover_asset_id=${c.cover || null}::uuid,location_mode=${c.location},show_exif=${c.showExif},version=version+1,updated_by=${user.id}::uuid,updated_at=now() WHERE album_id=${id}::uuid`.execute(
     trx,
   );
-  const previous = (
-    await sql<{
-      id: string;
-      asset: string;
-      created_at: Date;
-    }>`SELECT id,immich_asset_id AS asset,created_at FROM gallery.album_photo WHERE album_id=${id}::uuid`.execute(
-      trx,
-    )
-  ).rows;
-  for (const p of c.photos) {
-    const old = previous.find((x) => x.id === p.id);
-    ensure(!old || old.asset === p.asset, '照片身份不能更换来源。', 409);
-  }
   await sql`INSERT INTO gallery.asset_entry(immich_asset_id) SELECT x.asset FROM jsonb_to_recordset(${JSON.stringify(c.photos)}::jsonb) AS x(asset uuid) ON CONFLICT DO NOTHING`.execute(
     trx,
   );

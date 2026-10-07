@@ -2534,3 +2534,56 @@ dialog.source-picker-dialog[open] {
   color: var(--muted);
   line-height: 1.6;
 }
+
+/* Keep preview and selection separate so inspecting a photo never changes the selection. */
+.asset-card {
+  border-radius: 8px;
+  background: white;
+}
+.asset-card .asset-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+.asset-card .asset-select {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  text-align: left;
+  background: transparent;
+}
+.asset-card .selection-check {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  z-index: 1;
+  font-size: 20px;
+}
+.asset-card .preview-hint {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: white;
+  background: #172d25bf;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.asset-card:hover .preview-hint,
+.asset-card:focus-within .preview-hint {
+  opacity: 1;
+}
+@media (hover: none) {
+  .asset-card .preview-hint {
+    opacity: 1;
+  }
+}

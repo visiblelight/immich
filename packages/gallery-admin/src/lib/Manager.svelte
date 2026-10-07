@@ -17,6 +17,8 @@
   import TagPicker from './TagPicker.svelte';
   import AlbumPhotosEditor from './AlbumPhotosEditor.svelte';
   import AlbumCoverPicker from './AlbumCoverPicker.svelte';
+  import SourcePhotoPreview from './SourcePhotoPreview.svelte';
+  let sourcePreview: SourcePhotoPreview;
   let {
     initial,
     initialPage = 'albums',
@@ -336,6 +338,8 @@
         content.photos.push({
           id: crypto.randomUUID(),
           asset: a.id,
+          filename: a.filename,
+          sourceAvailable: true,
           title: '',
           description: '',
           alt: '',
@@ -356,13 +360,28 @@
     message = '';
     void open('photo');
   }
+  async function refreshSources(photos: DraftPhoto[]) {
+    const latest = await api('state');
+    const stored = latest.albums.find((a: ManagedAlbum) => a.id === id)?.draft.photos ?? [];
+    for (const photo of photos) {
+      const source = stored.find((p: DraftPhoto) => p.id === photo.id && p.asset === photo.asset);
+      if (source) {
+        photo.sourceAvailable = source.sourceAvailable;
+        photo.filename = source.filename;
+      }
+    }
+  }
   async function saveItem(candidate: AlbumContent, target: string, publish: boolean) {
     // Keep the complete local draft: refreshing versions must not discard other unsaved edits.
     await api('item', { ...versions(), target, publish, content: candidate });
     await refresh();
     for (const p of candidate.photos) {
       const saved = workspaceData.albums.find((a) => a.id === id)?.draft.photos.find((x) => x.id === p.id);
-      if (saved) p.photoVersion = saved.photoVersion;
+      if (saved) {
+        p.photoVersion = saved.photoVersion;
+        p.sourceAvailable = saved.sourceAvailable;
+        p.filename = saved.filename;
+      }
     }
     content = candidate;
     message = publish ? '所选照片／照片组已发布，其他草稿修改仍保留。' : '所选照片／照片组草稿已保存。';
@@ -636,6 +655,7 @@
                   {editPhoto}
                   {pick}
                   {saveItem}
+                  {refreshSources}
                   tags={workspaceData.tags ?? []}
                   {createTag}
                   canPublish={!!active.visible}
@@ -969,24 +989,43 @@
               : `${sourceAssets.length} 张照片 · 拍摄时间由新到旧 · 已在本册的照片不会重复添加`}
           </p>
           <div class="asset-grid">
-            {#each sourceAssets as asset}{@const added = content?.photos.some(
-                (p) => p.asset === asset.id,
-              )}<button
-                class="asset-card"
-                class:selected={selected.some((a) => a.id === asset.id)}
-                aria-pressed={selected.some((a) => a.id === asset.id)}
-                disabled={added || sourceBusy}
-                aria-label={`${asset.filename}${added ? ' · 已在本册' : ''}`}
-                onclick={() => toggle(asset)}
-                ><div>
-                  <img src={media(asset.id)} alt="" loading="lazy" /><span class="selection-check"
-                    >{added || selected.some((a) => a.id === asset.id) ? '✓' : '+'}</span
-                  >{#if added}<span class="asset-state">已在本册</span>{/if}
+            {#each sourceAssets as asset}{@const added = content?.photos.some((p) => p.asset === asset.id)}
+              <article class="asset-card" class:selected={selected.some((a) => a.id === asset.id)}>
+                <div>
+                  <button
+                    class="asset-preview"
+                    aria-label={`查看大图：${asset.filename}`}
+                    onclick={() =>
+                      sourcePreview.open(
+                        sourceAssets.map((a) => ({ asset: a.id, title: a.filename })),
+                        sourceAssets.indexOf(asset),
+                      )}
+                  >
+                    <img src={media(asset.id)} alt={asset.filename} loading="lazy" />
+                    <span class="preview-hint">查看大图</span>
+                  </button>
+                  <button
+                    class="selection-check"
+                    aria-pressed={selected.some((a) => a.id === asset.id)}
+                    disabled={added || sourceBusy}
+                    aria-label={`${asset.filename}${added ? ' · 已在本册' : ' · 选择照片'}`}
+                    onclick={() => toggle(asset)}
+                    >{added || selected.some((a) => a.id === asset.id) ? '✓' : '+'}</button
+                  >
+                  {#if added}<span class="asset-state">已在本册</span>{/if}
                 </div>
-                <strong>{asset.filename}</strong><small
-                  >{asset.takenAt.slice(0, 10)}{asset.city ? ` · ${asset.city}` : ''}</small
-                ></button
-              >{/each}
+                <button
+                  class="asset-select"
+                  aria-pressed={selected.some((a) => a.id === asset.id)}
+                  disabled={added || sourceBusy}
+                  onclick={() => toggle(asset)}
+                  aria-label={`${selected.some((a) => a.id === asset.id) ? '取消选择' : '选择'}：${asset.filename}`}
+                >
+                  <strong>{asset.filename}</strong><small
+                    >{asset.takenAt.slice(0, 10)}{asset.city ? ` · ${asset.city}` : ''}</small
+                  >
+                </button>
+              </article>{/each}
           </div>
           {#if !sourceBusy && !sourceAssets.length}<div class="empty">
               当前筛选下没有可用照片。请确认来源范围及 Immich 缩略图已生成。
@@ -1109,6 +1148,8 @@
         </div>
       </div>{/if}{/if}
 </dialog>
+
+<SourcePhotoPreview bind:this={sourcePreview} />
 
 <style>
   .album-list-tools {

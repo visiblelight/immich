@@ -9,6 +9,27 @@
     type DraftPhoto,
     type PhotoGroup,
   } from '@gallery/core';
+  import SourcePhotoPreview from './SourcePhotoPreview.svelte';
+  let sourcePreview: SourcePhotoPreview;
+  let addingMembers = $state(false);
+  let memberSelection = $state<string[]>([]);
+  let checkingSources = $state(false);
+  const photoName = (p: DraftPhoto) => p.title || p.filename || `照片 ${working().photos.indexOf(p) + 1}`;
+  function previewPhoto(p: DraftPhoto, photos: DraftPhoto[]) {
+    const available = photos.filter((x) => x.sourceAvailable !== false);
+    void sourcePreview.open(
+      available.map((x) => ({ asset: x.asset, title: photoName(x) })),
+      available.findIndex((x) => x.id === p.id),
+    );
+  }
+  function addMembers(id: string) {
+    for (const p of working().photos)
+      if (!p.group && p.sourceAvailable !== false && memberSelection.includes(p.id)) p.group = id;
+    selected = selected.filter((id) => !memberSelection.includes(id));
+    normalize();
+    memberSelection = [];
+    addingMembers = false;
+  }
   import TagPicker from './TagPicker.svelte';
   import { flip } from 'svelte/animate';
   import { onDestroy, tick } from 'svelte';
@@ -18,6 +39,7 @@
     editPhoto,
     pick,
     saveItem,
+    refreshSources,
     canPublish,
     tags = [],
     createTag,
@@ -26,6 +48,7 @@
     editPhoto: (p: DraftPhoto) => void;
     pick: () => void;
     saveItem: (candidate: AlbumContent, target: string, publish: boolean) => Promise<void>;
+    refreshSources: (photos: DraftPhoto[]) => Promise<void>;
     canPublish: boolean;
     tags?: { id: string; name: string; active: boolean }[];
     createTag: (name: string) => Promise<string>;
@@ -35,7 +58,7 @@
   let groupDialog: HTMLDialogElement;
   let groupBaseline = '';
   let isNewGroup = $state(false);
-  let fallbackTarget = '';
+  let dissolvedIds = $state<string[]>([]);
   let saving = $state(false);
   let groupError = $state('');
   let bulkTags = $state<string[]>([]);
@@ -129,8 +152,13 @@
     return !notice;
   }
   function dissolve(id: string) {
+    if (id === editing && isNewGroup) {
+      closeGroup();
+      return false;
+    }
     const g = group(id);
     if (!g || !canPreserve(g, members(id))) return false;
+    if (id === editing) dissolvedIds = members(id).map((p) => p.id);
     for (const p of members(id)) {
       p.description = preservedDescription(g, p);
       p.group = '';
@@ -152,8 +180,9 @@
   }
   function remove(p: DraftPhoto) {
     if (p.group && !detach(p)) return;
-    content.photos = content.photos.filter((x) => x.id !== p.id);
-    if (content.cover === p.asset) content.cover = '';
+    const c = working();
+    c.photos = c.photos.filter((x) => x.id !== p.id);
+    if (c.cover === p.asset) c.cover = '';
     selected = selected.filter((id) => id !== p.id);
   }
   function arrow(key: string, offset: number, groupId = '') {
@@ -267,18 +296,30 @@
   }
   async function openGroup(id: string, candidate?: AlbumContent) {
     groupDraft = candidate ?? copy(content);
-    isNewGroup = !!candidate;
     editing = id;
-    fallbackTarget = groupDraft.photos.find((p) => p.group === id)?.id ?? id;
+    isNewGroup = !!candidate;
+    dissolvedIds = [];
     groupBaseline = candidate ? '' : JSON.stringify(groupDraft);
     groupError = '';
     discardGroup = false;
     memberEditing = '';
+    addingMembers = false;
+    memberSelection = [];
+    checkingSources = true;
     await tick();
     groupDialog.showModal();
+    const draft = groupDraft;
+    try {
+      await refreshSources(draft.photos);
+    } catch {
+      if (groupDraft === draft) groupError = '未能刷新来源状态，可以继续编辑；保存并发布时会再次检查来源。';
+    } finally {
+      checkingSources = false;
+      if (groupDraft === draft && !candidate) groupBaseline = JSON.stringify(groupDraft);
+    }
   }
   function closeGroup(force = false) {
-    if (saving) return;
+    if (saving || checkingSources) return;
     if (!force && JSON.stringify(groupDraft) !== groupBaseline) {
       discardGroup = true;
       groupDialog.scrollTo({ top: 0 });
@@ -294,11 +335,7 @@
     saving = true;
     groupError = '';
     try {
-      await saveItem(
-        copy(groupDraft),
-        groupDraft.groups?.some((g) => g.id === editing) ? editing : fallbackTarget,
-        publish,
-      );
+      await saveItem(copy(groupDraft), editing, publish);
       saving = false;
       selected = [];
       closeGroup(true);
@@ -444,6 +481,11 @@
                 ? '恢复图库展示'
                 : '设为仅文章可见'}</button
             >{#if !g}<button aria-label={`移除照片 ${index + 1}`} onclick={() => remove(p)}>移除照片</button
+              >{:else}<button
+                onclick={async () => {
+                  await openGroup(g.id);
+                  dissolve(g.id);
+                }}>解散照片组…</button
               >{/if}
           </div>
         </details>
@@ -466,9 +508,15 @@
     {#if groupDraft}
       <header class="group-heading">
         <h2>编辑照片组</h2>
-        <button disabled={saving} onclick={() => closeGroup()}>取消</button>
+        <div class="group-heading-actions">
+          {#if group(editing)}<button disabled={saving || checkingSources} onclick={() => dissolve(editing)}
+              >{isNewGroup ? '取消分组' : '解散照片组'}</button
+            >{/if}
+          <button disabled={saving || checkingSources} onclick={() => closeGroup()}>取消</button>
+        </div>
       </header>
-      <div class="group-body">
+      <div class="group-body" inert={checkingSources || saving}>
+        {#if checkingSources}<p role="status" class="muted">正在检查照片来源…</p>{/if}
         {#if discardGroup}<div class="discard-edit" role="alert">
             <p>照片组修改尚未保存。</p>
             <button onclick={() => (discardGroup = false)}>继续编辑</button><button
@@ -478,11 +526,45 @@
         {#if groupError}<p class="error" role="alert">{groupError}</p>{/if}
         {#if !(groupDraft.groups ?? []).some((g) => g.id === editing)}<p>
             照片组已在编辑副本中解散。保存后生效，原有个人说明和共用说明均保留。
-          </p>{/if}
+          </p>
+          <div class="dissolved-photos">
+            {#each groupDraft.photos.filter((p) => dissolvedIds.includes(p.id)) as p}
+              <div>
+                {#if p.sourceAvailable === false}<span class="missing-thumbnail">来源失效</span>{:else}<img
+                    src={media(p)}
+                    alt=""
+                  />{/if}
+                <span>{photoName(p)}</span>
+                {#if p.sourceAvailable === false}<button onclick={() => remove(p)}>移除失效照片</button
+                  >{:else}<small>保留为独立照片</small>{/if}
+              </div>
+            {/each}
+          </div>
+          {#if groupDraft.photos.some((p) => dissolvedIds.includes(p.id) && p.sourceAvailable === false)}<p
+              class="muted"
+            >
+              仍有失效照片引用，可以保存草稿；发布前请移除，或在 Immich 恢复来源。
+            </p>{/if}
+        {/if}
         {#each (groupDraft.groups ?? []).filter((g) => g.id === editing) as g}<section class="group-panel">
             <div class="section-heading">
               <span class="muted">{members(g.id).length} 张照片 · 拖动调整组内顺序</span>
             </div>
+            {#if members(g.id).some((p) => p.sourceAvailable === false)}
+              <div class="source-warning" role="status">
+                <p>
+                  部分照片在 Immich
+                  中已不可用（删除、回收站或授权范围变化）。可以继续保存草稿；发布前请移除失效照片，或先在
+                  Immich 恢复它们。
+                </p>
+                <button
+                  onclick={() => {
+                    for (const p of [...members(g.id)].filter((p) => p.sourceAvailable === false)) remove(p);
+                  }}>移除失效照片</button
+                >
+                <small>只移除本相册的引用；少于两张时自动解散，保留剩余照片及说明。</small>
+              </div>
+            {/if}
             <div class="collection-grid">
               {#each shownMembers(g.id) as p, index (p.id)}<article
                   class="collection-card"
@@ -510,8 +592,19 @@
                       if (e.pointerType !== 'touch') start(e, p.id, g.id);
                     }}
                     onclick={() => (memberEditing = memberEditing === p.id ? '' : p.id)}
-                    ><img draggable="false" src={media(p)} alt={p.alt || p.title || '编辑成员设置'} /></button
+                    >{#if p.sourceAvailable === false}<span class="missing-photo">照片来源已不可用</span
+                      >{:else}<img
+                        draggable="false"
+                        src={media(p)}
+                        alt={p.alt || photoName(p)}
+                      />{/if}</button
                   >
+                  <div class="member-caption">
+                    <span title={photoName(p)}>{photoName(p)}</span><button
+                      disabled={p.sourceAvailable === false}
+                      onclick={() => previewPhoto(p, members(g.id))}>查看大图</button
+                    >
+                  </div>
                   <details class="collection-menu">
                     <summary aria-label="照片操作">•••</summary>
                     <div class="collection-actions">
@@ -523,10 +616,13 @@
                         disabled={index === members(g.id).length - 1}
                         aria-label={`后移组内照片 ${index + 1}`}
                         onclick={() => arrow(p.id, 1, g.id)}>后移</button
-                      ><button onclick={() => (g.cover = p.id)}>组封面</button><button
-                        onclick={() => toggleVisibility([p])}
+                      ><button disabled={p.sourceAvailable === false} onclick={() => (g.cover = p.id)}
+                        >组封面</button
+                      ><button onclick={() => toggleVisibility([p])}
                         >{p.hiddenFromGallery ? '恢复图库展示' : '设为仅文章可见'}</button
-                      ><button onclick={() => detach(p)}>移出组</button>
+                      ><button onclick={() => detach(p)}>移出组</button
+                      >{#if p.sourceAvailable === false}<button onclick={() => remove(p)}>移除失效照片</button
+                        >{/if}
                     </div>
                   </details>
                   {#if memberEditing === p.id}<div class="member-settings">
@@ -543,24 +639,49 @@
                     </div>{/if}
                 </article>{/each}
             </div>
-            <label
-              >添加本册照片<select
-                value=""
-                onchange={(e) => {
-                  const p = groupDraft!.photos.find((p) => p.id === e.currentTarget.value);
-                  if (p) {
-                    p.group = g.id;
-                    normalize();
-                    selected = selected.filter((id) => id !== p.id);
-                  }
-                  e.currentTarget.value = '';
-                }}
-                ><option value="">选择一张未分组照片</option
-                >{#each groupDraft.photos.filter((p) => !p.group) as p}<option value={p.id}
-                    >{p.title || `照片 ${groupDraft.photos.indexOf(p) + 1}`}</option
-                  >{/each}</select
-              ></label
-            >
+            <section class="member-picker">
+              <button aria-expanded={addingMembers} onclick={() => (addingMembers = !addingMembers)}
+                >＋ 添加本册照片</button
+              >
+              {#if addingMembers}
+                <p class="muted">选择要加入的照片；点击画面可查看大图。</p>
+                <div class="member-picker-grid">
+                  {#each groupDraft.photos.filter((p) => !p.group && p.sourceAvailable !== false) as p}
+                    <article class:selected={memberSelection.includes(p.id)}>
+                      <button
+                        class="member-preview"
+                        aria-label={`查看大图：${photoName(p)}`}
+                        onclick={() =>
+                          previewPhoto(
+                            p,
+                            groupDraft!.photos.filter((p) => !p.group),
+                          )}><img src={media(p)} alt={photoName(p)} loading="lazy" /></button
+                      >
+                      <label
+                        ><input
+                          type="checkbox"
+                          checked={memberSelection.includes(p.id)}
+                          onchange={(e) =>
+                            (memberSelection = e.currentTarget.checked
+                              ? [...memberSelection, p.id]
+                              : memberSelection.filter((id) => id !== p.id))}
+                        /><span>{photoName(p)}</span></label
+                      >
+                    </article>
+                  {:else}<p class="muted">本册暂无可加入的未分组照片。</p>{/each}
+                </div>
+                <div class="member-picker-actions">
+                  <button
+                    onclick={() => {
+                      addingMembers = false;
+                      memberSelection = [];
+                    }}>取消选择</button
+                  ><button class="primary" disabled={!memberSelection.length} onclick={() => addMembers(g.id)}
+                    >加入照片组（{memberSelection.length}）</button
+                  >
+                </div>
+              {/if}
+            </section>
             <details class="bulk-tags">
               <summary>批量设置组内照片标签</summary>
               <TagPicker bind:value={bulkTags} {tags} {createTag} label="全组标签" />
@@ -577,9 +698,7 @@
             <p class="muted">
               访客只看到组标题与共用说明。点击成员调整无障碍和位置设置；每张照片保留独立的拍摄参数。
             </p>
-            <button class="dissolve" onclick={() => (isNewGroup ? closeGroup() : dissolve(g.id))}
-              >{isNewGroup ? '取消分组' : '解散照片组（保留说明）'}</button
-            >
+            <p class="muted">解散照片组会保留各张照片及共用说明，点击顶部「解散照片组」后保存生效。</p>
           </section>{/each}
       </div>
       <footer class="group-footer">
@@ -587,10 +706,12 @@
           仅保存或发布本组及必要的成员关系变更，其他相册修改继续保留在草稿中。 {#if !canPublish}请先公开相册及所有上级。{/if}
         </p>
         <div>
-          <button disabled={saving} onclick={() => closeGroup()}>取消</button>
-          <button disabled={saving} onclick={() => saveGroup(false)}>保存草稿</button>
-          <button class="primary" disabled={saving || !canPublish} onclick={() => saveGroup(true)}
-            >{saving ? '正在保存…' : '保存并发布'}</button
+          <button disabled={saving || checkingSources} onclick={() => closeGroup()}>取消</button>
+          <button disabled={saving || checkingSources} onclick={() => saveGroup(false)}>保存草稿</button>
+          <button
+            class="primary"
+            disabled={saving || checkingSources || !canPublish}
+            onclick={() => saveGroup(true)}>{saving ? '正在保存…' : '保存并发布'}</button
           >
         </div>
       </footer>
@@ -608,6 +729,7 @@
     {/if}
   </dialog>
 </section>
+<SourcePhotoPreview bind:this={sourcePreview} />
 {#if !scope}{#if dragging && ghost}<div
       class="drag-ghost"
       aria-hidden="true"
@@ -621,6 +743,145 @@
 {/if}
 
 <style>
+  .dissolved-photos > div {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+  }
+  .dissolved-photos img,
+  .missing-thumbnail {
+    width: 72px;
+    height: 54px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  .dissolved-photos > div > span:not(.missing-thumbnail) {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .missing-thumbnail {
+    display: grid;
+    place-items: center;
+    background: #f0f1eb;
+    font-size: 12px;
+    color: #7a6b50;
+  }
+  .dissolved-photos small {
+    color: #727e70;
+  }
+
+  .group-heading-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .source-warning {
+    padding: 14px 16px;
+    background: #fff5e4;
+    border: 1px solid #e5d8bc;
+    border-radius: 8px;
+    margin: 12px 0 20px;
+  }
+  .source-warning p {
+    margin: 0 0 12px;
+  }
+  .source-warning small {
+    display: block;
+    margin-top: 8px;
+  }
+  .missing-photo {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    min-height: 120px;
+    font-size: 14px;
+    color: #727e70;
+  }
+  .member-caption {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .member-caption span {
+    min-width: 0;
+    flex: 1;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .member-caption button {
+    flex-shrink: 0;
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+  .member-picker {
+    margin: 24px 0;
+  }
+  .member-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+    max-height: 390px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 2px;
+  }
+  .member-picker-grid article {
+    min-width: 0;
+    border: 1px solid #dce2d8;
+    border-radius: 8px;
+    background: white;
+    overflow: hidden;
+  }
+  .member-picker-grid article.selected {
+    border-color: #3e654b;
+    box-shadow: 0 0 0 1px #3e654b;
+  }
+  .member-picker-grid .member-preview {
+    display: block;
+    border: 0;
+    padding: 0;
+    width: 100%;
+    aspect-ratio: 3/2;
+    border-radius: 0;
+    background: #f3f5f0;
+    cursor: zoom-in;
+  }
+  .member-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .member-picker-grid label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .member-picker-grid label input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    flex-shrink: 0;
+  }
+  .member-picker-grid label span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .member-picker-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
   .group-dialog {
     width: min(1100px, calc(100vw - 48px));
     max-width: none;
@@ -870,10 +1131,6 @@
     box-sizing: border-box;
     margin-top: 8px;
   }
-  .dissolve {
-    margin-top: 20px;
-    white-space: normal;
-  }
   .drag-ghost {
     position: fixed;
     z-index: 2000;
@@ -1024,7 +1281,6 @@
     display: block;
     margin: 20px 0;
   }
-  .group-panel > label select,
   .group-panel > label input {
     margin-top: 8px;
   }

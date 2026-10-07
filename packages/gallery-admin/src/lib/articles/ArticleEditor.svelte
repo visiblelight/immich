@@ -992,6 +992,10 @@
     gap: 10px;
   }
 
+  .workspace {
+    --article-workspace-background: #fafbf8;
+    background: var(--article-workspace-background);
+  }
   main {
     min-width: 0;
     padding: 34px 40px 70px;
@@ -1022,7 +1026,7 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    background: #f5f6f4;
+    background: var(--article-workspace-background);
     padding: 14px 0;
     border-bottom: 1px solid #e5e9e4;
     display: flex;
@@ -1339,7 +1343,7 @@
       position: fixed;
       width: min(240px, calc(100vw - 32px));
       padding: 16px;
-      background: #f5f6f4;
+      background: var(--article-workspace-background);
       border: 1px solid #dce2d8;
       border-radius: 8px;
       box-shadow: 0 12px 40px #24332926;
