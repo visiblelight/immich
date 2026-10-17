@@ -1,6 +1,6 @@
 # 图文阅读与相册搜索交付
 
-2026-10-17：按 [ADR 0019](../decisions/0019-reading-and-album-search.md) 在本地实施，尚未提交、推送或部署生产，待用户视觉验收。
+2026-10-17：按 [ADR 0019](../decisions/0019-reading-and-album-search.md) 实施，经过用户视觉验收后已发布生产。下文保留各轮验收记录，最终发布结果见末节。
 
 ## 实现
 
@@ -40,3 +40,13 @@ Gallery check 无错误/警告，build 与单元测试通过。隔离 PostgreSQL
 ### 排序样式统一
 
 根据再次反馈，将相册原生排序下拉替换为与相片页相同的分段控件。两处共用容器、字号、圆角及白色选中态样式；相册保留右侧工具栏，窄屏空间不足时自动换行。Gallery build（含 UI 检查）通过，浏览器验证拍摄时间切换及顺序变化，390px 下无横向溢出。截图：`.gallery-local/album-sort-review.png`。尚未提交或部署。
+
+## 生产发布
+
+2026-10-17 用户确认发布后，应用提交 `15bacbef491a845f5163f8ff50dec4d173efd74b` 已推送至 `codex/gallery`。
+
+- [GitHub Actions 39016153385](https://github.com/visiblelight/immich/actions/runs/39016153385) 的 foundation、image、deploy 全部成功。镜像由 GitHub 构建并通过受限部署命令更新生产，本机仅跟踪和验证结果。
+- 生产发布记录指向上述提交及镜像 `ghcr.io/visiblelight/gallery@sha256:a3111b91ec9817567e1814d70f22fa50ce5324496ed03f8863af4b755e9ec650`；public、admin 容器均为 healthy。
+- 线上相册页已展示搜索和统一的分段排序控件；搜索“西班牙”返回 10 本相册，包括马德里、托莱多，地址保留查询参数。
+- 格鲁吉亚游记和去过页面返回 HTTP 200；后台入口返回 HTTP 303。未通过后台写入生产内容。
+- 无数据库迁移。已有用户 `mise.lock` 修改未纳入发布；如需回滚，恢复上一应用镜像即可。
