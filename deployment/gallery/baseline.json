@@ -11,7 +11,9 @@
     "upgradeCandidate": {
       "tag": "v3.3.3",
       "commit": "d2dac658fe1c67e8bbd08aa18200a32e5d45b9e4",
-      "validated": false
+      "validated": true,
+      "databaseMigrationAndDriftValidated": true,
+      "validationScope": "Production database copy: official migration and zero drift; unchanged Gallery tables and restricted-role queries; restored 3.2.0 verified; no mobile/ML behavior acceptance"
     },
     "previousSourceCommit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a"
   },

@@ -40,8 +40,15 @@ migrate "$new" > "$base/after-migrations.json"
 smoke > "$base/after-gallery.json"
 cmp "$base/before-gallery.json" "$base/after-gallery.json"
 docker exec gallery-upgrade-333-db pg_dump -U postgres -d immich -n gallery --data-only > "$base/gallery-after.sql"
-cmp "$base/gallery-before.sql" "$base/gallery-after.sql"
-docker exec gallery-upgrade-333-db pg_dump -U postgres -d immich --schema-only > "$base/upgraded-schema.sql"
+python3 - "$base" <<'PYCOMPARE'
+from pathlib import Path
+import sys
+b=Path(sys.argv[1])
+def content(p):
+    return b"\n".join(l for l in p.read_bytes().splitlines() if not l.startswith((b"\\restrict ", b"\\unrestrict ")))
+assert content(b/'gallery-before.sql') == content(b/'gallery-after.sql'), 'Gallery data changed'
+PYCOMPARE
+docker exec gallery-upgrade-333-db pg_dump -U postgres -d immich -n public --schema-only > "$base/upgraded-schema.sql"
 docker exec gallery-upgrade-333-db pg_dump -U postgres -d immich --data-only -t public.kysely_migrations -t public.migration_overrides > "$base/upgraded-migrations.sql"
 # Restore into the isolated database only; the working database is never a target.
 docker exec gallery-upgrade-333-db dropdb -U postgres immich
