@@ -1,3 +1,4 @@
+import { publicPhotoPlaces } from './places.server.ts';
 import { sql, type Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import {
@@ -15,7 +16,6 @@ import {
   type VisitEvidence,
 } from '@gallery/core';
 import { countries } from '../../gallery-core/src/countries.ts';
-import { getCountryLocator } from './countries.server.ts';
 
 const names = new Map(countries.map((c) => [c.id, c.zh]));
 type Evidence = VisitEvidence & {
@@ -58,7 +58,6 @@ const dates = (photos: Evidence[]) => {
  * coordinate is cached; published membership/ancestry never comes from a cache.
  */
 export async function visitedSnapshot(db: Kysely<unknown>) {
-  const locate = await getCountryLocator();
   const read = async (trx: Kysely<unknown>) => {
     const rows = (
       await sql<{
@@ -76,10 +75,11 @@ export async function visitedSnapshot(db: Kysely<unknown>) {
       FROM gallery.published_photo WHERE latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY asset_id,(location_mode='approximate') DESC,album_id,photo_id`.execute(trx)
     ).rows;
+    const { byAsset: placesByAsset } = await publicPhotoPlaces(trx);
     const points: Evidence[] = [];
     let unassigned = 0;
     for (const row of rows) {
-      const country = locate(row.longitude, row.latitude, row.location_mode === 'approximate');
+      const country = placesByAsset.get(row.asset_id)?.[0]?.country ?? null;
       if (!country) {
         unassigned++;
         continue;
@@ -174,7 +174,11 @@ export async function visitedSnapshot(db: Kysely<unknown>) {
 }
 export async function publicVisited(db: Kysely<unknown>) {
   const snapshot = await visitedSnapshot(db);
-  return { countries: snapshot.summaries, total: snapshot.total, unassigned: snapshot.unassigned };
+  return {
+    countries: snapshot.summaries,
+    total: snapshot.total,
+    unassigned: snapshot.unassigned,
+  };
 }
 export function countryCode(input: string) {
   ensure(names.has(input), '国家不存在。', 404);
@@ -187,7 +191,11 @@ export async function countryOverview(db: Kysely<unknown>, code: string, visitId
   ensure(country, '这个国家暂无可公开展示的位置照片。', 404);
   const selected = snapshot.visits.filter((v) => v.country === code && (!visitId || v.id === visitId));
   ensure(!visitId || selected.length, '这次到访记录已变化，请返回国家页面重新选择。', 404);
-  return { country, visitId, bounds: photoBounds(selected.flatMap((v) => v.photos)) };
+  return {
+    country,
+    visitId,
+    bounds: photoBounds(selected.flatMap((v) => v.photos)),
+  };
 }
 async function descriptions(db: Kysely<unknown>, points: Evidence[]): Promise<MapPhoto[]> {
   if (!points.length) return [];
@@ -234,7 +242,12 @@ export async function countryPhotos(
     page?: number;
     scope?: 'country' | 'all';
   } = {},
-): Promise<{ clusters: PhotoCluster[]; photos: MapPhoto[]; total: number; page: number }> {
+): Promise<{
+  clusters: PhotoCluster[];
+  photos: MapPhoto[];
+  total: number;
+  page: number;
+}> {
   if (!db.isTransaction)
     return db
       .transaction()
@@ -275,7 +288,12 @@ export async function countryPhotos(
           photo,
         });
       }
-      return { clusters, photos: [], total: clusters.reduce((n, c) => n + c.count, 0), page };
+      return {
+        clusters,
+        photos: [],
+        total: clusters.reduce((n, c) => n + c.count, 0),
+        page,
+      };
     }
   }
   return {

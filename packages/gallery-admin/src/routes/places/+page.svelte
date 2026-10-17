@@ -17,6 +17,36 @@
     message = $state(''),
     failed = $state(false),
     tab = $state('dictionary');
+  let reviewOnly = $state(true), photoQuery = $state('');
+  let selected = $state<string[]>([]), mapAsset = $state('');
+  let placeQuery = $state(''), placeSearchAsset = $state('');
+  let placeResults = $state<typeof data.places>([]), placeSearching = $state(false);
+  let placeRequest = 0;
+  const pending = $derived(data.photos.filter(p => p.needsReview));
+  const visiblePhotos = $derived(data.photos.filter(p => (!reviewOnly || p.needsReview) &&
+    [p.filename, p.city, p.state, ...p.places.map(v => v.name)].filter(Boolean).join(' ').toLocaleLowerCase().includes(photoQuery.trim().toLocaleLowerCase())));
+  const selectedPhotos = $derived(data.photos.filter(p => selected.includes(p.asset_id)));
+  const samePosition = (a: (typeof data.photos)[number], b: (typeof data.photos)[number]) => a.latitude === b.latitude && a.longitude === b.longitude;
+  async function searchPhotoPlaces(asset: string) {
+    const request = ++placeRequest;
+    placeSearchAsset = asset;
+    placeResults = [];
+    placeSearching = true;
+    try {
+      const response = await fetch('/api/places?q=' + encodeURIComponent(placeQuery));
+      if (!response.ok) throw new Error('地点搜索失败，请重试。');
+      const result = await response.json();
+      if (request === placeRequest) placeResults = result.places;
+    } catch (e) { if (request === placeRequest) { message = (e as Error).message; failed = true; } }
+    finally { if (request === placeRequest) placeSearching = false; }
+  }
+  function selection(photo: (typeof data.photos)[number]) {
+    return selected.includes(photo.asset_id) ? selectedPhotos : [photo];
+  }
+  function reviewMap(photo: (typeof data.photos)[number]) {
+    const lat = photo.latitude!, lng = photo.longitude!;
+    return data.publicOrigin + '/map-preview#lat=' + lat + '&lng=' + lng;
+  }
   let editing = $state<(typeof data.places)[number] | null>(null),
     aliases = $state('');
   let targetSearch = $state(''),
@@ -55,7 +85,8 @@
       await invalidateAll();
       dialog?.close();
       editing = null;
-      message = '地点资料已更新。';
+      selected = [];
+      message = '地点资料已更新，前台归属已同步生效。';
     } catch (e) {
       failed = true;
       message = (e as Error).message;
@@ -77,7 +108,7 @@
     <nav class="tabs">
       <button class:chosen={tab === 'dictionary'} onclick={() => (tab = 'dictionary')}>地点词典</button
       ><button class:chosen={tab === 'photos'} onclick={() => (tab = 'photos')}
-        >照片归属 · {data.photos.filter((p) => p.places.at(-1)?.kind !== 'city').length} 待核对</button
+        >照片归属 · {pending.length} 待核对</button
       >
     </nav>
     {#if tab === 'dictionary'}
@@ -98,45 +129,71 @@
           </article>{/each}
       </div>
     {:else}
+      <div class="review-toolbar">
+        <div class="tabs" aria-label="照片归属筛选">
+          <button class:chosen={reviewOnly} aria-pressed={reviewOnly} onclick={() => { reviewOnly = true; selected = []; }}>待核对 {pending.length}</button>
+          <button class:chosen={!reviewOnly} aria-pressed={!reviewOnly} onclick={() => { reviewOnly = false; selected = []; }}>全部 {data.photos.length}</button>
+        </div>
+        <input aria-label="搜索归属照片" placeholder="搜索文件名或地点" bind:value={photoQuery} />
+      </div>
+      <p>当前显示 {visiblePhotos.length} 张{reviewOnly ? '待核对照片' : '有 GPS 的照片'}。人工确认到国家或省州也视为已核对；相同坐标的照片可一起确认。</p>
+      {#if selected.length}<p role="status">已选择 {selected.length} 张同坐标照片；在其中任意一张选择地点并确认，即可一并保存。<button onclick={() => selected = []}>取消选择</button></p>{/if}
       <div class="place-photo-list">
-        {#each data.photos as photo}<article class="photo-review">
+        {#each visiblePhotos as photo (photo.asset_id)}<article class="photo-review">
             <img
               src={`/media/source/${photo.asset_id}?variant=thumbnail`}
               alt={photo.filename}
               loading="lazy"
             />
             <div>
-              <strong>{photo.filename}</strong>
+              <label class="review-select"><input type="checkbox" checked={selected.includes(photo.asset_id)}
+                disabled={busy || (!!selectedPhotos[0] && !samePosition(photo, selectedPhotos[0]))}
+                onchange={(e) => selected = e.currentTarget.checked ? [...selected, photo.asset_id] : selected.filter(id => id !== photo.asset_id)} />
+                <strong>{photo.filename}</strong></label>
+              <p class="review-status" class:pending={photo.needsReview}>{photo.reviewReason}</p>
+              {#if data.photos.filter(p => samePosition(p, photo) && (!reviewOnly || p.needsReview)).length > 1}
+                <button class="text-button" disabled={busy} onclick={() => selected = data.photos.filter(p => samePosition(p, photo) && (!reviewOnly || p.needsReview)).map(p => p.asset_id)}>选择此坐标的 {data.photos.filter(p => samePosition(p, photo) && (!reviewOnly || p.needsReview)).length} 张照片</button>
+              {/if}
               <p>
-                {photo.places.map((p) => p.name).join(' / ') || '国家待核对'}{photo.manual_place
+                {photo.places.map((p) => p.name).join(' / ') || '国家待核对'}{photo.manualConfirmed
                   ? ' · 人工校正'
                   : ''}
               </p>
               <small>Immich：{[photo.state, photo.city].filter(Boolean).join(' / ') || '未填写地名'}</small>
+              <p class="coordinates">GPS：{photo.latitude?.toFixed(6)}, {photo.longitude?.toFixed(6)}
+                <button class="text-button" aria-expanded={mapAsset === photo.asset_id} onclick={() => mapAsset = mapAsset === photo.asset_id ? '' : photo.asset_id}>查看坐标地图</button>
+              </p>
+              {#if mapAsset === photo.asset_id}
+                <iframe title={`${photo.filename} 的拍摄坐标地图`} src={reviewMap(photo)} class="review-map" referrerpolicy="no-referrer"></iframe>
+                <p><a href={`https://www.openstreetmap.org/?mlat=${photo.latitude}&mlon=${photo.longitude}#map=15/${photo.latitude}/${photo.longitude}`} target="_blank" rel="noreferrer">在 OpenStreetMap 打开地图</a> · 地图仅用于核对 GPS，候选地名不会改动坐标。</p>
+              {/if}
+              <form class="place-search" onsubmit={(e) => { e.preventDefault(); void searchPhotoPlaces(photo.asset_id); }}>
+                <input aria-label={`搜索 ${photo.filename} 的归属地点`} placeholder="搜索其它地点（中文、英文或别名）" maxlength="120"
+                  value={placeSearchAsset === photo.asset_id ? placeQuery : ''} oninput={(e) => { placeSearchAsset = photo.asset_id; placeQuery = e.currentTarget.value; placeResults = []; ++placeRequest; placeSearching = false; }} />
+                <button disabled={busy || (placeSearchAsset === photo.asset_id && placeSearching)}>搜索地点</button>
+              </form>
               <form
                 onsubmit={(e) => {
                   e.preventDefault();
                   const form = new FormData(e.currentTarget);
                   void save({
-                    asset: photo.asset_id,
+                    assets: selection(photo).map(p => ({ asset: p.asset_id, latitude: p.latitude, longitude: p.longitude, version: p.version ?? '0' })),
                     place: form.get('place'),
-                    latitude: photo.latitude,
-                    longitude: photo.longitude,
-                    version: photo.version ?? '0',
                   });
                 }}
               >
                 <label
                   >校正到地点<select name="place" aria-label={`校正 ${photo.filename} 的地点`} required
-                    ><option value="">选择确认过的地点</option>{#each photo.candidates as p}<option
-                        value={p.id}>{p.name} · 距城镇中心约 {p.distance}km</option
-                      >{/each}{#each data.places.filter((p) => p.country === photo.places[0]?.country && !photo.candidates.some((c) => c.id === p.id)) as p}<option
+                    ><option value="">选择确认过的地点</option>{#if photo.country}<option value={`country:${photo.country}`}>{photo.countryName}（只确认国家）</option>{/if}{#each photo.candidates as p}<option
+                        value={p.id}>{p.name} · {p.corroborated ? '来源地名吻合 · 待确认 · ' : ''}距城镇中心约 {p.distance}km</option
+                      >{/each}{#each [...new Map([...data.places, ...(placeSearchAsset === photo.asset_id ? placeResults : [])].map(p => [p.id,p])).values()].filter((p) => p.country === photo.country && p.kind !== 'country' && !photo.candidates.some((c) => c.id === p.id)) as p}<option
                         value={p.id}>{p.path}</option
                       >{/each}</select
                   ></label
-                ><button disabled={busy}>确认归属</button>
+                ><button disabled={busy || !photo.country}>确认{selection(photo).length > 1 ? ` ${selection(photo).length} 张照片` : ''}归属</button>
               </form>
-              <p>附近城镇只是候选；不确定时保留国家即可。需要其它地点可先在词典中搜索，再切回照片归属。</p>
+              <p>{photo.country ? '候选地名需你核对；也可搜索并确认到国家或省州。确认后立即应用，无需重新发布。' : '暂未找到可靠国家候选，请先在 Immich 核对 GPS；系统不会强行归给最近国家。'}</p>
+              {#if placeSearchAsset === photo.asset_id && placeQuery && !placeSearching && !placeResults.some(p => p.country === photo.country)}<p>没有可用的搜索结果，请使用候选或更换关键词。</p>{/if}
               {#if photo.manual_place}<button
                   disabled={busy}
                   onclick={() =>
@@ -149,7 +206,7 @@
                     })}>恢复自动判断</button
                 >{/if}
             </div>
-          </article>{/each}
+          </article>{:else}<p>{photoQuery ? '没有符合搜索条件的照片。' : '当前没有待核对照片。'}</p>{/each}
       </div>
     {/if}
     <dialog bind:this={dialog} aria-label="编辑地点" class="place-editor" onclose={() => (editing = null)}>
@@ -218,6 +275,15 @@
 </MapAdminFrame>
 
 <style>
+  .review-toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .review-toolbar .tabs { margin: 0; }
+  .review-toolbar input { width: min(320px, 100%); }
+  .review-select { display: flex; align-items: center; gap: 10px; }
+  .review-status { font-size: 13px; }
+  .review-status.pending { color: #956025; }
+  .photo-review .text-button { background: transparent; color: #36593e; padding: 4px 0; font-size: 13px; }
+  .review-map { display: block; width: 100%; height: 260px; border: 1px solid #dce4d8; border-radius: 6px; }
+  .photo-review .place-search input { flex: 1; min-width: 180px; }
   .places-admin {
     max-width: 1120px;
   }

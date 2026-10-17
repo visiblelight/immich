@@ -6,8 +6,12 @@ type Box = [number, number, number, number];
 type Edge = [Point, Point];
 type Ring = { box: Box; points: Point[]; bands: Map<number, Edge[]> };
 type Polygon = { country: string; box: Box; rings: Ring[] };
-export type BoundaryData = { version: string; regions: Record<string, number[][][][]> };
-const cell = (x: number, y: number) => `${((Math.floor((x + 180) / 5) % 72) + 72) % 72}:${Math.floor((y + 90) / 5)}`;
+export type BoundaryData = {
+  version: string;
+  regions: Record<string, number[][][][]>;
+};
+const cell = (x: number, y: number) =>
+  `${((Math.floor((x + 180) / 5) % 72) + 72) % 72}:${Math.floor((y + 90) / 5)}`;
 const overlaps = (a: Box, b: Box) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 function ring(source: number[][]): Ring {
   const points: Point[] = [];
@@ -32,7 +36,11 @@ function ring(source: number[][]): Ring {
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!,
       b = points[i]!;
-    for (let band = Math.floor(Math.min(a[1], b[1]) / 5); band <= Math.floor(Math.max(a[1], b[1]) / 5); band++) {
+    for (
+      let band = Math.floor(Math.min(a[1], b[1]) / 5);
+      band <= Math.floor(Math.max(a[1], b[1]) / 5);
+      band++
+    ) {
       const edges = bands.get(band) ?? [];
       edges.push([a, b]);
       bands.set(band, edges);
@@ -171,5 +179,62 @@ let locator: Promise<ReturnType<typeof createCountryLocator>> | undefined;
 export const getCountryLocator = () =>
   (locator ??= (async () =>
     createCountryLocator(
-      JSON.parse(gunzipSync(await readFile(new URL('../data/countries-5.1.2.json.gz', import.meta.url))).toString()),
+      JSON.parse(
+        gunzipSync(await readFile(new URL('../data/countries-5.1.2.json.gz', import.meta.url))).toString(),
+      ),
     ))());
+
+/** Suggestions only: never changes the strict border lookup or approximate privacy rules. */
+export function createCoastalCountryLocator(data: BoundaryData) {
+  const polygons = Object.entries(data.regions).flatMap(([country, polygons]) =>
+    polygons.map((p) => ({ country, outer: ring(p[0]!) })),
+  );
+  const cache = new Map<string, string | null>();
+  return (longitude: number, latitude: number): string | null => {
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      Math.abs(latitude) > 85 ||
+      Math.abs(longitude) > 180
+    )
+      return null;
+    const key = `${longitude}:${latitude}`;
+    if (cache.has(key)) return cache.get(key)!;
+    const sx = 111.32 * Math.cos((latitude * Math.PI) / 180),
+      sy = 111.32;
+    const distances = new Map<string, number>();
+    for (const { country, outer } of polygons) {
+      for (const shift of [0, -360, 360]) {
+        const x = longitude + shift;
+        if (
+          x < outer.box[0] - 5 / sx ||
+          x > outer.box[2] + 5 / sx ||
+          latitude < outer.box[1] - 5 / sy ||
+          latitude > outer.box[3] + 5 / sy
+        )
+          continue;
+        for (let i = 1; i < outer.points.length; i++) {
+          const a = outer.points[i - 1]!,
+            b = outer.points[i]!;
+          const ax = (a[0] - x) * sx,
+            ay = (a[1] - latitude) * sy;
+          const dx = (b[0] - a[0]) * sx,
+            dy = (b[1] - a[1]) * sy;
+          const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+          const distance = Math.hypot(ax + t * dx, ay + t * dy);
+          if (distance <= 5) distances.set(country, Math.min(distance, distances.get(country) ?? Infinity));
+        }
+      }
+    }
+    const entry = [...distances.entries()];
+    const result = entry.length === 1 && entry[0]![1] <= 1 ? entry[0]![0] : null;
+    if (cache.size >= 10000) cache.clear();
+    cache.set(key, result);
+    return result;
+  };
+}
+let coastalLocator: Promise<ReturnType<typeof createCoastalCountryLocator>> | undefined;
+export const getCoastalCountryLocator = () =>
+  (coastalLocator ??= readFile(new URL('../data/countries-5.1.2.json.gz', import.meta.url)).then((bytes) =>
+    createCoastalCountryLocator(JSON.parse(gunzipSync(bytes).toString())),
+  ));

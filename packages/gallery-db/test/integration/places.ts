@@ -11,6 +11,7 @@ import {
   saveAlbum,
   publishAlbum,
   publicPhotoFeed,
+  publicVisited,
   publicCatalog,
   adminPlaces,
   savePlace,
@@ -25,9 +26,15 @@ export async function placesAndFilters(
   assets: string[],
   mediaRoot: string,
 ) {
-  const user = { id: userId, email: 'gallery@example.invalid', displayName: 'Gallery' },
+  const user = {
+      id: userId,
+      email: 'gallery@example.invalid',
+      displayName: 'Gallery',
+    },
     root = { sourceRoot: '/data/thumbs', mountedRoot: mediaRoot };
-  const bytes = await sharp({ create: { width: 80, height: 60, channels: 3, background: '#70816a' } })
+  const bytes = await sharp({
+    create: { width: 80, height: 60, channels: 3, background: '#70816a' },
+  })
     .jpeg()
     .toBuffer();
   for (const [index, asset] of assets.entries()) {
@@ -49,7 +56,11 @@ export async function placesAndFilters(
   const versions = async (id: string) => {
     const s = await adminState(db),
       a = s.albums.find((a) => a.id === id)!;
-    return { version: a.version, draftVersion: a.draftVersion, treeVersion: s.site.treeVersion };
+    return {
+      version: a.version,
+      draftVersion: a.draftVersion,
+      treeVersion: s.site.treeVersion,
+    };
   };
   const parent = await createAlbum(db, user, {
     title: 'Search ancestor',
@@ -64,7 +75,14 @@ export async function placesAndFilters(
   const state = async () => {
     const s = await adminState(db),
       a = s.albums.find((a) => a.id === album)!;
-    return { a, v: { version: a.version, draftVersion: a.draftVersion, treeVersion: s.site.treeVersion } };
+    return {
+      a,
+      v: {
+        version: a.version,
+        draftVersion: a.draftVersion,
+        treeVersion: s.site.treeVersion,
+      },
+    };
   };
   let st = await state();
   st.a.draft.showExif = true;
@@ -81,7 +99,12 @@ export async function placesAndFilters(
   await saveAlbum(db, user, album, { ...st.v, content: st.a.draft });
   await publishAlbum(db, user, album, (await state()).v, root);
   const feed = await publicPhotoFeed(pub, {
-    filters: { place: 'country:AM', cameras: ['sony ilce-7m4'], focalMin: 20, focalMax: 50 },
+    filters: {
+      place: 'country:AM',
+      cameras: ['sony ilce-7m4'],
+      focalMin: 20,
+      focalMax: 50,
+    },
   });
   assert.equal(feed.photos.filter((p) => p.albumId === album).length, 2);
   assert.ok(
@@ -137,7 +160,12 @@ export async function placesAndFilters(
     'draft descriptions are not searchable',
   );
   await assert.rejects(
-    savePlace(db, user, { id: 'city:616052', nameZh: '冲突', aliases: [], version: '0' }),
+    savePlace(db, user, {
+      id: 'city:616052',
+      nameZh: '冲突',
+      aliases: [],
+      version: '0',
+    }),
     /已修改/,
   );
   await owner.query('UPDATE public.asset_exif SET latitude=41.7151,longitude=44.8271 WHERE "assetId"=$1', [
@@ -162,6 +190,79 @@ export async function placesAndFilters(
       version: '1',
     }),
     /位置已变化/,
+  );
+  // Synthetic coastal photos reproduce the cape's simplified coastline miss.
+  for (const asset of assets.slice(0, 2))
+    await owner.query(
+      `UPDATE public.asset_exif SET latitude=38.780582,longitude=-9.501083,city='Azoia',state='Lisbon' WHERE "assetId"=$1`,
+      [asset],
+    );
+  const coastal = (await adminPlaces(db)).photos.filter((p) => assets.slice(0, 2).includes(p.asset_id));
+  assert.equal(coastal.length, 2);
+  assert.ok(coastal.every((p) => p.needsReview && p.country === 'PT' && !p.places.length));
+  assert.ok(coastal.every((p) => p.candidates[0]?.id === 'city:2271271' && p.candidates[0]?.corroborated));
+  const batch = coastal.map((p) => ({
+    asset: p.asset_id,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    version: p.version ?? '0',
+  }));
+  await assert.rejects(savePlace(db, user, { assets: batch, place: 'country:ES' }), /有效地点/);
+  await assert.rejects(
+    savePlace(db, user, {
+      assets: [batch[0], { ...batch[1], version: '999' }],
+      place: 'city:2271271',
+    }),
+    /已修改/,
+  );
+  assert.ok(
+    (await adminPlaces(db)).photos
+      .filter((p) => assets.slice(0, 2).includes(p.asset_id))
+      .every((p) => p.needsReview),
+    'batch conflict rolls back every photo',
+  );
+  await savePlace(db, user, { assets: batch, place: 'city:2271271' });
+  const confirmed = (await adminPlaces(db)).photos.filter((p) => assets.slice(0, 2).includes(p.asset_id));
+  assert.ok(confirmed.every((p) => !p.needsReview && p.manualConfirmed));
+  assert.equal(
+    (await publicPhotoFeed(pub, { filters: { place: 'country:PT' } })).photos.filter(
+      (p) => p.albumId === album,
+    ).length,
+    2,
+  );
+  assert.equal(
+    (await publicPhotoFeed(pub, { filters: { place: 'city:2271271' } })).photos.filter(
+      (p) => p.albumId === album,
+    ).length,
+    2,
+  );
+  assert.ok((await publicVisited(pub)).countries.some((c) => c.id === 'PT' && c.count >= 2));
+  await savePlace(db, user, {
+    asset: confirmed[0]!.asset_id,
+    latitude: confirmed[0]!.latitude,
+    longitude: confirmed[0]!.longitude,
+    version: confirmed[0]!.version,
+    place: 'country:PT',
+  });
+  assert.equal(
+    (await adminPlaces(db)).photos.find((p) => p.asset_id === confirmed[0]!.asset_id)!.needsReview,
+    false,
+    'confirmed country is not pending',
+  );
+  for (const [index, asset] of assets.slice(0, 2).entries())
+    await owner.query(
+      'UPDATE public.asset_exif SET latitude=$2,longitude=$3,city=$4,state=$5 WHERE "assetId"=$1',
+      [asset, index ? 41.7151 : 40.1903, index ? 44.8271 : 44.5151, index ? null : 'Yerevan', 'Yerevan'],
+    );
+  assert.ok(
+    !(await publicPhotoFeed(pub, { filters: { place: 'country:PT' } })).photos.some(
+      (p) => p.albumId === album,
+    ),
+    'GPS change invalidates coastal override',
+  );
+  assert.ok(
+    !(await publicVisited(pub)).countries.some((c) => c.id === 'PT'),
+    'visited also drops stale override',
   );
   const r = await placeResolver(pub);
   assert.equal(
@@ -196,13 +297,28 @@ export async function placesAndFilters(
   const other = [...r.all.values()].find(
     (p) => p.kind === 'city' && p.country === 'AM' && p.id !== 'city:616052',
   )!;
-  await savePlace(db, user, { id: other.id, version: '0', aliases: [], canonicalId: 'city:616052' });
+  await savePlace(db, user, {
+    id: other.id,
+    version: '0',
+    aliases: [],
+    canonicalId: 'city:616052',
+  });
   assert.equal((await placeResolver(pub)).get(other.id)?.id, 'city:616052');
   await assert.rejects(
-    savePlace(db, user, { id: 'city:616052', version: '1', aliases: [], canonicalId: other.id }),
+    savePlace(db, user, {
+      id: 'city:616052',
+      version: '1',
+      aliases: [],
+      canonicalId: other.id,
+    }),
     /循环/,
   );
-  await savePlace(db, user, { id: other.id, version: '1', aliases: [], canonicalId: '' });
+  await savePlace(db, user, {
+    id: other.id,
+    version: '1',
+    aliases: [],
+    canonicalId: '',
+  });
   assert.equal((await placeResolver(pub)).get(other.id)?.id, other.id);
   st = await state();
   st.a.draft.showExif = false;
@@ -233,7 +349,10 @@ export async function placesAndFilters(
     (await search('亚美尼亚')).includes(album),
     'approximate positions remain discoverable by country',
   );
-  await setAlbumAvailability(db, user, parent, { ...(await versions(parent)), action: 'offline' });
+  await setAlbumAvailability(db, user, parent, {
+    ...(await versions(parent)),
+    action: 'offline',
+  });
   assert.ok(!(await search('Places acceptance')).includes(album), 'offline ancestry excludes descendants');
   await assert.rejects(sql`SELECT * FROM gallery.photo_place`.execute(pub));
   await assert.rejects(sql`UPDATE gallery.place_label SET name_zh='unsafe'`.execute(pub));

@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getCountryLocator, createCountryLocator } from '../src/countries.server.ts';
+import {
+  getCountryLocator,
+  createCountryLocator,
+  getCoastalCountryLocator,
+  createCoastalCountryLocator,
+} from '../src/countries.server.ts';
 import { inferVisits, clusterPhotos, photoBounds, type VisitEvidence } from '@gallery/core';
 import { encryptMapSecret, decryptMapSecret, validateMapProvider } from '../src/map-settings.server.ts';
 const evidence = (id: string, country: string, date: string | null): VisitEvidence => ({
@@ -90,7 +95,13 @@ test('clusters retain all counts across wrapped viewport and bound large respons
     longitude: (i % 200) * 1.8 - 179.9,
     latitude: Math.floor(i / 200) * 3 - 74,
   }));
-  const result = clusterPhotos(points, { west: -180, east: 180, south: -80, north: 80, zoom: 20 });
+  const result = clusterPhotos(points, {
+    west: -180,
+    east: 180,
+    south: -80,
+    north: 80,
+    zoom: 20,
+  });
   assert.equal(
     [...result.values()].reduce((n, p) => n + p.length, 0),
     points.length,
@@ -101,17 +112,34 @@ test('clusters retain all counts across wrapped viewport and bound large respons
     { longitude: -179, latitude: 0 },
   ];
   assert.equal(
-    [...clusterPhotos(dateline, { west: 170, east: -170, south: -10, north: 10, zoom: 2 }).values()].flat()
-      .length,
+    [
+      ...clusterPhotos(dateline, {
+        west: 170,
+        east: -170,
+        south: -10,
+        north: 10,
+        zoom: 2,
+      }).values(),
+    ].flat().length,
     2,
   );
   assert.equal(photoBounds(dateline).west, 179);
   assert.equal(photoBounds(dateline).east, -179);
 });
 test('identical GPS points remain a selectable cluster even at maximum zoom', () => {
-  const points = Array.from({ length: 65 }, (_, id) => ({ id, longitude: 44.7129, latitude: 41.1006 }));
+  const points = Array.from({ length: 65 }, (_, id) => ({
+    id,
+    longitude: 44.7129,
+    latitude: 41.1006,
+  }));
   for (const zoom of [3, 12, 18, 20]) {
-    const grouped = clusterPhotos(points, { west: 44.7, east: 44.8, south: 41, north: 41.2, zoom });
+    const grouped = clusterPhotos(points, {
+      west: 44.7,
+      east: 44.8,
+      south: 41,
+      north: 41.2,
+      zoom,
+    });
     assert.equal(grouped.size, 1);
     assert.deepEqual([...grouped.values()][0], points);
   }
@@ -153,4 +181,33 @@ test('OSM accepts HTTPS vector styles and rejects insecure or credential-bearing
     'https://example.com/style.html',
   ])
     assert.throws(() => validateMapProvider({ ...config, tileUrl }));
+});
+
+test('coastal suggestions are bounded, unique and do not change strict country assignment', async () => {
+  const strict = await getCountryLocator(),
+    coast = await getCoastalCountryLocator();
+  assert.equal(strict(-9.501083, 38.780582), null);
+  assert.equal(coast(-9.501083, 38.780582), 'PT');
+  assert.equal(coast(0, 0), null);
+  assert.equal(coast(NaN, 20), null);
+  const square = (x: number) => [
+    [
+      [x, 0],
+      [x + 0.01, 0],
+      [x + 0.01, 0.01],
+      [x, 0.01],
+      [x, 0],
+    ],
+  ];
+  const ambiguous = createCoastalCountryLocator({
+    version: 'test',
+    regions: { AA: [square(0)], BB: [square(0.03)] },
+  });
+  assert.equal(ambiguous(0.015, 0.005), null, 'near two countries must not suggest one');
+  const unique = createCoastalCountryLocator({
+    version: 'test',
+    regions: { AA: [square(0)] },
+  });
+  assert.equal(unique(-0.005, 0.005), 'AA');
+  assert.equal(unique(-0.02, 0.005), null, 'more than 1 km from border is not accepted');
 });

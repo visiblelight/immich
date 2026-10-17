@@ -3,7 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import { sql, type Kysely } from 'kysely';
 import { ensure, uuid, type GalleryUser } from '@gallery/core';
 import { countries } from '../../gallery-core/src/countries.ts';
-import { getCountryLocator } from './countries.server.ts';
+import { getCountryLocator, getCoastalCountryLocator } from './countries.server.ts';
 
 type Db = Kysely<unknown>;
 type City = [string, string, string[], string, string, number, number];
@@ -130,9 +130,10 @@ async function gazetteer() {
   })());
 }
 export async function placeResolver(db: Db) {
-  const [{ places, cells }, locate, labels] = await Promise.all([
+  const [{ places, cells }, locate, coastalCountry, labels] = await Promise.all([
     gazetteer(),
     getCountryLocator(),
+    getCoastalCountryLocator(),
     sql<Label>`SELECT * FROM gallery.public_place_label`.execute(db),
   ]);
   const overrides = new Map(labels.rows.map((l) => [l.id, l]));
@@ -194,11 +195,17 @@ export async function placeResolver(db: Db) {
   const compute = (s: Source): Place[] => {
     if (s.latitude === null || s.longitude === null || s.location_mode === 'hidden') return [];
     const country = locate(s.longitude, s.latitude, s.location_mode === 'approximate');
+    const manual = s.manual_place ? get(s.manual_place) : null;
+    if (
+      s.location_mode === 'exact' &&
+      manual &&
+      manual.country === (country ?? coastalCountry(s.longitude, s.latitude))
+    )
+      return path(manual.id);
     if (!country) return [];
     const base = path('country:' + country);
     if (s.location_mode !== 'exact') return base;
-    const manual = s.manual_place ? get(s.manual_place) : null;
-    if (manual?.country === country) return path(manual.id);
+
     // A populated-place point is not an administrative boundary. Require corroborating
     // source text AND nearby coordinates; otherwise expose only the reliable country.
     if (!s.city) return base;
@@ -227,7 +234,16 @@ export async function placeResolver(db: Db) {
     if (cache.size < 10000) cache.set(key, value);
     return value;
   };
-  return { get, path, nearby, resolve, all: places, labels: overrides, locate };
+  return {
+    get,
+    path,
+    nearby,
+    resolve,
+    all: places,
+    labels: overrides,
+    locate,
+    coastalCountry,
+  };
 }
 export async function publicPhotoPlaces(db: Db, albumId = '') {
   const [resolver, rows] = await Promise.all([
@@ -265,23 +281,54 @@ export async function adminPlaces(db: Db, query = '') {
   const photos = rows.map((s) => {
     const places = r.resolve(s);
     for (const p of places) used.add(p.id);
-    const country = r.locate(s.longitude!, s.latitude!);
+    const strictCountry = r.locate(s.longitude!, s.latitude!);
+    const country = strictCountry ?? r.coastalCountry(s.longitude!, s.latitude!);
+    const manualConfirmed = !!s.manual_place && places.at(-1)?.id === r.get(s.manual_place)?.id;
+    const needsReview = !manualConfirmed && places.at(-1)?.kind !== 'city';
+    const suggestions = country ? r.nearby(s.latitude!, s.longitude!, country) : [];
+    const matchesSource = (p: Place) =>
+      !!s.city &&
+      [p.name, p.english, ...p.aliases].some((n) => normalized(n) === normalized(s.city!)) &&
+      (!s.state ||
+        r
+          .path(p.id)
+          .some(
+            (parent) =>
+              parent.kind === 'region' &&
+              [parent.name, parent.english, ...parent.aliases].some(
+                (n) => normalized(n) === normalized(s.state!),
+              ),
+          ));
+    suggestions.sort(
+      (a, b) => Number(matchesSource(b.place)) - Number(matchesSource(a.place)) || a.distance - b.distance,
+    );
     return {
       ...s,
       places,
-      candidates:
-        places.at(-1)?.kind === 'city'
-          ? []
-          : country
-            ? r
-                .nearby(s.latitude!, s.longitude!, country)
-                .slice(0, 5)
-                .map((c) => ({
-                  id: c.place.id,
-                  name: c.place.name,
-                  distance: Math.round(c.distance * 10) / 10,
-                }))
-            : [],
+      needsReview,
+      manualConfirmed,
+      country,
+      countryName: country ? r.get('country:' + country)?.name : '',
+      reviewReason: manualConfirmed
+        ? '已人工确认'
+        : !needsReview
+          ? '已自动匹配到城镇'
+          : !strictCountry
+            ? country
+              ? '国家边界未匹配，可能是海岸线精度问题；建议需人工确认'
+              : '国家边界未匹配，暂未找到可靠候选'
+            : !s.city
+              ? '来源未提供城镇名称，目前仅识别到国家'
+              : '来源地名与附近城镇未能一致匹配，目前仅识别到国家',
+      candidates: suggestions.slice(0, 8).map((c) => ({
+        id: c.place.id,
+        name: r
+          .path(c.place.id)
+          .map((p) => p.name)
+          .join(' › '),
+        distance: Math.round(c.distance * 10) / 10,
+        corroborated: matchesSource(c.place),
+      })),
     };
   });
   const q = normalized(query);
@@ -326,34 +373,53 @@ export async function savePlace(db: Db, user: GalleryUser, input: Record<string,
     );
     await sql`SELECT id FROM gallery.site WHERE id=1 FOR UPDATE`.execute(trx);
     const r = await placeResolver(trx);
-    if (input.asset) {
-      const asset = uuid(input.asset),
-        place = r.get(String(input.place ?? ''));
-      const s = (
-        await sql<Source>`SELECT asset_id,latitude,longitude FROM gallery.admin_source_asset WHERE asset_id=${asset}::uuid AND EXISTS(SELECT 1 FROM gallery.album_photo WHERE immich_asset_id=${asset}::uuid)`.execute(
-          trx,
-        )
-      ).rows[0];
-      ensure(s && s.latitude !== null && s.longitude !== null, '照片位置不可用。');
+    if (input.asset || input.assets) {
+      const items = input.assets ?? [input];
+      ensure(Array.isArray(items) && items.length > 0 && items.length <= 100, '每次请选择 1 至 100 张照片。');
       ensure(
-        s.latitude === input.latitude && s.longitude === input.longitude,
-        '照片位置已变化，请刷新后重新核对。',
-        409,
+        items.every((item) => !!item && typeof item === 'object' && !Array.isArray(item)),
+        '照片选择格式无效。',
       );
-      const old = (
-        await sql<{
-          version: string;
-        }>`SELECT version::text FROM gallery.photo_place WHERE asset_id=${asset}::uuid`.execute(trx)
-      ).rows[0];
-      ensure((old?.version ?? '0') === input.version, '归属已修改，请刷新。', 409);
-      if (input.clear === true)
-        await sql`DELETE FROM gallery.photo_place WHERE asset_id=${asset}::uuid`.execute(trx);
-      else {
+      const batch = items as Record<string, unknown>[];
+      ensure(new Set(batch.map((item) => item.asset)).size === batch.length, '请勿重复选择照片。');
+      ensure(
+        batch.every((item) => item.latitude === batch[0]!.latitude && item.longitude === batch[0]!.longitude),
+        '批量确认只适用于相同坐标的照片。',
+      );
+      for (const item of batch) {
+        const asset = uuid(item.asset),
+          place = r.get(String(input.place ?? ''));
+        const s = (
+          await sql<Source>`SELECT asset_id,latitude,longitude FROM gallery.admin_source_asset WHERE asset_id=${asset}::uuid AND EXISTS(SELECT 1 FROM gallery.album_photo WHERE immich_asset_id=${asset}::uuid)`.execute(
+            trx,
+          )
+        ).rows[0];
+        ensure(s && s.latitude !== null && s.longitude !== null, '照片位置不可用。');
         ensure(
-          place && place.country === r.locate(s.longitude!, s.latitude!),
-          '请选择当前国家内的有效地点。',
+          s.latitude === item.latitude && s.longitude === item.longitude,
+          '照片位置已变化，请刷新后重新核对。',
+          409,
         );
-        await sql`INSERT INTO gallery.photo_place(asset_id,place_id,latitude,longitude) VALUES(${asset}::uuid,${place.id},${s.latitude},${s.longitude}) ON CONFLICT(asset_id) DO UPDATE SET place_id=excluded.place_id,latitude=excluded.latitude,longitude=excluded.longitude,version=gallery.photo_place.version+1,updated_at=now()`.execute(
+        const old = (
+          await sql<{
+            version: string;
+          }>`SELECT version::text FROM gallery.photo_place WHERE asset_id=${asset}::uuid`.execute(trx)
+        ).rows[0];
+        ensure((old?.version ?? '0') === item.version, '归属已修改，请刷新。', 409);
+        if (input.clear === true)
+          await sql`DELETE FROM gallery.photo_place WHERE asset_id=${asset}::uuid`.execute(trx);
+        else {
+          ensure(
+            place &&
+              place.country ===
+                (r.locate(s.longitude!, s.latitude!) ?? r.coastalCountry(s.longitude!, s.latitude!)),
+            '请选择当前国家或经海岸线核对的候选国家内的有效地点。',
+          );
+          await sql`INSERT INTO gallery.photo_place(asset_id,place_id,latitude,longitude) VALUES(${asset}::uuid,${place.id},${s.latitude},${s.longitude}) ON CONFLICT(asset_id) DO UPDATE SET place_id=excluded.place_id,latitude=excluded.latitude,longitude=excluded.longitude,version=gallery.photo_place.version+1,updated_at=now()`.execute(
+            trx,
+          );
+        }
+        await sql`INSERT INTO gallery.audit_event(id,actor_user_id,action,target_type,target_id) VALUES(${crypto.randomUUID()}::uuid,${user.id}::uuid,'place.save','photo',${asset})`.execute(
           trx,
         );
       }
@@ -362,9 +428,9 @@ export async function savePlace(db: Db, user: GalleryUser, input: Record<string,
         p = r.all.get(id);
       ensure(p, '地点不存在。');
       const old = (
-        await sql<{ version: string }>`SELECT version::text FROM gallery.place_label WHERE id=${id}`.execute(
-          trx,
-        )
+        await sql<{
+          version: string;
+        }>`SELECT version::text FROM gallery.place_label WHERE id=${id}`.execute(trx)
       ).rows[0];
       ensure((old?.version ?? '0') === input.version, '地点已修改，请刷新。', 409);
       const zh = String(input.nameZh ?? '').trim(),
@@ -388,8 +454,9 @@ export async function savePlace(db: Db, user: GalleryUser, input: Record<string,
         trx,
       );
     }
-    await sql`INSERT INTO gallery.audit_event(id,actor_user_id,action,target_type,target_id) VALUES(${crypto.randomUUID()}::uuid,${user.id}::uuid,'place.save','place',${String(input.asset || input.id)})`.execute(
-      trx,
-    );
+    if (!input.asset && !input.assets)
+      await sql`INSERT INTO gallery.audit_event(id,actor_user_id,action,target_type,target_id) VALUES(${crypto.randomUUID()}::uuid,${user.id}::uuid,'place.save','place',${String(input.id)})`.execute(
+        trx,
+      );
   });
 }
