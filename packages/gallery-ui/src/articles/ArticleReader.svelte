@@ -15,6 +15,7 @@
   import { exitViewerFullscreen, enterViewerFullscreen } from '../viewer-fullscreen';
   let copied = $state(false);
   let activeHeading = $state('');
+  let mobileTocOpen = $state(false);
   let tocHeight = $state('calc(100dvh - 220px)');
   let readerElement: HTMLDivElement;
   onMount(() => {
@@ -140,6 +141,10 @@
 
 <svelte:window
   onkeydown={(event) => {
+    if (event.key === 'Escape' && mobileTocOpen) {
+      mobileTocOpen = false;
+      readerElement.querySelector<HTMLButtonElement>('.toc-toggle')?.focus();
+    }
     if (!active) return;
     if (event.key === 'ArrowRight') {
       event.preventDefault();
@@ -151,7 +156,8 @@
     }
   }}
 />
-<div class="article-layout" bind:this={readerElement}>
+
+<div class="article-layout" class:has-toc={headings.length > 0} bind:this={readerElement}>
   <article>
     <header class="article-heading">
       <h1>{title}</h1>
@@ -166,17 +172,30 @@
         {:else if date}<time datetime={date}>{date.replaceAll('-', '.')}</time><span>·</span>{/if}约 {minutes} 分钟
       </p>
     </header>
-    {#if headings.length}<details class="mobile-toc">
-        <summary>文章目录</summary>
-        <nav aria-label="文章目录">
-          {#each headings as item}<a
-              aria-current={activeHeading === item.id ? 'location' : undefined}
-              class:sub={item.level === 3}
-              class:deep={item.level === 4}
-              href={'#' + item.id}>{item.text}</a
-            >{/each}
-        </nav>
-      </details>{/if}
+    {#if headings.length}<div class="mobile-toc">
+        <button
+          class="toc-toggle"
+          aria-expanded={mobileTocOpen}
+          aria-controls="mobile-article-outline"
+          onclick={() => (mobileTocOpen = !mobileTocOpen)}
+        >
+          <span>目录</span><span class="current-section"
+            >{headings.find((h) => h.id === activeHeading)?.text ?? headings[0]?.text}</span
+          >
+          <span aria-hidden="true">{mobileTocOpen ? '−' : '+'}</span>
+        </button>
+        {#if mobileTocOpen}
+          <nav id="mobile-article-outline" aria-label="文章目录">
+            {#each headings as item}<a
+                aria-current={activeHeading === item.id ? 'location' : undefined}
+                class:sub={item.level === 3}
+                class:deep={item.level === 4}
+                onclick={() => (mobileTocOpen = false)}
+                href={'#' + item.id}>{item.text}</a
+              >{/each}
+          </nav>
+        {/if}
+      </div>{/if}
     <!-- Buttons in the sanitized renderer are keyboard-accessible; clicks bubble here. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -266,15 +285,26 @@
 
 <style>
   .article-layout {
-    max-width: 1160px;
+    max-width: 1100px;
     margin: 42px auto 100px;
     display: grid;
-    grid-template-columns: minmax(0, 740px) 280px;
-    gap: 56px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
     justify-content: center;
+  }
+  .article-layout.has-toc {
+    max-width: 1380px;
+    grid-template-columns: minmax(0, 1100px) 240px;
   }
   article {
     min-width: 0;
+  }
+  .article-layout :global(.article-prose figure img),
+  .article-layout :global(.article-prose .article-carousel-track) {
+    max-height: 900px;
+  }
+  .article-layout :global(.article-prose .article-carousel-track img) {
+    max-height: none;
   }
   .article-heading {
     margin-bottom: 35px;
@@ -413,15 +443,10 @@
     opacity: 0.3;
   }
   @media (max-width: 1000px) {
-    .article-layout {
-      gap: 36px;
-      grid-template-columns: minmax(0, 720px) 230px;
-    }
-  }
-  @media (max-width: 780px) {
-    .article-layout {
+    .article-layout,
+    .article-layout.has-toc {
       display: block;
-      max-width: 720px;
+      max-width: 960px;
       margin-top: 28px;
     }
     .desktop-toc {
@@ -429,15 +454,51 @@
     }
     .mobile-toc {
       display: block;
+      position: sticky;
+      top: 0;
+      z-index: 20;
       margin-bottom: 28px;
-      padding: 14px 0;
-      border-top: 1px solid #e0e5db;
+      background: #fafbf9;
       border-bottom: 1px solid #e0e5db;
-      font-size: 13px;
       color: #64705e;
     }
-    summary {
+    .toc-toggle {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      min-height: 48px;
+      padding: 10px 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 13px;
+      text-align: left;
       cursor: pointer;
+    }
+    .current-section {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mobile-toc nav {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin: 0;
+      padding: 18px;
+      max-height: min(60dvh, 480px);
+      background: #fafbf9;
+      box-shadow: 0 12px 24px #263a2e18;
+      border: 1px solid #e0e5db;
+      border-radius: 0 0 8px 8px;
+    }
+    .article-layout :global(.article-prose :is(h2, h3, h4)) {
+      scroll-margin-top: 68px;
     }
   }
   .viewer-tools {

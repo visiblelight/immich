@@ -42,7 +42,7 @@
 
 <style>
   .back {
-    max-width: 1090px;
+    max-width: 1380px;
     margin: 24px auto 0;
     font-size: 12px;
     display: flex;

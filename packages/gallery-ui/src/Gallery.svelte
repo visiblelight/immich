@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack, onMount } from 'svelte';
+  import { tick, untrack, onMount, onDestroy } from 'svelte';
   import { enterViewerFullscreen, exitViewerFullscreen } from './viewer-fullscreen';
   import { captureTime } from '../../gallery-core/src/capture-time';
   import Markdown from './Markdown.svelte';
@@ -23,6 +23,8 @@
     navigateBoundary,
     immersive = $bindable(false),
     relatedArticles = [],
+    albumSearch,
+    searchAlbums,
   }: {
     site: {
       name: string;
@@ -32,6 +34,8 @@
       contactLinks?: import('../../gallery-core/src/content').ContactLink[];
     };
     albums: DisplayAlbum[];
+    albumSearch?: { query: string; matchedIds: string[] };
+    searchAlbums?: (query: string) => void;
     active?: DisplayAlbum | null;
     preview?: boolean;
     about?: boolean;
@@ -64,6 +68,31 @@
       total: number;
     };
   } = $props();
+  let searchText = $state(untrack(() => albumSearch?.query ?? ''));
+  let lastSearch = untrack(() => albumSearch?.query ?? '');
+  let composingSearch = false;
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchInput = $state<HTMLInputElement>();
+  $effect(() => {
+    const query = albumSearch?.query ?? '';
+    untrack(() => {
+      if (query !== lastSearch) {
+        clearTimeout(searchTimer);
+        searchText = query;
+        lastSearch = query;
+      }
+    });
+  });
+  onDestroy(() => clearTimeout(searchTimer));
+  function applySearch() {
+    clearTimeout(searchTimer);
+    lastSearch = searchText.trim();
+    searchAlbums?.(lastSearch);
+  }
+  function scheduleSearch() {
+    clearTimeout(searchTimer);
+    if (searchAlbums && !composingSearch) searchTimer = setTimeout(applySearch, 350);
+  }
   let photo = $state<DisplayPhoto | null>(null);
   let viewer: HTMLDialogElement;
   let showVariants = $state(true);
@@ -195,11 +224,19 @@
       }
     }
   });
+  $effect(() => {
+    albumSearch?.query;
+    albumPage = 0;
+  });
   const link = (a: DisplayAlbum) => (preview ? `/preview/${a.id}` : `/albums/${a.slug}`);
   let albumSort = $state<'updated' | 'taken'>('updated');
   let children = $derived(
     albums
-      .filter((a) => a.parent === (active?.id ?? ''))
+      .filter((a) =>
+        !active && albumSearch?.query
+          ? albumSearch.matchedIds.includes(a.id)
+          : a.parent === (active?.id ?? ''),
+      )
       .sort((a, b) => {
         const key = albumSort === 'taken' ? 'takenAt' : 'updatedAt';
         return (
@@ -430,9 +467,59 @@
           </div>
         </div>
       </div>
-    {:else if !active}<div class="heading">
+    {:else if !active}<div class="heading album-heading">
         <h1>相册 <small>{children.length} 本</small></h1>
-        {@render albumSorting()}
+        <div class="album-tools">
+          {#if albumSearch}<form
+              class="album-search"
+              action="/albums"
+              method="GET"
+              role="search"
+              onsubmit={(e) => {
+                if (searchAlbums) {
+                  e.preventDefault();
+                  applySearch();
+                }
+              }}
+            >
+              <svg
+                class="search-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg
+              >
+              <input
+                name="q"
+                aria-label="搜索相册"
+                placeholder="搜索相册、照片或地点"
+                bind:this={searchInput}
+                bind:value={searchText}
+                maxlength="120"
+                oninput={scheduleSearch}
+                oncompositionstart={() => {
+                  composingSearch = true;
+                  clearTimeout(searchTimer);
+                }}
+                oncompositionend={() => {
+                  composingSearch = false;
+                  scheduleSearch();
+                }}
+              />
+              {#if searchText}<button
+                  type="button"
+                  class="clear-search"
+                  aria-label="清除相册搜索"
+                  onclick={() => {
+                    searchText = '';
+                    applySearch();
+                    searchInput?.focus();
+                  }}><Icon name="close" size={14} /></button
+                >{/if}
+            </form>{/if}
+          {@render albumSorting()}
+        </div>
       </div>
       <div class="album-grid">
         {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
@@ -455,8 +542,8 @@
       </div>
       {@render albumPagination()}
       {#if !children.length}<div class="empty">
-          <h2>相册正在整理中</h2>
-          <p>发布后的作品会在这里出现。</p>
+          <h2>{albumSearch?.query ? '没有找到匹配的相册' : '相册正在整理中'}</h2>
+          <p>{albumSearch?.query ? '试试其它相册名、照片描述或地点。' : '发布后的作品会在这里出现。'}</p>
         </div>{/if}
     {:else}<div class="breadcrumbs">
         <a href="/albums">相册</a>{#each crumbs as parent}<span>/</span><a href={link(parent)}
@@ -751,7 +838,7 @@
 </dialog>
 
 {#snippet albumSorting()}
-  <span class="album-sorting" aria-label="相册排序">
+  <span class="album-sorting" role="group" aria-label="相册排序">
     <button
       class:chosen={albumSort === 'updated'}
       aria-pressed={albumSort === 'updated'}
@@ -772,6 +859,84 @@
 {/snippet}
 
 <style>
+  .album-tools {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-left: auto;
+    min-width: 0;
+  }
+  .album-search {
+    position: relative;
+    width: 260px;
+    display: flex;
+    align-items: center;
+    color: #899285;
+  }
+  .album-search input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    padding: 8px 32px 8px 34px;
+    border: 1px solid #e1e6dc;
+    border-radius: 6px;
+    background: transparent;
+    color: #354638;
+    font: inherit;
+    font-size: 12px;
+    transition: border-color 0.15s;
+  }
+  .album-search input::placeholder {
+    color: #899285;
+  }
+  .album-search input:focus {
+    outline: 2px solid #a3b59b55;
+    outline-offset: 1px;
+    border-color: #9eae96;
+  }
+  .search-icon {
+    position: absolute;
+    left: 11px;
+    width: 15px;
+    height: 15px;
+    pointer-events: none;
+  }
+  .clear-search {
+    position: absolute;
+    right: 3px;
+    width: 30px;
+    height: 32px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    color: #7c8875;
+    cursor: pointer;
+  }
+  .clear-search:hover {
+    color: #304b36;
+  }
+  @media (max-width: 600px) {
+    .album-heading {
+      row-gap: 18px;
+    }
+    .album-heading h1 {
+      flex-basis: 100%;
+    }
+    .album-tools {
+      flex-wrap: wrap;
+      width: 100%;
+      gap: 14px;
+    }
+    .album-search {
+      flex: 1 1 180px;
+      width: auto;
+      min-width: 0;
+    }
+  }
+
   .place-trail {
     display: flex;
     flex-wrap: wrap;
@@ -792,15 +957,11 @@
   }
   .place-trail a {
     padding: 0;
-    color: #aebca6;
+    color: #c7d2bf;
     font-size: 13px;
     text-decoration: none;
     border: 0;
     transition: color 0.15s;
-  }
-  .place-step:last-child a {
-    color: #e2e9dc;
-    font-size: 16px;
   }
   .place-trail a:hover {
     color: #fff;
@@ -817,21 +978,19 @@
 
   .album-sorting {
     display: inline-flex;
-    gap: 16px;
     margin-left: auto;
-    font-size: 13px;
+    color: #64735e;
+    flex-shrink: 0;
     font-weight: 400;
   }
   .album-sorting button {
-    border: 0;
-    padding: 6px 0;
+    font-family: inherit;
+    line-height: normal;
+    color: inherit;
     background: transparent;
-    color: #818b7c;
     cursor: pointer;
-  }
-  .album-sorting button.chosen {
-    color: #344d3d;
-    box-shadow: 0 1px currentColor;
+    white-space: nowrap;
+    min-width: 72px;
   }
   .heading,
   .section-title {
@@ -1810,14 +1969,16 @@
   .photo-tag-filter {
     margin: 0 0 28px;
   }
-  .sort-options nav {
+  .sort-options nav,
+  .album-sorting {
     display: flex;
     gap: 4px;
     background: #eff2ec;
     padding: 4px;
     border-radius: 6px;
   }
-  .sort-options a {
+  .sort-options a,
+  .album-sorting button {
     flex: 1;
     text-align: center;
     font-size: 12px;
@@ -1825,7 +1986,8 @@
     border: 0;
     border-radius: 4px;
   }
-  .sort-options a.chosen {
+  .sort-options a.chosen,
+  .album-sorting button.chosen {
     background: white;
     color: #344d3d;
     box-shadow: 0 1px 3px #24362812;

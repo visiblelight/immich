@@ -15,6 +15,7 @@ import {
   adminPlaces,
   savePlace,
   placeResolver,
+  setAlbumAvailability,
 } from '../../src/index.server.ts';
 export async function placesAndFilters(
   db: Kysely<unknown>,
@@ -45,8 +46,19 @@ export async function placesAndFilters(
       ],
     );
   }
+  const versions = async (id: string) => {
+    const s = await adminState(db),
+      a = s.albums.find((a) => a.id === id)!;
+    return { version: a.version, draftVersion: a.draftVersion, treeVersion: s.site.treeVersion };
+  };
+  const parent = await createAlbum(db, user, {
+    title: 'Search ancestor',
+    treeVersion: (await adminState(db)).site.treeVersion,
+  });
+  await publishAlbum(db, user, parent, await versions(parent), root);
   const album = await createAlbum(db, user, {
     title: 'Places acceptance',
+    parent,
     treeVersion: (await adminState(db)).site.treeVersion,
   });
   const state = async () => {
@@ -110,6 +122,19 @@ export async function placesAndFilters(
     (await publicCatalog(pub, (await state()).a.draft.slug)).active!.photos[0]!.places!.some(
       (p) => p.name === '埃里温',
     ),
+  );
+  const search = async (query: string) => (await publicCatalog(pub, undefined, query)).albumSearch.matchedIds;
+  for (const query of ['places ACCEPTANCE', 'Place filter test', '亚美尼亚', 'Armenia', '埃里温', '耶烈万']) {
+    const result = await search(query);
+    assert.ok(result.includes(album), `public album matches ${query}`);
+    assert.ok(result.includes(parent), `published ancestor matches descendant ${query}`);
+  }
+  st = await state();
+  st.a.draft.markdown = 'Unpublished search secret';
+  await saveAlbum(db, user, album, { ...st.v, content: st.a.draft });
+  assert.ok(
+    !(await search('Unpublished search secret')).includes(album),
+    'draft descriptions are not searchable',
   );
   await assert.rejects(
     savePlace(db, user, { id: 'city:616052', nameZh: '冲突', aliases: [], version: '0' }),
@@ -194,6 +219,22 @@ export async function placesAndFilters(
       (p) => p.id === st.a.draft.photos[0]!.id,
     ),
   );
+  st = await state();
+  st.a.draft.photos[1]!.hiddenFromGallery = true;
+  st.a.draft.photos[2]!.location = 'approximate';
+  await saveAlbum(db, user, album, { ...st.v, content: st.a.draft });
+  await publishAlbum(db, user, album, (await state()).v, root);
+  assert.ok(!(await search('格鲁吉亚')).includes(album), 'article-only photos do not contribute locations');
+  assert.ok(
+    !(await search('耶烈万')).includes(album),
+    'hidden and approximate positions do not leak city aliases',
+  );
+  assert.ok(
+    (await search('亚美尼亚')).includes(album),
+    'approximate positions remain discoverable by country',
+  );
+  await setAlbumAvailability(db, user, parent, { ...(await versions(parent)), action: 'offline' });
+  assert.ok(!(await search('Places acceptance')).includes(album), 'offline ancestry excludes descendants');
   await assert.rejects(sql`SELECT * FROM gallery.photo_place`.execute(pub));
   await assert.rejects(sql`UPDATE gallery.place_label SET name_zh='unsafe'`.execute(pub));
 }

@@ -70,6 +70,16 @@
   let sourceTags = $state<{ id: string; name: string }[]>([]);
   let cache = $state<Record<string, SourcePhoto>>({});
   let sourceAlbum = $state('');
+  let sourceAlbumSearch = $state('');
+  let sourceError = $state('');
+  let filteredSourceAlbums = $derived(
+    sourceAlbums.filter((a) =>
+      a.name
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .includes(sourceAlbumSearch.normalize('NFKC').trim().toLocaleLowerCase()),
+    ),
+  );
   let pickerMain = $state<HTMLElement>();
   let sourceTag = $state('');
   let sourceSearch = $state('');
@@ -290,6 +300,11 @@
   async function source(cursor = '', index = 0) {
     const serial = ++requestId;
     sourceBusy = true;
+    sourceAssets = [];
+    sourceError = '';
+    next = null;
+    cursorIndex = index;
+    pickerMain?.scrollTo({ top: 0 });
     message = '';
     try {
       const query = new URLSearchParams({
@@ -310,8 +325,8 @@
       await tick();
       pickerMain?.scrollTo({ top: 0 });
     } catch (e) {
-      failed = true;
-      message = e instanceof Error ? e.message : '无法读取图库';
+      if (serial !== requestId) return;
+      sourceError = e instanceof Error ? e.message : '无法读取图库';
     } finally {
       if (serial === requestId) sourceBusy = false;
     }
@@ -319,6 +334,7 @@
   async function pick() {
     selected = [];
     sourceAlbum = '';
+    sourceAlbumSearch = '';
     sourceTag = '';
     sourceSearch = '';
     since = '';
@@ -946,7 +962,10 @@
       </form>
     {:else if modal === 'picker'}<div class="picker-layout">
         <aside class="picker-sidebar">
-          <p class="eyebrow">来源相册</p>
+          <div class="source-album-search">
+            <label for="source-album-search">来源相册</label>
+            <input id="source-album-search" placeholder="查找来源相册…" bind:value={sourceAlbumSearch} />
+          </div>
           <button
             class:chosen={!sourceAlbum}
             onclick={() => {
@@ -954,7 +973,7 @@
               cursors = [''];
               void source();
             }}>全部授权照片</button
-          >{#each sourceAlbums as album}<button
+          >{#each filteredSourceAlbums as album (album.id)}<button
               class:chosen={sourceAlbum === album.id}
               onclick={() => {
                 sourceAlbum = album.id;
@@ -962,9 +981,13 @@
                 void source();
               }}>{album.name}</button
             >{/each}
+          {#if sourceAlbumSearch && !filteredSourceAlbums.length}<p class="footnote">没有匹配的相册</p>{/if}
           <p class="footnote">切换筛选和翻页会保留已选照片。</p>
         </aside>
-        <section class="picker-main" bind:this={pickerMain}>
+        <section class="picker-main" bind:this={pickerMain} aria-busy={sourceBusy}>
+          <h3 class="source-album-heading">
+            {sourceAlbums.find((a) => a.id === sourceAlbum)?.name ?? '全部授权照片'}
+          </h3>
           <form
             class="picker-filters"
             onsubmit={(e) => {
@@ -983,13 +1006,19 @@
               disabled={sourceBusy}>应用筛选</button
             >
           </form>
-          <p class="muted">
+          <p class="muted" role="status">
             {sourceBusy
               ? '正在读取图库…'
               : `${sourceAssets.length} 张照片 · 拍摄时间由新到旧 · 已在本册的照片不会重复添加`}
           </p>
           <div class="asset-grid">
-            {#each sourceAssets as asset}{@const added = content?.photos.some((p) => p.asset === asset.id)}
+            {#if sourceBusy}{#each Array(6) as _}<div class="source-placeholder" aria-hidden="true">
+                  <div></div>
+                  <span></span>
+                </div>{/each}{/if}
+            {#each sourceAssets as asset (asset.id)}{@const added = content?.photos.some(
+                (p) => p.asset === asset.id,
+              )}
               <article class="asset-card" class:selected={selected.some((a) => a.id === asset.id)}>
                 <div>
                   <button
@@ -1027,7 +1056,10 @@
                 </button>
               </article>{/each}
           </div>
-          {#if !sourceBusy && !sourceAssets.length}<div class="empty">
+          {#if sourceError}<div class="empty" role="alert">
+              {sourceError}<button onclick={() => source(cursors[cursorIndex], cursorIndex)}>重试</button>
+            </div>{/if}
+          {#if !sourceBusy && !sourceError && !sourceAssets.length}<div class="empty">
               当前筛选下没有可用照片。请确认来源范围及 Immich 缩略图已生成。
             </div>{/if}
           <div class="pagination">

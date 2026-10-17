@@ -2587,3 +2587,66 @@ dialog.source-picker-dialog[open] {
     opacity: 1;
   }
 }
+
+/* Source search stays available while the album list scrolls independently. */
+.source-album-search {
+  position: sticky;
+  top: -26px;
+  z-index: 1;
+  background: #fafbf7;
+  padding: 14px 0;
+  margin-top: -14px;
+}
+.source-album-search label {
+  display: block;
+  font-size: 12px;
+  color: #7b8b7d;
+  margin-bottom: 10px;
+}
+.source-album-search input {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+  padding: 8px;
+}
+.source-album-heading {
+  margin: 0 0 18px;
+  font-size: 16px;
+  font-weight: 550;
+}
+.source-placeholder {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  padding-bottom: 20px;
+}
+.source-placeholder div {
+  aspect-ratio: 3 / 2;
+  background: #edf0ea;
+}
+.source-placeholder span {
+  display: block;
+  height: 12px;
+  width: 55%;
+  margin: 20px 16px 0;
+  background: #edf0ea;
+  border-radius: 4px;
+}
+@media (max-width: 780px) {
+  .source-picker-dialog .picker-sidebar {
+    max-height: 160px;
+    display: block;
+    padding-top: 0;
+  }
+  .source-album-search {
+    top: 0;
+    margin-top: 0;
+    padding: 10px 0;
+  }
+  .source-album-search label {
+    display: none;
+  }
+  .source-picker-dialog .picker-sidebar > button {
+    display: inline-flex;
+  }
+}

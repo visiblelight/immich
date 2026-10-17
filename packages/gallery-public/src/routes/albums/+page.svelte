@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { Gallery } from '@gallery/ui';
   let { data } = $props();
 </script>
@@ -9,4 +10,17 @@
     href={`${data.origin}/albums`}
   /></svelte:head
 >
-<Gallery site={data.site} albums={data.albums} />
+<Gallery
+  site={data.site}
+  albums={data.albums}
+  albumSearch={data.albumSearch}
+  searchAlbums={(query) => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    void goto(`/albums${params.size ? `?${params}` : ''}`, {
+      keepFocus: true,
+      noScroll: true,
+      replaceState: true,
+    });
+  }}
+/>

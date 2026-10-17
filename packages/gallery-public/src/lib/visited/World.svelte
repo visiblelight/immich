@@ -246,7 +246,7 @@
       class="country-list"
     >
       {#each visited.filter((c) => c.name.includes(search)) as c}<a href={`/visited/${c.id}`}
-          ><strong>{c.name}</strong><span>{c.visits.length} 段记录 · {c.count} 张照片 →</span></a
+          ><strong>{c.name}</strong><span>{c.visits.length} 段记录 · {c.count} 张照片</span></a
         >{/each}
     </div>{/if}
 </section>
@@ -420,23 +420,34 @@
   }
   .country-list {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0 30px;
+    grid-template-columns: repeat(auto-fill, 220px);
+    gap: 26px 32px;
+    margin-top: 24px;
   }
   .country-list a {
     display: flex;
-    justify-content: space-between;
-    padding: 18px 0;
-    gap: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 0;
     color: inherit;
     text-decoration: none;
+    min-width: 0;
   }
   .country-list strong {
+    font-size: 16px;
+    line-height: 1.5;
     font-weight: 500;
+    transition: color 0.15s;
+  }
+  .country-list a:hover strong,
+  .country-list a:focus-visible strong {
+    color: #638058;
   }
   .country-list span {
-    font-size: 11px;
-    color: #7b8178;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #899183;
   }
   .tooltip,
   .sheet {
@@ -512,7 +523,8 @@
       height: 58dvh;
     }
     .country-list {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px 20px;
     }
     .sheet {
       left: 12px;

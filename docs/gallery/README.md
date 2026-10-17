@@ -98,6 +98,8 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 - 前次的 [Immich 数据字典](../docs/developer/database-schema-reference.zh-CN.md) 保留为上游结构参考；Gallery 表只在本目录说明。
 - 初始化、测试、部署、备份恢复与升级操作手册在相关功能实现时补充实际可执行步骤。本轮计划中的未来命令不是已验证脚本。
 
+2026-10-17 图文阅读与相册搜索改进已在本地实施，待视觉验收，见[确认范围](decisions/0019-reading-and-album-search.md)与[实际交付](delivery/reading-and-album-search.md)。
+
 ## 当前交付状态
 
 | 阶段 | 状态 |

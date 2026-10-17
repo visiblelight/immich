@@ -32,7 +32,11 @@ type AlbumRow = {
   taken_at: Date | null;
   updated_at: Date;
 };
-export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
+export async function publicCatalog(db: Kysely<unknown>, slug?: string, search = '') {
+  const query = search.normalize('NFKC').trim().slice(0, 120);
+  const needle = query.toLocaleLowerCase();
+  const matches = (parts: string[]) =>
+    parts.some((part) => part.normalize('NFKC').toLocaleLowerCase().includes(needle));
   return db
     .transaction()
     .setIsolationLevel('repeatable read')
@@ -149,7 +153,52 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string) {
           thumbnail: `/media/${active.id}/${p.photo_id}?variant=thumbnail`,
         }));
       }
-      return { site, albums, active };
+      const matchedIds = new Set<string>();
+      if (query) {
+        // All text and memberships come from public projections, never drafts or source albums.
+        const photos = (
+          await sql<{
+            album_id: string;
+            asset_id: string;
+            title: string;
+            description: string;
+            group_id: string | null;
+          }>`
+          SELECT album_id,asset_id,title,description,group_id FROM gallery.published_photo`.execute(trx)
+        ).rows;
+        const geo = await publicPhotoPlaces(trx);
+        const photosByAlbum = new Map<string, typeof photos>();
+        for (const photo of photos) {
+          const list = photosByAlbum.get(photo.album_id) ?? [];
+          list.push(photo);
+          photosByAlbum.set(photo.album_id, list);
+        }
+        for (const row of rows) {
+          const members = photosByAlbum.get(row.album_id) ?? [];
+          const groups = (row.description_document.groups ?? []).filter((g) =>
+            members.some((p) => p.group_id === g.id),
+          );
+          if (
+            matches([row.title, row.summary, documentMarkdown(row.description_document)]) ||
+            groups.some((g) => matches([g.title, g.description])) ||
+            members.some(
+              (p) =>
+                matches([p.title, p.description]) ||
+                (geo.byAsset.get(p.asset_id) ?? []).some((place) =>
+                  matches([place.name, place.english, ...place.aliases]),
+                ),
+            )
+          ) {
+            // A matching descendant makes its published ancestors discoverable as well.
+            let album = albums.find((a) => a.id === row.album_id);
+            while (album && !matchedIds.has(album.id)) {
+              matchedIds.add(album.id);
+              album = albums.find((a) => a.id === album!.parent);
+            }
+          }
+        }
+      }
+      return { site, albums, active, albumSearch: { query, matchedIds: [...matchedIds] } };
     });
 }
 /** Authenticated draft projection uses the same rendering DTO as public pages. */
