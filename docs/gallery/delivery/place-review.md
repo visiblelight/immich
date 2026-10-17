@@ -1,6 +1,6 @@
 # 地点核对与沿海照片归属
 
-2026-10-17：根据 ADR 0018 后续确认在本地实施，尚未提交或发布生产。生产罗卡角照片尚未人工确认，不改动 Immich GPS。
+2026-10-17：根据 ADR 0018 后续确认实施，经用户授权已发布生产。生产罗卡角照片仍待管理员人工确认，不改动 Immich GPS。
 
 ## 实现
 
@@ -22,3 +22,10 @@ Gallery 单元测试通过；隔离 PostgreSQL 26 项回归通过，Immich schem
 无数据库迁移、无依赖升级。仅添加基于既有 `photo_place` 的应用行为。回滚旧应用后，原先国家识别失败的沿海人工记录不再被旧逻辑采用，但不影响记录保留。用户已有 mise.lock 修改未纳入本轮变更。
 
 最终验证：Gallery check 为 0 错误/0 警告，最终 build 通过。浏览器确认默认待核对空态、全部切换、文件名过滤、同坐标选择明确显示数量、卡片内搜索以及本站嵌入地图标记与缩放按钮可用。390px 下 document scrollWidth=390，卡片宽 362px，无横向溢出。未点击确认或修改真实开发图库。截图：忽略目录 `.gallery-local/place-review-desktop.png`（本地开发图库示例，非生产待核对数量）。
+
+
+## 生产发布
+
+2026-10-17 用户授权发布，应用提交 `ae91b2b16447d60446e61a13e96c776d4a304208` 已推送至 `codex/gallery`。[GitHub Actions 39020217948](https://github.com/visiblelight/immich/actions/runs/39020217948) 的 foundation、image、deploy 全部成功，由 GitHub 构建镜像并自动部署。
+
+生产发布记录与应用提交一致，镜像为 `ghcr.io/visiblelight/gallery@sha256:134f0f8a0b630373693530aa18c8cbfd7d32d5baab8a43224e23ade9720d566a`，public/admin 均 healthy。只读查询当时共有 369 张有 GPS 照片、30 张待核对；罗卡角两张均保留待确认，首选候选为“葡萄牙 › 里斯本区 › Azoia”，来源名称吻合，距城镇中心约 2.2km。地图预览、罗卡角相册与去过页面均 HTTP 200。此次发布未执行地点确认、未修改照片 GPS、无数据库迁移。
