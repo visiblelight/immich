@@ -3,23 +3,21 @@
   "galleryVersion": "0.1.0-dev.0",
   "phase": "D-E-complete-F-local-validation",
   "immich": {
-    "sourceCommit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a",
-    "sourceVersion": "3.2.0",
+    "sourceCommit": "d2dac658fe1c67e8bbd08aa18200a32e5d45b9e4",
+    "sourceVersion": "3.3.3",
     "upstream": "https://github.com/immich-app/immich.git",
     "sourceVerifiedInUpstreamHistory": true,
     "observedUpstreamMain": "d6dc6dcc3b18635f3389403f72a9e2d619e5f83f",
     "upgradeCandidate": {
-      "tag": "v3.2.0",
-      "commit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a",
-      "validated": true,
-      "databaseMigrationAndDriftValidated": true,
-      "validationScope": "isolated full official server/Web, Gallery photo flow, and restored previous-server/Gallery rollback; mobile and ML excluded"
+      "tag": "v3.3.3",
+      "commit": "d2dac658fe1c67e8bbd08aa18200a32e5d45b9e4",
+      "validated": false
     },
-    "previousSourceCommit": "469a870a2233e7361bcb855b183fd41272cfd056"
+    "previousSourceCommit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a"
   },
   "toolchain": {
-    "node": "24.15.0",
-    "pnpm": "11.22.0"
+    "node": "24.21.0",
+    "pnpm": "11.27.1"
   },
   "productionReady": false,
   "databaseMigrationsApplied": true,

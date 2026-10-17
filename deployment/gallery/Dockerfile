@@ -1,6 +1,6 @@
-FROM node:24.15.0-bookworm-slim@sha256:4e6b70dd6cbfc88c8157ba19aa3d9f9cce6ba4703576d55459e45efcbc9c5f5d AS build
+FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS build
 WORKDIR /app
-RUN npm install --global pnpm@11.22.0
+RUN npm install --global pnpm@11.27.1
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/gallery-core/package.json packages/gallery-core/package.json
 COPY packages/gallery-db/package.json packages/gallery-db/package.json
@@ -17,7 +17,7 @@ COPY packages/gallery-public packages/gallery-public
 COPY packages/gallery-admin packages/gallery-admin
 RUN pnpm --filter immich-monorepo --filter '@gallery/*' gallery:build
 # Keep workspace source entrypoints and their links: Node executes server-only TS.
-FROM node:24.15.0-bookworm-slim@sha256:4e6b70dd6cbfc88c8157ba19aa3d9f9cce6ba4703576d55459e45efcbc9c5f5d AS runtime
+FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 GALLERY_DESIGN_PREVIEW=0
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app

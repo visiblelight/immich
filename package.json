@@ -1,10 +1,12 @@
 {
   "name": "immich-monorepo",
-  "version": "3.2.0",
+  "version": "3.3.3",
   "description": "Monorepo for Immich",
   "type": "module",
   "private": true,
   "scripts": {
+    "format": "prettier --cache --check i18n/",
+    "format:fix": "prettier --cache --write --list-different i18n",
     "gallery:test:cloud": "sh deployment/gallery/cloud/certificate/test.sh",
     "gallery:map:generate": "node packages/gallery-public/scripts/generate-world-map.mjs",
     "gallery:map:boundaries": "node packages/gallery-db/scripts/prepare-countries.ts",
@@ -18,8 +20,6 @@
     "gallery:dev:public": "pnpm --filter @gallery/public dev",
     "gallery:dev:admin": "pnpm --filter @gallery/admin dev",
     "gallery:smoke": "node deployment/gallery/scripts/smoke.mjs",
-    "format": "prettier --cache --check i18n/",
-    "format:fix": "prettier --cache --write --list-different i18n",
     "gallery:test:db": "node deployment/gallery/scripts/database-check.mjs",
     "gallery:db": "node packages/gallery-db/scripts/database.ts",
     "gallery:prepare:db-tests": "node deployment/gallery/scripts/prepare-database-check.mjs",
@@ -32,7 +32,7 @@
     "gallery:upgrade:verify": "node deployment/gallery/upgrade/verify-flow.mjs",
     "gallery:upgrade:rollback": "node deployment/gallery/upgrade/verify-rollback.mjs"
   },
-  "packageManager": "pnpm@11.22.0",
+  "packageManager": "pnpm@11.27.1",
   "engines": {
     "pnpm": ">=10.0.0"
   },

@@ -42,10 +42,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0, same as upstream baseline
         with:
-          node-version: '24.15.0'
+          node-version: '24.21.0'
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10, same as upstream baseline
         with:
-          version: '11.22.0'
+          version: '11.27.1'
           run_install: false
       - name: Install only Gallery workspace dependencies
         run: sh deployment/gallery/scripts/pnpm.sh install --frozen-lockfile --ignore-scripts

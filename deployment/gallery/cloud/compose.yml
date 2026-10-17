@@ -27,7 +27,7 @@ services:
       timeout: 5s
       retries: 10
   immich-server:
-    image: ghcr.io/immich-app/immich-server@sha256:ae13784ffcfcce8f4178113eb6661602a1fd1912f3d539880b8ac0dd95fc8ac2
+    image: ghcr.io/immich-app/immich-server@sha256:bae7664ff3aa4c2c1fcbdcdd86b40b105643c5f861f3e6a770fc760089f25862
     restart: unless-stopped
     env_file: ${IMMICH_ENV_FILE:?}
     volumes:
@@ -42,7 +42,7 @@ services:
       database: { condition: service_healthy }
       redis: { condition: service_healthy }
   immich-machine-learning:
-    image: ${IMMICH_ML_IMAGE:?Set a pinned v3.2.0 machine-learning image digest}
+    image: ${IMMICH_ML_IMAGE:?Set a pinned v3.3.3 machine-learning image digest}
     restart: unless-stopped
     env_file: ${IMMICH_ENV_FILE}
     volumes: ['${VISION_DATA_ROOT}/model-cache:/cache']

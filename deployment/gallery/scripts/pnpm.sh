@@ -8,7 +8,7 @@ export pnpm_config_verify_deps_before_run
 
 # Prefer the isolated local toolchain when present; otherwise use the user's mise/PATH.
 GALLERY_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../../.." && pwd)
-GALLERY_NODE="$GALLERY_ROOT/.gallery-local/toolchain/node-v24.15.0-darwin-arm64/bin"
+GALLERY_NODE="$GALLERY_ROOT/.gallery-local/toolchain/node-v24.21.0-darwin-arm64/bin"
 if [ -x "$GALLERY_NODE/node" ]; then
   PATH="$GALLERY_NODE:$PATH"
   export PATH
