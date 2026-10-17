@@ -14,7 +14,7 @@ flock -n 9
 [[ -f $base/PASSED && $(cat "$base/new-image") == "$new" ]]
 [[ $(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$sha" ]]
 docker image inspect "$new" "$ml" >/dev/null
-git -C "$repo" fetch origin codex/gallery
+git -C "$repo" -c fetch.recurseSubmodules=false fetch origin codex/gallery
 [[ $(git -C "$repo" rev-parse origin/codex/gallery) == "$sha" ]]
 [[ -z $(git -C "$repo" status --porcelain --untracked-files=no) ]]
 oldsha=$(git -C "$repo" rev-parse HEAD)
