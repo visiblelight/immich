@@ -29,3 +29,9 @@ Gallery 单元测试通过；隔离 PostgreSQL 26 项回归通过，Immich schem
 2026-10-17 用户授权发布，应用提交 `ae91b2b16447d60446e61a13e96c776d4a304208` 已推送至 `codex/gallery`。[GitHub Actions 39020217948](https://github.com/visiblelight/immich/actions/runs/39020217948) 的 foundation、image、deploy 全部成功，由 GitHub 构建镜像并自动部署。
 
 生产发布记录与应用提交一致，镜像为 `ghcr.io/visiblelight/gallery@sha256:134f0f8a0b630373693530aa18c8cbfd7d32d5baab8a43224e23ade9720d566a`，public/admin 均 healthy。只读查询当时共有 369 张有 GPS 照片、30 张待核对；罗卡角两张均保留待确认，首选候选为“葡萄牙 › 里斯本区 › Azoia”，来源名称吻合，距城镇中心约 2.2km。地图预览、罗卡角相册与去过页面均 HTTP 200。此次发布未执行地点确认、未修改照片 GPS、无数据库迁移。
+
+## 后续本地修订（待发布）
+
+国家未识别、城镇待完善、全部分别筛选和计数。首次进入优先国家未识别，有候选但未确认也留在此类；没有国家问题时默认城镇待完善。列表明确显示分类和处理说明，同坐标选择遵循当前分类。分类只使用有效归属，不把候选国家当成已确认。无数据库迁移。
+
+本轮验证：Gallery check 0 错误/0 警告、build 通过；隔离数据库 26 项全部通过，新增断言覆盖城镇缺失、沿海候选仍属国家未识别、人工确认后分类解除，Immich schema drift 为零。本地浏览器验证分类入口、切换与空态；开发库没有待核对照片，非空分类由隔离合成数据验证。

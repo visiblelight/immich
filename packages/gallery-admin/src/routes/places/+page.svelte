@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   let dialog: HTMLDialogElement;
   async function edit(p: (typeof data.places)[number]) {
     message = '';
@@ -17,13 +17,17 @@
     message = $state(''),
     failed = $state(false),
     tab = $state('dictionary');
-  let reviewOnly = $state(true), photoQuery = $state('');
+  let reviewFilter = $state<'country' | 'city' | 'all'>(untrack(() => data.photos.some(p => p.reviewCategory === 'country') ? 'country' : 'city'));
+  let photoQuery = $state('');
   let selected = $state<string[]>([]), mapAsset = $state('');
   let placeQuery = $state(''), placeSearchAsset = $state('');
   let placeResults = $state<typeof data.places>([]), placeSearching = $state(false);
   let placeRequest = 0;
   const pending = $derived(data.photos.filter(p => p.needsReview));
-  const visiblePhotos = $derived(data.photos.filter(p => (!reviewOnly || p.needsReview) &&
+  const countryPending = $derived(pending.filter(p => p.reviewCategory === 'country'));
+  const cityPending = $derived(pending.filter(p => p.reviewCategory === 'city'));
+  const inReviewFilter = (p: (typeof data.photos)[number]) => reviewFilter === 'all' || p.reviewCategory === reviewFilter;
+  const visiblePhotos = $derived(data.photos.filter(p => inReviewFilter(p) &&
     [p.filename, p.city, p.state, ...p.places.map(v => v.name)].filter(Boolean).join(' ').toLocaleLowerCase().includes(photoQuery.trim().toLocaleLowerCase())));
   const selectedPhotos = $derived(data.photos.filter(p => selected.includes(p.asset_id)));
   const samePosition = (a: (typeof data.photos)[number], b: (typeof data.photos)[number]) => a.latitude === b.latitude && a.longitude === b.longitude;
@@ -131,12 +135,15 @@
     {:else}
       <div class="review-toolbar">
         <div class="tabs" aria-label="照片归属筛选">
-          <button class:chosen={reviewOnly} aria-pressed={reviewOnly} onclick={() => { reviewOnly = true; selected = []; }}>待核对 {pending.length}</button>
-          <button class:chosen={!reviewOnly} aria-pressed={!reviewOnly} onclick={() => { reviewOnly = false; selected = []; }}>全部 {data.photos.length}</button>
+          <button class:chosen={reviewFilter === 'country'} aria-pressed={reviewFilter === 'country'} onclick={() => { reviewFilter = 'country'; selected = []; }}>国家未识别 {countryPending.length}</button>
+          <button class:chosen={reviewFilter === 'city'} aria-pressed={reviewFilter === 'city'} onclick={() => { reviewFilter = 'city'; selected = []; }}>城镇待完善 {cityPending.length}</button>
+          <button class:chosen={reviewFilter === 'all'} aria-pressed={reviewFilter === 'all'} onclick={() => { reviewFilter = 'all'; selected = []; }}>全部 {data.photos.length}</button>
         </div>
         <input aria-label="搜索归属照片" placeholder="搜索文件名或地点" bind:value={photoQuery} />
       </div>
-      <p>当前显示 {visiblePhotos.length} 张{reviewOnly ? '待核对照片' : '有 GPS 的照片'}。人工确认到国家或省州也视为已核对；相同坐标的照片可一起确认。</p>
+      <p>当前显示 {visiblePhotos.length} 张{reviewFilter === 'country' ? '国家未识别的照片' : reviewFilter === 'city' ? '城镇待完善的照片' : '有 GPS 的照片'}。人工确认到国家或省州也视为已核对；相同坐标的照片可一起确认。</p>
+      {#if reviewFilter === 'country'}<p class="country-warning">请优先确认这些照片的国家归属。候选国家尚未生效，需要你手动确认。</p>
+      {:else if reviewFilter === 'city'}<p class="field-hint">这些照片已识别国家，仅城镇名称待完善，不影响按国家浏览。</p>{/if}
       {#if selected.length}<p role="status">已选择 {selected.length} 张同坐标照片；在其中任意一张选择地点并确认，即可一并保存。<button onclick={() => selected = []}>取消选择</button></p>{/if}
       <div class="place-photo-list">
         {#each visiblePhotos as photo (photo.asset_id)}<article class="photo-review">
@@ -150,9 +157,9 @@
                 disabled={busy || (!!selectedPhotos[0] && !samePosition(photo, selectedPhotos[0]))}
                 onchange={(e) => selected = e.currentTarget.checked ? [...selected, photo.asset_id] : selected.filter(id => id !== photo.asset_id)} />
                 <strong>{photo.filename}</strong></label>
-              <p class="review-status" class:pending={photo.needsReview}>{photo.reviewReason}</p>
-              {#if data.photos.filter(p => samePosition(p, photo) && (!reviewOnly || p.needsReview)).length > 1}
-                <button class="text-button" disabled={busy} onclick={() => selected = data.photos.filter(p => samePosition(p, photo) && (!reviewOnly || p.needsReview)).map(p => p.asset_id)}>选择此坐标的 {data.photos.filter(p => samePosition(p, photo) && (!reviewOnly || p.needsReview)).length} 张照片</button>
+              <p class="review-status" class:pending={photo.needsReview} class:country-missing={photo.reviewCategory === 'country'}>{#if photo.reviewCategory === 'country'}<strong>国家未识别 · 需人工确认</strong>{:else if photo.reviewCategory === 'city'}<strong>城镇待完善</strong>{/if}{photo.reviewReason}</p>
+              {#if data.photos.filter(p => samePosition(p, photo) && inReviewFilter(p)).length > 1}
+                <button class="text-button" disabled={busy} onclick={() => selected = data.photos.filter(p => samePosition(p, photo) && inReviewFilter(p)).map(p => p.asset_id)}>选择此坐标的 {data.photos.filter(p => samePosition(p, photo) && inReviewFilter(p)).length} 张照片</button>
               {/if}
               <p>
                 {photo.places.map((p) => p.name).join(' / ') || '国家待核对'}{photo.manualConfirmed
@@ -206,7 +213,7 @@
                     })}>恢复自动判断</button
                 >{/if}
             </div>
-          </article>{:else}<p>{photoQuery ? '没有符合搜索条件的照片。' : '当前没有待核对照片。'}</p>{/each}
+          </article>{:else}<p>{photoQuery ? '没有符合搜索条件的照片。' : reviewFilter === 'country' ? '没有国家未识别的照片。' : reviewFilter === 'city' ? '没有城镇待完善的照片。' : '暂无带 GPS 的照片。'}</p>{/each}
       </div>
     {/if}
     <dialog bind:this={dialog} aria-label="编辑地点" class="place-editor" onclose={() => (editing = null)}>
@@ -280,7 +287,9 @@
   .review-toolbar input { width: min(320px, 100%); }
   .review-select { display: flex; align-items: center; gap: 10px; }
   .review-status { font-size: 13px; }
-  .review-status.pending { color: #956025; }
+  .country-warning, .review-status.country-missing { color: #9b422f; }
+  .review-status strong { margin-bottom: 4px; }
+  .review-status.pending:not(.country-missing) { color: #956025; }
   .photo-review .text-button { background: transparent; color: #36593e; padding: 4px 0; font-size: 13px; }
   .review-map { display: block; width: 100%; height: 260px; border: 1px solid #dce4d8; border-radius: 6px; }
   .photo-review .place-search input { flex: 1; min-width: 180px; }

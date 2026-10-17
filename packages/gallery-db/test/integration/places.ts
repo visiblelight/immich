@@ -98,6 +98,9 @@ export async function placesAndFilters(
   }));
   await saveAlbum(db, user, album, { ...st.v, content: st.a.draft });
   await publishAlbum(db, user, album, (await state()).v, root);
+  const initialReview = (await adminPlaces(db)).photos.filter(p => assets.includes(p.asset_id));
+  assert.equal(initialReview.find(p => p.asset_id === assets[0])?.reviewCategory, 'resolved');
+  assert.ok(initialReview.filter(p => p.asset_id !== assets[0]).every(p => p.reviewCategory === 'city'));
   const feed = await publicPhotoFeed(pub, {
     filters: {
       place: 'country:AM',
@@ -199,7 +202,7 @@ export async function placesAndFilters(
     );
   const coastal = (await adminPlaces(db)).photos.filter((p) => assets.slice(0, 2).includes(p.asset_id));
   assert.equal(coastal.length, 2);
-  assert.ok(coastal.every((p) => p.needsReview && p.country === 'PT' && !p.places.length));
+  assert.ok(coastal.every((p) => p.needsReview && p.reviewCategory === 'country' && p.country === 'PT' && !p.places.length));
   assert.ok(coastal.every((p) => p.candidates[0]?.id === 'city:2271271' && p.candidates[0]?.corroborated));
   const batch = coastal.map((p) => ({
     asset: p.asset_id,
@@ -223,7 +226,7 @@ export async function placesAndFilters(
   );
   await savePlace(db, user, { assets: batch, place: 'city:2271271' });
   const confirmed = (await adminPlaces(db)).photos.filter((p) => assets.slice(0, 2).includes(p.asset_id));
-  assert.ok(confirmed.every((p) => !p.needsReview && p.manualConfirmed));
+  assert.ok(confirmed.every((p) => !p.needsReview && p.manualConfirmed && p.reviewCategory === 'resolved'));
   assert.equal(
     (await publicPhotoFeed(pub, { filters: { place: 'country:PT' } })).photos.filter(
       (p) => p.albumId === album,

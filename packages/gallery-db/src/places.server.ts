@@ -306,6 +306,7 @@ export async function adminPlaces(db: Db, query = '') {
       ...s,
       places,
       needsReview,
+      reviewCategory: !needsReview ? 'resolved' as const : !places.length ? 'country' as const : 'city' as const,
       manualConfirmed,
       country,
       countryName: country ? r.get('country:' + country)?.name : '',

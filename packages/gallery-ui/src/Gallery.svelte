@@ -3,6 +3,7 @@
   import { enterViewerFullscreen, exitViewerFullscreen } from './viewer-fullscreen';
   import { captureTime } from '../../gallery-core/src/capture-time';
   import Markdown from './Markdown.svelte';
+  import AlbumCover from './AlbumCover.svelte';
   import PublicFrame from './PublicFrame.svelte';
   import Icon from './Icon.svelte';
   import PhotoRefinements from './PhotoRefinements.svelte';
@@ -326,10 +327,10 @@
   </div>{/if}
 {#snippet albumPagination()}
   {#if children.length > 24}<div class="pagination">
-      <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页相册</button><span
+      <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页</button><span
         >{albumPage + 1} / {Math.ceil(children.length / 24)}</span
       ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}
-        >下一页相册</button
+        >下一页</button
       >
     </div>{/if}
 {/snippet}
@@ -522,16 +523,10 @@
         </div>
       </div>
       <div class="album-grid">
-        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
+        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album (album.id)}<a
             class="album-card"
             href={link(album)}
-            >{#if album.cover}<img
-                src={album.cover}
-                alt={album.title}
-                loading="lazy"
-                width="600"
-                height="450"
-              />{:else}<div class="empty-cover">
+            >{#if album.cover}<div class="album-cover">{#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}</div>{:else}<div class="empty-cover">
                 {album.title.slice(0, 1)}
               </div>{/if}
             <h2>{album.title}</h2>
@@ -558,16 +553,10 @@
               {@render albumSorting()}
             </h2>
             <div class="children-grid" class:compact-children={active.photos.length > 0}>
-              {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album}<a
+              {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album (album.id)}<a
                   class="album-card"
                   href={link(album)}
-                  >{#if album.cover}<img
-                      src={album.cover}
-                      alt={album.title}
-                      loading="lazy"
-                      width="600"
-                      height="450"
-                    />{:else}<div class="empty-cover">
+                  >{#if album.cover}<div class="album-cover">{#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}</div>{:else}<div class="empty-cover">
                       {album.title.slice(0, 1)}
                     </div>{/if}
                   <h2>{album.title}</h2>
@@ -1230,7 +1219,7 @@
   .album-card {
     min-width: 0;
   }
-  .album-card img,
+  .album-cover,
   .empty-cover {
     width: 100%;
     height: auto;
@@ -2067,7 +2056,7 @@
     border: 1px solid #e4e8df;
     border-radius: 6px;
   }
-  .compact-children img,
+  .compact-children .album-cover,
   .compact-children .empty-cover {
     grid-row: span 2;
     width: 54px;

@@ -50,6 +50,7 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 | [产品调整 ADR 0005](decisions/0005-item-publication-and-viewer.md) | 独立编辑弹窗、当地时间、双向导航和局部发布 |
 | [Markdown、照片组与时间轴交付](delivery/interaction-upgrade.md) | 本轮交互升级、迁移与验证结果 |
 | [产品调整 ADR 0004](decisions/0004-markdown-photo-groups.md) | 已确认的 Markdown、照片组与相片页规则 |
+| [Immich v3.3.3 升级评估](delivery/immich-v3.3.3-assessment.md) | 最新稳定版只读评估，尚未合并升级 |
 | [Immich v3.2.0 升级记录](delivery/immich-v3.2.0.md) | 稳定版、真实备份副本闭环与旧版回滚范围 |
 | [MVP 收尾记录](delivery/mvp-completion.md) | 本轮功能、容器、恢复与候选版本验证边界 |
 | [运行维护手册](development/operations.md) | 管理员维护、Compose、代理、备份与恢复 |
