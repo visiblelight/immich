@@ -1,6 +1,2 @@
-import { publicCatalog } from '@gallery/db/server';
-import { getRuntime } from '$lib/server/runtime';
-export async function load({ url }) {
-  const app = getRuntime();
-  return { ...(await publicCatalog(app.db, undefined, url.searchParams.get('q') ?? '')), origin: app.origin };
-}
+import { loadBrowse } from '$lib/server/browse';
+export const load = ({ url }: { url: URL }) => loadBrowse(url);

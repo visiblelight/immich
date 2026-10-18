@@ -15,6 +15,8 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [连续浏览 ADR 0020](decisions/0020-continuous-browsing.md) | 相册/相片自动追加、位置恢复与兼容边界 |
+| [连续浏览交付](delivery/continuous-browsing.md) | 已确认的本地实现、隔离验收及生产发布状态 |
 | [地点与目录 ADR 0018](decisions/0018-places-filters-and-article-outline.md) | 地名、实际焦距组合筛选和目录交互 |
 | [地点数据字典](architecture/places.md) | 0012 新增表、实时GPS与权限边界 |
 | [地点核对与沿海归属交付](delivery/place-review.md) | 待核对列表、同坐标批量确认与海岸线候选 |

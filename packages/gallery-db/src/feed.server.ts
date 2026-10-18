@@ -1,3 +1,4 @@
+import { browseWindow } from './browse-window.server.ts';
 import { sql, type Kysely } from 'kysely';
 import { publicPhotoPlaces } from './places.server.ts';
 import { photoFilters, equipmentKey, equipmentName, matchesPhoto, type PhotoFilters } from '@gallery/core';
@@ -9,6 +10,8 @@ export async function publicPhotoFeed(
     sort?: string;
     month?: string;
     page?: number;
+    after?: string | null;
+    photoId?: string | null;
     tags?: string[];
     filters?: Partial<PhotoFilters>;
   } = {},
@@ -42,12 +45,13 @@ export async function publicPhotoFeed(
       const evidence = (
         await sql<{
           asset_id: string;
+          photo_id: string;
           public_exif: DisplayPhoto['exif'];
           equipment_visible: boolean;
           tags: NonNullable<DisplayPhoto['tags']>;
           month: string;
           sort_date: Date | null;
-        }>`${base} SELECT asset_id,public_exif,equipment_visible,tags,month,sort_date FROM photos ORDER BY sort_date DESC NULLS LAST,asset_id`.execute(
+        }>`${base} SELECT asset_id,photo_id,public_exif,equipment_visible,tags,month,sort_date FROM photos ORDER BY sort_date DESC NULLS LAST,asset_id`.execute(
           trx,
         )
       ).rows.map((p) => {
@@ -88,7 +92,8 @@ export async function publicPhotoFeed(
         }));
       const selected = evidence.filter((p) => matchesPhoto(p, filters, tagIds, month));
       const total = selected.length;
-      const ids = selected.slice((page - 1) * 48, page * 48).map((p) => p.asset_id);
+      const batch = browseWindow(selected, 48, p => [p.sort_date ? -p.sort_date.getTime() : Number.MAX_SAFE_INTEGER, p.asset_id], { page, after: options.after, anchor: options.photoId ? p => p.photo_id === options.photoId : undefined });
+      const ids = batch.items.map(p => p.asset_id);
       const facet = (key: 'camera' | 'lens') => {
         const options = new Map<string, { id: string; name: string; count: number }>();
         for (const p of evidence.filter((p) => matchesPhoto(p, filters, tagIds, month, key))) {
@@ -204,7 +209,8 @@ export async function publicPhotoFeed(
         months: months.map((m) => ({ ...m, count: Number(m.count) })),
         sort,
         month,
-        page,
+        page: batch.window.page,
+        window: batch.window,
         total,
       };
     });

@@ -1,3 +1,4 @@
+import { browseWindow, type BrowseWindow } from './browse-window.server.ts';
 import { publicPhotoPlaces } from './places.server.ts';
 import { photoProfiles } from './shared-photos.server.ts';
 import { adminTags } from './tags.server.ts';
@@ -32,7 +33,7 @@ type AlbumRow = {
   taken_at: Date | null;
   updated_at: Date;
 };
-export async function publicCatalog(db: Kysely<unknown>, slug?: string, search = '') {
+export async function publicCatalog(db: Kysely<unknown>, slug?: string, search = '', windowOptions?: { page?: number; after?: string | null; photoId?: string | null }) {
   const query = search.normalize('NFKC').trim().slice(0, 120);
   const needle = query.toLocaleLowerCase();
   const matches = (parts: string[]) =>
@@ -84,7 +85,22 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
       }));
       const active = slug ? albums.find((a) => a.slug === slug) : null;
       if (slug) ensure(active, '相册不存在或尚未公开。', 404);
+      let photoWindow: BrowseWindow | undefined;
       if (active) {
+        let selectedIds: string[] | undefined;
+        if (windowOptions) {
+          const membership = (await sql<{photo_id: string; group_id: string | null; position: number}>`SELECT photo_id,group_id,position FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(trx)).rows;
+          const groups = new Map<string, typeof membership>();
+          for (const row of membership) {
+            const id = row.group_id ? `group:${row.group_id}` : `photo:${row.photo_id}`;
+            groups.set(id, [...(groups.get(id) ?? []), row]);
+          }
+          const batch = browseWindow([...groups.values()], 48, members => [Number(members[0]!.position), members[0]!.photo_id], {
+            ...windowOptions, anchor: windowOptions.photoId ? members => members.some(p => p.photo_id === windowOptions.photoId) : undefined,
+          });
+          photoWindow = batch.window;
+          selectedIds = batch.items.flatMap(members => members.map(p => p.photo_id));
+        }
         const geo = await publicPhotoPlaces(trx, active.id);
         const photos = (
           await sql<{
@@ -104,7 +120,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
             public_exif: DisplayPhoto['exif'];
             latitude: number | null;
             longitude: number | null;
-          }>`SELECT asset_id,tags,photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ORDER BY position,photo_id`.execute(
+          }>`SELECT asset_id,tags,photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ${selectedIds ? sql`AND photo_id=ANY(${selectedIds}::uuid[])` : sql``} ORDER BY position,photo_id`.execute(
             trx,
           )
         ).rows;
@@ -112,7 +128,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
           await sql<{ asset_id: string; albumSlug: string; albumTitle: string; photoId: string }>`
             SELECT p.asset_id,a.slug AS "albumSlug",a.title AS "albumTitle",p.photo_id AS "photoId"
             FROM gallery.published_photo p JOIN gallery.published_album a ON a.album_id=p.album_id
-            WHERE p.asset_id IN (SELECT asset_id FROM gallery.published_photo WHERE album_id=${active.id}::uuid)
+            WHERE p.asset_id IN (SELECT asset_id FROM gallery.published_photo WHERE album_id=${active.id}::uuid ${selectedIds ? sql`AND photo_id=ANY(${selectedIds}::uuid[])` : sql``})
             ORDER BY a.position,a.first_published_at,a.album_id,p.photo_id`.execute(trx)
         ).rows;
         const byAsset = new Map<string, NonNullable<DisplayPhoto['occurrences']>>();
@@ -198,8 +214,28 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
           }
         }
       }
-      return { site, albums, active, albumSearch: { query, matchedIds: [...matchedIds] } };
+      return { site, albums, active, photoWindow, albumSearch: { query, matchedIds: [...matchedIds] } };
     });
+}
+/** Only one batch plus breadcrumb metadata crosses the public response boundary. */
+export async function publicAlbumBrowse(db: Kysely<unknown>, options: {
+  slug?: string; search?: string; sort?: string; albumPage?: number; albumAfter?: string | null; albumAnchor?: string | null;
+  photoPage?: number; photoAfter?: string | null; photoId?: string | null;
+} = {}) {
+  const catalog = await publicCatalog(db, options.slug, options.search, { page: options.photoPage, after: options.photoAfter, photoId: options.photoId });
+  const sort = options.sort === 'taken' ? 'taken' : 'updated';
+  const candidates = catalog.albums.filter(a => !catalog.active && catalog.albumSearch.query
+    ? catalog.albumSearch.matchedIds.includes(a.id) : a.parent === (catalog.active?.id ?? ''));
+  const dateKey = (value?: string | null) => value ? -new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
+  const batch = browseWindow(candidates, 24, a => [dateKey(sort === 'taken' ? a.takenAt : a.updatedAt), dateKey(a.updatedAt), a.id], { page: options.albumPage, after: options.albumAfter, anchor: options.albumAnchor ? a => a.id === options.albumAnchor : undefined });
+  const parents: DisplayAlbum[] = [];
+  let parent = catalog.active?.parent;
+  while (parent && !parents.some(a => a.id === parent)) {
+    const next = catalog.albums.find(a => a.id === parent);
+    if (!next) break;
+    parents.push(next); parent = next.parent;
+  }
+  return { ...catalog, albums: [...batch.items, ...parents], albumWindow: batch.window, albumSort: sort };
 }
 /** Authenticated draft projection uses the same rendering DTO as public pages. */
 export async function draftCatalog(db: Kysely<unknown>, albumId: string) {

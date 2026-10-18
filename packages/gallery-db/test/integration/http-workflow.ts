@@ -320,6 +320,62 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.match(pageHtml, /Load photo 49/);
     assert.equal((pageHtml.match(/class="photo /g) ?? []).length, 48);
     const pageMs = performance.now() - pageStart;
+    // Public continuation endpoints stay bounded, retain order and use live qualification.
+    const seen = new Set<string>();
+    let after = '';
+    for (let batch = 0; batch < 5; batch++) {
+      const response = await fetch(`${origins.public}/api/browse?kind=album-photos&slug=${content.slug}${after ? `&after=${encodeURIComponent(after)}` : ''}`);
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('cache-control') ?? '', /no-store/);
+      const value = await response.json();
+      assert.equal(value.active.photos.length, 48);
+      for (const p of value.active.photos) { assert.ok(!seen.has(p.id)); seen.add(p.id); }
+      after = value.photoWindow.next ?? '';
+      assert.equal(value.photoWindow.hasMore, batch < 4);
+    }
+    assert.equal(seen.size, 240);
+    const deep = await fetch(`${origins.public}/api/browse?kind=album-photos&slug=${content.slug}&photo=${large.photos[200]!.id}`).then(r => r.json());
+    assert.ok(deep.active.photos.some((p: {id: string}) => p.id === large.photos[200]!.id));
+    assert.equal(deep.photoWindow.page, 5);
+    const feedFirst = await fetch(`${origins.public}/api/browse?kind=photos`).then(r => r.json());
+    const feedNext = await fetch(`${origins.public}/api/browse?kind=photos&after=${encodeURIComponent(feedFirst.photoWindow.next)}`).then(r => r.json());
+    assert.equal(feedFirst.feed.photos.length, 48);
+    assert.equal(feedNext.feed.photos.length, 48);
+    assert.ok(feedNext.feed.photos.every((p: {id: string}) => !feedFirst.feed.photos.some((x: {id: string}) => x.id === p.id)));
+
+    for (let i = 0; i < 26; i++) {
+      const entry = await api('create', { title: `Continuous test ${i + 1}`, treeVersion: (await current()).site.treeVersion }).then(r => r.json());
+      const state = await current(), album = state.albums.find((a: ManagedAlbum) => a.id === entry.id);
+      await api('publish', { id: entry.id, version: album.version, draftVersion: album.draftVersion, treeVersion: state.site.treeVersion });
+    }
+    const albumsFirst = await fetch(`${origins.public}/api/browse?kind=albums&q=Continuous%20test`).then(r => r.json());
+    const albumsNext = await fetch(`${origins.public}/api/browse?kind=albums&q=Continuous%20test&albumAfter=${encodeURIComponent(albumsFirst.albumWindow.next)}`).then(r => r.json());
+    assert.equal(albumsFirst.albums.length, 24);
+    assert.equal(albumsNext.albums.length, 2);
+    assert.equal(albumsNext.albumWindow.hasMore, false);
+
+    // Optional browser acceptance against this disposable database and synthetic media.
+    if (process.env.GALLERY_BROWSER_CHECK_SCRIPT) {
+      const browserCheck = spawn(process.execPath, [process.env.GALLERY_BROWSER_CHECK_SCRIPT], {
+        env: { ...process.env, GALLERY_BROWSER_ORIGIN: origins.public, GALLERY_BROWSER_ALBUM: content.slug },
+        stdio: 'inherit',
+      });
+      assert.equal((await once(browserCheck, 'exit'))[0], 0, 'Browser acceptance failed');
+    }
+
+    // A group spanning the old 48-photo boundary is delivered atomically, including its cover.
+    const grouped = structuredClone((await version()).content);
+    const groupId = randomUUID();
+    grouped.groups = [{ id: groupId, title: 'Boundary group', description: '', cover: grouped.photos[48]!.id }];
+    for (const photo of grouped.photos.slice(46, 49)) photo.group = groupId;
+    await api('save', { ...(await version()), content: grouped });
+    await api('publish', await version());
+    const groupBatch = await fetch(`${origins.public}/api/browse?kind=album-photos&slug=${content.slug}`).then(r => r.json());
+    assert.equal(groupBatch.active.photos.length, 50);
+    assert.equal(groupBatch.active.photos.filter((p: {group?: {id: string}}) => p.group?.id === groupId).length, 3);
+    const groupNext = await fetch(`${origins.public}/api/browse?kind=album-photos&slug=${content.slug}&after=${encodeURIComponent(groupBatch.photoWindow.next)}`).then(r => r.json());
+    assert.ok(groupNext.active.photos.every((p: {id: string}) => !groupBatch.active.photos.some((x: {id: string}) => x.id === p.id)));
+
     const mediaUrls = large.photos.slice(0, 24).map((p) => `${origins.public}/media/${created.id}/${p.id}`);
     async function batch() {
       const start = performance.now();
@@ -338,6 +394,7 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
       `240-photo fixture: publish ${(pageStart - publishStart).toFixed(0)} ms; page ${pageMs.toFixed(0)} ms; 24 concurrent thumbnails cold ${coldMs.toFixed(0)} ms / warm ${warmMs.toFixed(0)} ms.`,
     );
     await api('availability', { ...(await version()), action: 'offline' });
+    assert.equal((await fetch(`${origins.public}/api/browse?kind=album-photos&slug=${content.slug}`)).status, 404);
     assert.equal((await fetch(mediaUrls[0]!)).status, 404); // Warm encoding cache cannot bypass authorization.
     await api('availability', { ...(await version()), action: 'restore' });
     // Article HTTP loop: no seed data leaks to production, all routes use real runtime roles.

@@ -3,7 +3,17 @@
   import { enterViewerFullscreen, exitViewerFullscreen } from './viewer-fullscreen';
   import { captureTime } from '../../gallery-core/src/capture-time';
   import Markdown from './Markdown.svelte';
+  import LoadMore from './LoadMore.svelte';
+  import type { BrowseStream } from './browse-stream';
   import AlbumCover from './AlbumCover.svelte';
+
+  function previewPlaceholder(image: HTMLImageElement) {
+    const ready = () => { delete image.dataset.loading; };
+    if (image.complete && image.naturalWidth) ready();
+    image.addEventListener('load', ready);
+    image.addEventListener('error', ready);
+    return { destroy() { image.removeEventListener('load', ready); image.removeEventListener('error', ready); } };
+  }
   import PublicFrame from './PublicFrame.svelte';
   import Icon from './Icon.svelte';
   import PhotoRefinements from './PhotoRefinements.svelte';
@@ -13,6 +23,7 @@
   import type { DisplayAlbum, DisplayPhoto } from '../../gallery-core/src/content';
   let {
     site,
+    stream,
     albums,
     active = null,
     preview = false,
@@ -35,6 +46,7 @@
       contactLinks?: import('../../gallery-core/src/content').ContactLink[];
     };
     albums: DisplayAlbum[];
+    stream?: BrowseStream;
     albumSearch?: { query: string; matchedIds: string[] };
     searchAlbums?: (query: string) => void;
     active?: DisplayAlbum | null;
@@ -231,6 +243,7 @@
   });
   const link = (a: DisplayAlbum) => (preview ? `/preview/${a.id}` : `/albums/${a.slug}`);
   let albumSort = $state<'updated' | 'taken'>('updated');
+  $effect(() => { if (stream) albumSort = stream.sort === 'taken' ? 'taken' : 'updated'; });
   let children = $derived(
     albums
       .filter((a) =>
@@ -269,9 +282,13 @@
     void exitViewerFullscreen();
     immersive = false;
     photo = null;
-    if (initialPhotoId && navigatePhoto) navigatePhoto(null, true);
+    if (stream) stream.photoChange(null);
+    else if (initialPhotoId && navigatePhoto) navigatePhoto(null, true);
   }
   async function show(p: DisplayPhoto) {
+    if (stream) {
+      photo = p; stream.photoChange(p); await tick(); if (!viewer.open) viewer.showModal(); return;
+    }
     if (!preview && navigatePhoto) {
       navigatePhoto(p);
       return;
@@ -282,19 +299,46 @@
   }
   function choose(next: DisplayPhoto | null) {
     if (!next) return;
-    if (!preview && navigatePhoto) navigatePhoto(next, true);
+    if (stream) { photo = next; stream.photoChange(next); }
+    else if (!preview && navigatePhoto) navigatePhoto(next, true);
     else photo = next;
   }
-  function shift(offset: number) {
+  async function shift(offset: number) {
     if (!photo) return;
     const index = itemIndex(photo),
       next = index + offset;
-    if (feed && (next < 0 || next >= items.length)) {
+    if (stream && (next < 0 || next >= items.length)) {
+      const current = photo;
+      if ((next < 0 && stream.previous.photos) || (next >= items.length && stream.photos?.hasMore)) {
+        if (await stream.load('photos', next < 0)) {
+          await tick();
+          const index = itemIndex(current);
+          choose(items[index + offset] ?? null);
+        }
+      }
+      return;
+    }
+    if (feed && !stream && (next < 0 || next >= items.length)) {
       navigateBoundary?.(offset);
       return;
     }
     choose(items[(next + items.length) % items.length] ?? null);
   }
+  $effect(() => {
+    if (stream && photo && itemIndex(photo) >= items.length - 5 && stream.photos?.hasMore && !stream.loading.photos && !stream.errors.photos) {
+      untrack(() => void stream?.load('photos'));
+    }
+  });
+  $effect(() => {
+    if (!stream) return;
+    const selected = initialPhotoId ? active?.photos.find(p => p.id === initialPhotoId) : null;
+    untrack(() => {
+      if (selected && photo?.id !== selected.id) {
+        photo = selected;
+        void tick().then(() => { if (viewer?.isConnected && !viewer.open) viewer.showModal(); });
+      } else if (!initialPhotoId && photo) { photo = null; viewer?.close(); }
+    });
+  });
   function angle(offset: number) {
     if (!photo || variants.length < 2) return;
     const i = variants.findIndex((p) => p.id === photo!.id);
@@ -326,7 +370,8 @@
     草稿预览 · 仅管理员可见 · 当前显示已保存内容 <a href="/albums">返回工作台 →</a>
   </div>{/if}
 {#snippet albumPagination()}
-  {#if children.length > 24}<div class="pagination">
+  {#if stream?.albums}<LoadMore more={stream.albums.hasMore} loading={stream.loading.albums} error={stream.errors.albums} label="相册" load={() => stream!.load('albums')} previous={stream.previous.albums} loadPrevious={() => stream!.load('albums', true)} />
+  {:else if children.length > 24}<div class="pagination">
       <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页</button><span
         >{albumPage + 1} / {Math.ceil(children.length / 24)}</span
       ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}
@@ -452,6 +497,8 @@
               aria-label={`查看${p.group?.title || p.title || `第 ${index + 1} 张照片`}`}
               onclick={() => show(p)}
               ><img
+                data-loading
+                use:previewPlaceholder
                 src={p.thumbnail}
                 alt={p.alt || p.title || p.group?.title || '查看照片'}
                 width="600"
@@ -461,15 +508,15 @@
             >
           {/each}
           {#if !items.length}<p class="empty">这里还没有公开照片。</p>{/if}
-          <div class="pagination feed-pagination">
+          {#if stream?.photos}<LoadMore more={stream.photos.hasMore} loading={stream.loading.photos} error={stream.errors.photos} label="照片" load={() => stream!.load('photos')} previous={stream.previous.photos} loadPrevious={() => stream!.load('photos', true)} />{:else}<div class="pagination feed-pagination">
             {#if feed.page > 1}<a href={feedLink(feed.page - 1)}>上一页</a>{/if}<span
               >{feed.page} / {Math.max(1, Math.ceil(feed.total / 48))}</span
             >{#if feed.page * 48 < feed.total}<a href={feedLink(feed.page + 1)}>下一页</a>{/if}
-          </div>
+          </div>{/if}
         </div>
       </div>
     {:else if !active}<div class="heading album-heading">
-        <h1>相册 <small>{children.length} 本</small></h1>
+        <h1>相册 <small>{stream?.albums?.total ?? children.length} 本</small></h1>
         <div class="album-tools">
           {#if albumSearch}<form
               class="album-search"
@@ -523,8 +570,9 @@
         </div>
       </div>
       <div class="album-grid">
-        {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album (album.id)}<a
+        {#each (stream ? children : children.slice(albumPage * 24, (albumPage + 1) * 24)) as album (album.id)}<a
             class="album-card"
+            id={`album-${album.id}`}
             href={link(album)}
             >{#if album.cover}<div class="album-cover">{#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}</div>{:else}<div class="empty-cover">
                 {album.title.slice(0, 1)}
@@ -549,12 +597,13 @@
       <div class="detail" class:no-story={!documentMarkdown(active, active.summary).trim()}>
         <div class="images">
           {#if children.length}<h2 class="section-title">
-              子相册 <span>{children.length}</span>
+              子相册 <span>{stream?.albums?.total ?? children.length}</span>
               {@render albumSorting()}
             </h2>
             <div class="children-grid" class:compact-children={active.photos.length > 0}>
-              {#each children.slice(albumPage * 24, (albumPage + 1) * 24) as album (album.id)}<a
+              {#each (stream ? children : children.slice(albumPage * 24, (albumPage + 1) * 24)) as album (album.id)}<a
                   class="album-card"
+            id={`album-${album.id}`}
                   href={link(album)}
                   >{#if album.cover}<div class="album-cover">{#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}</div>{:else}<div class="empty-cover">
                       {album.title.slice(0, 1)}
@@ -565,10 +614,10 @@
             </div>
             {@render albumPagination()}{/if}
           {#if active.photos.length}<h2 class="section-title">
-              照片 <span>{active.photos.length}</span>
+              照片 <span>{stream ? active.count : active.photos.length}</span>
             </h2>{/if}
           <div class="photos-grid">
-            {#each items.slice(page * 48, (page + 1) * 48) as p, index}<button
+            {#each (stream ? items : items.slice(page * 48, (page + 1) * 48)) as p, index (p.id)}<button
                 aria-label={`查看${p.group?.title || p.title || `第 ${page * 48 + index + 1} 张照片`}`}
                 id={`photo-${p.id}`}
                 class="photo"
@@ -576,6 +625,8 @@
                 onclick={() => show(p)}
                 ><span class="photo-frame"
                   ><img
+                    data-loading
+                    use:previewPlaceholder
                     src={p.thumbnail}
                     alt={p.alt || p.title || '查看照片'}
                     loading="lazy"
@@ -590,7 +641,7 @@
           </div>
           {#if !active.photos.length && !children.length}<p class="empty">
               本册暂无直接照片{children.length ? '，可以继续浏览子相册。' : '。'}
-            </p>{/if}{#if items.length > 48}<div class="pagination">
+            </p>{/if}{#if stream?.photos && (items.length || stream.photos.hasMore)}<LoadMore more={stream.photos.hasMore} loading={stream.loading.photos} error={stream.errors.photos} label="照片" load={() => stream!.load('photos')} previous={stream.previous.photos} loadPrevious={() => stream!.load('photos', true)} />{:else if items.length > 48}<div class="pagination">
               <button disabled={page === 0} onclick={() => page--}>上一页</button><span
                 >{page + 1} / {Math.ceil(items.length / 48)}</span
               ><button disabled={(page + 1) * 48 >= items.length} onclick={() => page++}>下一页</button>
@@ -631,7 +682,7 @@
     <div class="viewer-toolbar">
       <span
         >{feed ? '相片' : '相册项目'}
-        {itemIndex(photo) + 1} / {items.length}{variants.length
+        {(stream?.photoOffset ?? 0) + itemIndex(photo) + 1} / {stream?.photos?.total ?? items.length}{variants.length
           ? ` · 组内 ${variants.findIndex((p) => p.id === photo!.id) + 1} / ${variants.length}`
           : ''}</span
       >
@@ -832,7 +883,8 @@
       class:chosen={albumSort === 'updated'}
       aria-pressed={albumSort === 'updated'}
       onclick={() => {
-        albumSort = 'updated';
+        if (stream) stream.changeSort('updated');
+        else albumSort = 'updated';
         albumPage = 0;
       }}>最近更新</button
     >
@@ -840,7 +892,8 @@
       class:chosen={albumSort === 'taken'}
       aria-pressed={albumSort === 'taken'}
       onclick={() => {
-        albumSort = 'taken';
+        if (stream) stream.changeSort('taken');
+        else albumSort = 'taken';
         albumPage = 0;
       }}>拍摄时间</button
     >
@@ -1051,6 +1104,13 @@
     padding: 0;
     isolation: isolate;
   }
+  .photo img[data-loading] {
+    background: linear-gradient(100deg, #edf0e9 25%, #f7f8f4 50%, #edf0e9 75%);
+    background-size: 200% 100%;
+    animation: photo-loading 1.6s linear infinite;
+  }
+  @keyframes photo-loading { to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { .photo img[data-loading] { animation: none; } }
   .stack .photo-frame {
     margin: 3px 12px 15px 3px;
   }
