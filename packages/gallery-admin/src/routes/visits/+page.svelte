@@ -1,39 +1,68 @@
 <script lang="ts">
   import Frame from '$lib/MapAdminFrame.svelte';
-  import { SegmentedControl } from '@gallery/ui';
-  import { chinaRegions } from '@gallery/core';
-  import { invalidateAll } from '$app/navigation';
+  import { SegmentedControl, SearchField } from '@gallery/ui';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { tick } from 'svelte';
   let { data } = $props();
   type RecordItem = (typeof data.visits.records)[number];
-  const scopeSelected = $derived(data.scope === 'region' ? !!data.region : !!data.country);
-  const records = $derived(scopeSelected ? data.visits.records : []);
-  const stale = $derived(scopeSelected ? data.visits.stale : []);
-  const availableRegions = $derived(chinaRegions.map(region => ({
-    id: region.code,
-    name: data.visits.regions.find(r => r.id === region.code)?.name ?? region.name,
-    count: data.visits.regions.find(r => r.id === region.code)?.count ?? 0,
-  })));
-  const regionName = $derived(availableRegions.find(r => r.id === data.region)?.name ?? '省级地区');
-  const scopeKey = $derived(`${data.scope}:${data.country}:${data.region}`);
+  type Detail = {
+    records: { id: string; start: string | null; end: string | null; label: string;
+      manual: boolean; version: number; photoIds: string[] }[];
+    photos: { id: string; thumbnail: string; date: string | null }[];
+  };
+  const records = $derived(data.visits.records);
+  const scopeKey = $derived([data.scope, data.country, data.region, data.q, data.status, data.visits.page].join(':'));
+  let selected = $state<string[]>([]), editing = $state(false), readonly = $state(false),
+    id = $state<string | null>(null), version = $state(0),
+    replace = $state<{ id: string; version: number }[]>([]), photoIds = $state<string[]>([]),
+    start = $state(''), end = $state(''), label = $state(''), photoPage = $state(1),
+    message = $state(''), busy = $state(false), failed = $state(false), loading = $state(false),
+    detailError = $state(''), editorPhotos = $state<Detail['photos']>([]),
+    editorRows = $state<RecordItem[]>([]), search = $state('');
+  let detailController: AbortController | undefined;
+  let editDialog = $state<HTMLDivElement>();
+  const editorPlace = $derived(editorRows[0]);
+  const selectedRecords = $derived(records.filter((v) => selected.includes(v.id)));
+  const selectedPlace = $derived(selectedRecords[0]?.place);
+  const visiblePhotos = $derived(readonly ? editorPhotos.filter((p) => photoIds.includes(p.id)) : editorPhotos);
   $effect(() => {
     void scopeKey;
     selected = [];
+    search = data.q;
     editing = false;
-    message = '';
+    detailController?.abort();
+    loading = false;
+    return () => detailController?.abort();
   });
-  let selected = $state<string[]>([]),
-    editing = $state(false),
-    id = $state<string | null>(null),
-    version = $state(0),
-    replace = $state<{ id: string; version: number }[]>([]),
-    photoIds = $state<string[]>([]),
-    start = $state(''),
-    end = $state(''),
-    label = $state(''),
-    photoPage = $state(1),
-    message = $state(''),
-    busy = $state(false),
-    failed = $state(false);
+  function visitLink(v: RecordItem) {
+    return `${data.publicOrigin}/visited/${v.region ? `regions/${v.region}` : v.country}?visit=${encodeURIComponent(v.id)}`;
+  }
+  function listLink(changes: Record<string, string>) {
+    const params = new URLSearchParams({ scope: data.scope, q: data.q, status: data.status });
+    if (data.scope === 'region') params.set('region', data.region);
+    else params.set('country', data.country);
+    for (const [key, value] of Object.entries(changes)) params.set(key, value);
+    return `/visits?${params}`;
+  }
+  function filter(event: SubmitEvent) {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const params = new URLSearchParams();
+    for (const [key, value] of new FormData(form)) if (typeof value === 'string' && value) params.set(key, value);
+    void goto(`/visits?${params}`, { keepFocus: true, noScroll: true });
+  }
+  function closeDialog() {
+    if (busy) return;
+    detailController?.abort();
+    editing = false;
+    loading = false;
+  }
+  async function editPhotos() {
+    readonly = false;
+    photoPage = 1;
+    await tick();
+    editDialog?.querySelector<HTMLInputElement>('input')?.focus();
+  }
   function focusDialog(node: HTMLElement) {
     const prior = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
@@ -65,36 +94,59 @@
       },
     };
   }
-  function open(records: RecordItem[]) {
-    id = records.length === 1 && records[0]!.manual ? records[0]!.id : null;
-    version = records[0]?.version ?? 0;
-    replace = id ? [] : records.filter((v) => v.manual).map((v) => ({ id: v.id, version: v.version }));
-    photoIds = [...new Set(records.flatMap((v) => v.photoIds))];
-    const dates = records
-      .flatMap((v) => [v.start, v.end])
-      .filter((d): d is string => !!d)
-      .sort();
-    start = dates[0] ?? '';
-    end = dates.at(-1) ?? '';
-    label = records.length === 1 ? records[0]!.label : '';
-    photoPage = 1;
+  async function open(rows: RecordItem[], viewOnly = false) {
+    if (!rows.length || rows.some((r) => r.invalid || r.place !== rows[0]!.place)) return;
+    detailController?.abort();
+    const controller = new AbortController();
+    detailController = controller;
+    editorRows = rows;
+    readonly = viewOnly;
     editing = true;
+    loading = true;
+    detailError = '';
     message = '';
+    editorPhotos = [];
+    const first = rows[0]!;
+    try {
+      const params = new URLSearchParams({ country: first.country });
+      if (first.region) params.set('region', first.region);
+      const response = await fetch(`/api/visits?${params}`, { signal: controller.signal });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? '照片加载失败。');
+      if (controller.signal.aborted) return;
+      const detail = result as Detail;
+      const current = detail.records.filter((v) => rows.some((r) => r.id === v.id));
+      if (current.length !== rows.length || current.some((v) => v.version !== rows.find((r) => r.id === v.id)!.version))
+        throw new Error('到访记录已变化，请关闭窗口并刷新列表。');
+      id = current.length === 1 && current[0]!.manual ? current[0]!.id : null;
+      version = current[0]?.version ?? 0;
+      replace = id ? [] : current.filter((v) => v.manual).map((v) => ({ id: v.id, version: v.version }));
+      photoIds = [...new Set(current.flatMap((v) => v.photoIds))];
+      const dates = current.flatMap((v) => [v.start, v.end]).filter((d): d is string => !!d).sort();
+      start = dates[0] ?? '';
+      end = dates.at(-1) ?? '';
+      label = current.length === 1 ? current[0]!.label : '';
+      editorPhotos = detail.photos;
+      photoPage = 1;
+    } catch (error) {
+      if (!controller.signal.aborted) detailError = error instanceof Error ? error.message : '照片加载失败，请重试。';
+    } finally {
+      if (!controller.signal.aborted) loading = false;
+    }
   }
   async function post(action: string, payload: unknown) {
-    const response = await fetch(`/api/${action}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetch(`/api/${action}`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message);
     return result;
   }
   async function save() {
+    if (!editorPlace || readonly || loading || detailError) return;
     busy = true;
     try {
-      await post('visit-save', { country: data.country, region: data.region || undefined, id, version, replace, photoIds, start, end, label });
+      await post('visit-save', { country: editorPlace.country, region: editorPlace.region || undefined,
+        id, version, replace, photoIds, start, end, label });
       editing = false;
       selected = [];
       await invalidateAll();
@@ -103,117 +155,112 @@
     } catch (e) {
       failed = true;
       message = e instanceof Error ? e.message : '保存失败。';
-    } finally {
-      busy = false;
-    }
+    } finally { busy = false; }
   }
-  async function reset(record: { id: string; version: number }) {
+  async function reset(record: RecordItem) {
     busy = true;
     try {
-      await post('visit-delete', { ...record, region: data.region || undefined });
+      await post('visit-delete', { id: record.id, version: record.version, region: record.region || undefined });
       selected = [];
       await invalidateAll();
-      message = '已移除人工校正，按照当前公开照片重新整理。';
+      message = record.invalid ? '已移除失效的人工校正。' : '已移除人工校正，按照当前公开照片重新整理。';
       failed = false;
     } catch (e) {
       failed = true;
       message = e instanceof Error ? e.message : '操作失败。';
-    } finally {
-      busy = false;
-    }
+    } finally { busy = false; }
   }
 </script>
 
-<svelte:head><title>到访记录 · Gallery 管理</title></svelte:head><Frame
-  active="visits"
-  user={data.user}
-  publicOrigin={data.publicOrigin}
-  ><div class="map-admin">
+<svelte:head><title>到访记录 · Gallery 管理</title></svelte:head>
+<Frame active="visits" user={data.user} publicOrigin={data.publicOrigin}>
+  <div class="map-admin visits-page">
     <h1>到访记录</h1>
-    <p>自动汇总公开照片的位置和当地拍摄日期。可修改日期、合并记录，或选出部分照片另建一次到访。日期仅表示照片证据。</p>
+    <p>按公开照片的位置和当地拍摄日期整理到访，可调整名称、日期、合并或拆分记录。</p>
     <div class="scope-control"><SegmentedControl label="到访整理范围" value={data.scope} options={[
       { value: 'country', label: '国家到访', href: '/visits' },
       { value: 'region', label: '中国省级到访', href: '/visits?scope=region' },
     ]} /></div>
-    <div class="toolbar">
-      {#if data.scope === 'region'}
-        <label>省级地区 <select value={data.region}
-          onchange={(e) => (location.href = `/visits?scope=region&region=${encodeURIComponent(e.currentTarget.value)}`)}>
-          <option value="">请选择省级地区</option>
-          {#each availableRegions as region}<option value={region.id}>{region.name} · {region.count} 张</option>{/each}
-        </select></label>
-        {#if data.visits.regions.some(region => region.id === data.region && region.count > 0)}<a href={`${data.publicOrigin}/visited/regions/${data.region}`} target="_blank" rel="noreferrer">查看前台 →</a>{/if}
-      {:else}
-        <label>国家 <select value={data.country}
-          onchange={(e) => (location.href = `/visits?country=${encodeURIComponent(e.currentTarget.value)}`)}>
-          <option value="">请选择国家</option>
-          {#each data.visits.countries as country}<option value={country.id}>{country.name} · {country.count} 张</option>{/each}
-        </select></label>
-        {#if data.country}<a href={`${data.publicOrigin}/visited/${data.country}`} target="_blank" rel="noreferrer">查看前台 →</a>{/if}
-      {/if}
+    <form class="toolbar" method="GET" action="/visits" onsubmit={filter}>
+      <input type="hidden" name="scope" value={data.scope} />
+      <div class="search-box"><SearchField name="q" bind:value={search} label="搜索到访记录" placeholder="搜索地点、到访名称" maxlength={200} /></div>
+      <label class="filter-field">{data.scope === 'region' ? '省级地区' : '国家'}
+        <select name={data.scope === 'region' ? 'region' : 'country'} value={data.scope === 'region' ? data.region : data.country}
+          onchange={(e) => e.currentTarget.form?.requestSubmit()}>
+          <option value="">{data.scope === 'region' ? '全部省级地区' : '全部国家'}</option>
+          {#each data.visits.places as place}<option value={place.id}>{place.name} · {place.count} 段</option>{/each}
+        </select>
+      </label>
+      <label class="filter-field">状态<select name="status" value={data.status} onchange={(e) => e.currentTarget.form?.requestSubmit()}>
+        <option value="">全部状态</option><option value="auto">自动整理</option><option value="manual">人工整理</option>
+        <option value="review">待核对</option><option value="invalid">已失效</option>
+      </select></label>
+      <button class="filter-submit">搜索</button>
+      {#if data.q || data.country && data.scope === 'country' || data.region || data.status}<a class="text-link" href={data.scope === 'region' ? '/visits?scope=region' : '/visits'}>清除筛选</a>{/if}
+    </form>
+    <div class="list-summary">
+      <p>共 <strong>{data.visits.activeTotal}</strong> 段到访 · {data.visits.placeCount} 个{data.scope === 'region' ? '省级地区' : '国家'}{#if data.q || data.status || data.region || data.scope === 'country' && data.country} · 当前筛选 {data.visits.total} 条{/if}</p>
+      {#if data.visits.invalidTotal}<a class="text-link" href={listLink({ status: 'invalid', page: '1', q: '', country: '', region: '' })}>{data.visits.invalidTotal} 条失效校正</a>{/if}
     </div>
-    {#if data.scope === 'region'}
-      <p class="scope-note">省级到访独立整理，不影响中国的国家到访记录。{#if data.region}当前整理：{regionName}。{/if}</p>
-      {#if data.visits.unassignedProvince || data.visits.restricted}<p class="notice">
-        全国照片中{#if data.visits.unassignedProvince}有 {data.visits.unassignedProvince} 张省级归属待核对{/if}{#if data.visits.unassignedProvince && data.visits.restricted}，{/if}{#if data.visits.restricted}有 {data.visits.restricted} 张受位置公开设置限制{/if}，未计入省级到访。
-        <a href={data.visits.unassignedProvince ? "/places?view=photos&review=region" : "/places?view=photos&review=restricted"}>前往地点管理</a>
-      </p>{/if}
-    {/if}
+    {#if data.scope === 'region'}<p class="scope-note">省级到访独立整理，不影响国家到访记录。</p>{/if}
+    {#if data.scope === 'region' && (data.visits.unassignedProvince || data.visits.restricted)}<p class="notice">
+      {#if data.visits.unassignedProvince}{data.visits.unassignedProvince} 张照片省级归属待核对。{/if}
+      {#if data.visits.restricted}{data.visits.restricted} 张照片受位置公开设置限制。{/if}
+      <a href={data.visits.unassignedProvince ? '/places?view=photos&review=region' : '/places?view=photos&review=restricted'}>前往地点管理</a>
+    </p>{/if}
+    {#if data.scope === 'country' && data.visits.unassigned}<p class="notice">{data.visits.unassigned} 张公开位置照片未能可靠归属国家。<a href="/places?view=photos&review=country">前往核对</a></p>{/if}
     {#if message && !editing}<p class="notice" class:error={failed} role="status">{message}</p>{/if}
-    {#if data.scope === 'country' && data.visits.unassigned}<p>
-        {data.visits.unassigned} 张公开位置照片未能可靠归属国家。请在地点管理优先核对；跨国界的近似位置不会强行归国。
-      </p>{/if}
-    {#if selected.length > 1}<button onclick={() => open(records.filter((v) => selected.includes(v.id)))}
-        >合并选中的 {selected.length} 段记录</button
-      >{/if}
-    <div class="records">
-      {#each records as v}<article>
-          <label
-            ><input type="checkbox" bind:group={selected} value={v.id} /><strong
-              >{v.label || (v.start ? `${v.start} — ${v.end}` : '拍摄日期待确认')}</strong
-            ></label
-          >
-          <p>
-            {v.count} 张照片 · {v.manual ? '人工整理' : '自动推导'}
-            {v.needsReview ? '· 有照片失效或位置变化，需要重新核对' : ''}
-          </p>
-          <div class="thumbs">
-            {#each v.photoIds.slice(0, 6) as photoId}{@const photo = data.visits.photos.find(
-                (p) => p.id === photoId,
-              )}{#if photo}<img
-                  src={`${data.publicOrigin}${photo.thumbnail}`}
-                  alt="到访照片"
-                  loading="lazy"
-                />{/if}{/each}
-          </div>
-          <div class="actions">
-            <button onclick={() => open([v])}>编辑 / 拆分</button>{#if v.manual}<button
-                disabled={busy}
-                onclick={() => void reset(v)}>恢复自动整理</button
-              >{/if}
-          </div>
-        </article>{/each}
+    {#if selected.length}<div class="selection-bar">
+      <span>已选 {selected.length} 段{selectedRecords[0]?.placeName}到访</span>
+      <button disabled={selected.length < 2 || busy || loading} onclick={() => void open(selectedRecords)}>合并记录</button>
+      <button class="quiet-button" onclick={() => selected = []}>取消选择</button>
+      <span class="muted">只合并同一地点的到访</span>
+    </div>{/if}
+    <!-- The horizontally scrolling table must be keyboard-scrollable on narrow screens. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="table-wrap" tabindex="0" role="region" aria-label="到访记录表格">
+      <table>
+        <thead><tr><th class="selection-column"><span class="sr-only">选择</span></th><th>地点</th><th>到访名称</th><th>日期</th><th>照片</th><th>整理方式／状态</th><th>操作</th></tr></thead>
+        <tbody>
+          {#each records as v (v.id)}<tr class:invalid={v.invalid}>
+            <td><input type="checkbox" aria-label={`选择${v.placeName} ${v.start ?? '日期待确认'}的到访`} bind:group={selected} value={v.id}
+              disabled={v.invalid || busy || loading || !!selectedPlace && selectedPlace !== v.place} /></td>
+            <td class="place-cell">{v.placeName}</td>
+            <td class="name-cell">{v.invalid ? '失效的人工校正' : v.label || '未命名到访'}</td>
+            <td class="date-cell">{v.invalid ? '—' : v.start ? v.start === v.end ? v.start : `${v.start} — ${v.end}` : '日期待确认'}</td>
+            <td>{#if v.invalid}<span class="muted">0 张</span>{:else}<button class="text-button" disabled={busy || loading} onclick={() => void open([v], true)}>{v.count} 张</button>{/if}</td>
+            <td><div class="record-status"><span>{v.manual ? '人工整理' : '自动整理'}</span>{#if v.invalid}<span class="status-note">已失效</span>{:else if v.needsReview}<span class="status-note">待核对</span>{/if}</div></td>
+            <td><div class="row-actions">
+              {#if !v.invalid}<button class="text-button" disabled={busy || loading} onclick={() => void open([v])}>编辑／拆分</button><a href={visitLink(v)} target="_blank" rel="noreferrer">查看前台</a>{/if}
+              {#if v.manual}<button class="text-button muted" disabled={busy || loading} onclick={() => void reset(v)}>{v.invalid ? '移除失效校正' : '恢复自动整理'}</button>{/if}
+            </div></td>
+          </tr>{/each}
+        </tbody>
+      </table>
+      {#if !records.length}<p class="empty">{data.visits.activeTotal || data.visits.invalidTotal ? '没有符合筛选条件的到访记录。' : '暂无可公开展示的到访记录。'}</p>{/if}
     </div>
-    {#each stale.filter((v) => !records.some((r) => r.id === v.id)) as v}<p class="notice">
-        一条人工记录已经没有有效公开照片，当前不会在前台显示。<button disabled={busy} onclick={() => void reset(v)}
-          >移除失效校正</button
-        >
-      </p>{/each}
-    {#if scopeSelected && !records.length}<p>这个{data.scope === 'region' ? '省级地区' : '国家'}暂无有效公开记录。</p>{:else if !scopeSelected}<p>请选择{data.scope === 'region' ? '省级地区' : '国家'}，查看并整理到访记录。</p>{/if}
+    {#if data.visits.pages > 1}<nav class="pagination" aria-label="到访记录分页">
+      {#if data.visits.page > 1}<a href={listLink({ page: String(data.visits.page - 1) })}>上一页</a>{:else}<span>上一页</span>{/if}
+      <span>{data.visits.page} / {data.visits.pages}</span>
+      {#if data.visits.page < data.visits.pages}<a href={listLink({ page: String(data.visits.page + 1) })}>下一页</a>{:else}<span>下一页</span>{/if}
+    </nav>{/if}
+    <p class="date-note">日期仅表示照片中的到访证据。待核对或已失效的记录可通过状态筛选集中处理。</p>
     {#if editing}<div class="shade">
         <div
           use:focusDialog
+          bind:this={editDialog}
           class="dialog"
           role="dialog"
           aria-modal="true"
           aria-labelledby="edit-title"
           tabindex="-1"
           onkeydown={(e) => {
-            if (e.key === 'Escape' && !busy) editing = false;
+            if (e.key === 'Escape') closeDialog();
           }}
         >
-          <h2 id="edit-title">{id ? '编辑到访' : '整理到访'}</h2>
-          <p>所选照片组成一段{data.scope === 'region' ? regionName : '国家'}到访。取消选中的照片恢复自动推导；{data.scope === 'region' ? '不会改变国家到访记录。' : '不会改变省级到访记录。'}</p>
+          <div class="dialog-heading"><h2 id="edit-title">{readonly ? '到访照片' : '整理到访'} · {editorPlace?.placeName}</h2><button type="button" class="quiet-button" disabled={busy} onclick={closeDialog}>关闭</button></div>
+          {#if loading}<p role="status">正在加载到访照片…</p>{:else if detailError}<p class="notice error" role="alert">{detailError}</p><button onclick={() => void open(editorRows, readonly)}>重新加载</button>{:else}
+          {#if !readonly}<p>所选照片组成一段{editorPlace?.placeName}到访。取消选中的照片恢复自动整理；国家与省级记录分别保存。</p>{/if}
           {#if message}<p class="notice" class:error={failed} role="status">{message}</p>{/if}
           <form
             onsubmit={(e) => {
@@ -221,7 +268,7 @@
               void save();
             }}
           >
-            <label class="field"
+            {#if !readonly}<label class="field"
               >名称（可选）<input bind:value={label} maxlength="120" placeholder={data.scope === 'region' ? '例如：福建春日旅行' : '例如：格鲁吉亚秋日旅行'} /></label
             >
             <div class="dates">
@@ -229,79 +276,78 @@
                 >结束日期<input type="date" bind:value={end} /></label
               >
             </div>
-            <p>日期留空表示尚未确认。已选择 {photoIds.length} 张照片。</p>
+            <p>日期留空表示尚未确认。已选择 {photoIds.length} 张照片。</p>{:else}<p>共 {photoIds.length} 张照片</p>{/if}
             <div class="picker">
-              {#each data.visits.photos.slice((photoPage - 1) * 36, photoPage * 36) as photo}<label
+              {#each visiblePhotos.slice((photoPage - 1) * 36, photoPage * 36) as photo}<label
                   class:checked={photoIds.includes(photo.id)}
                   ><img src={`${data.publicOrigin}${photo.thumbnail}`} alt="到访照片" loading="lazy" /><span
-                    ><input type="checkbox" bind:group={photoIds} value={photo.id} />{photo.date ?? '时间未知'}</span
+                    >{#if !readonly}<input type="checkbox" bind:group={photoIds} value={photo.id} />{/if}{photo.date ?? '时间未知'}</span
                   ></label
                 >{/each}
             </div>
-            {#if data.visits.photos.length > 36}<div class="actions">
+            {#if visiblePhotos.length > 36}<div class="actions">
                 <button type="button" disabled={photoPage === 1} onclick={() => photoPage--}>上一页</button><span
-                  >{photoPage} / {Math.ceil(data.visits.photos.length / 36)}</span
+                  >{photoPage} / {Math.ceil(visiblePhotos.length / 36)}</span
                 ><button
                   type="button"
-                  disabled={photoPage * 36 >= data.visits.photos.length}
+                  disabled={photoPage * 36 >= visiblePhotos.length}
                   onclick={() => photoPage++}>下一页</button
                 >
               </div>{/if}
             <div class="actions">
-              <button disabled={busy || !photoIds.length}>{busy ? '保存中…' : '保存并应用'}</button><button
+              {#if !readonly}<button disabled={busy || !photoIds.length}>{busy ? '保存中…' : '保存并应用'}</button>{:else}<button type="button" onclick={() => void editPhotos()}>编辑这段到访</button>{/if}<button
                 type="button"
                 disabled={busy}
-                onclick={() => (editing = false)}>取消</button
+                onclick={closeDialog}>{readonly ? '关闭' : '取消'}</button
               >
             </div>
-          </form>
+          </form>{/if}
         </div>
       </div>{/if}
   </div></Frame
 >
 
 <style>
-  .scope-control { width: max-content; margin-top: 24px; }
-  .scope-note { margin: 0; }
-  .toolbar {
-    display: flex;
-    gap: 25px;
-    align-items: center;
-    flex-wrap: wrap;
-    margin: 25px 0;
-  }
-  .toolbar a {
-    color: #36593e;
-    font-size: 13px;
-  }
-  .records {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 20px;
-    margin: 24px 0;
-  }
-  article {
-    background: #fff;
-    padding: 22px;
-    border: 1px solid #dde4d8;
-    border-radius: 6px;
-  }
-  article strong {
-    font-weight: 550;
-    margin-left: 8px;
-  }
-  .thumbs {
-    display: flex;
-    gap: 5px;
-    overflow: hidden;
-    margin: 18px 0;
-  }
-  .thumbs img {
-    width: 52px;
-    height: 52px;
-    object-fit: cover;
-    border-radius: 3px;
-  }
+  .scope-control { width: fit-content; max-width: 100%; margin-top: 24px; }
+  .toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; margin: 28px 0 18px; }
+  .search-box { flex: 1 1 220px; max-width: 360px; }
+  .search-box :global(.search-field input) { padding: 8px 32px 8px 34px; height: 40px; }
+  .search-box :global(button.clear-search) { background: transparent; color: #7c8875; padding: 0; }
+  .filter-field { display: grid; gap: 6px; color: #71806c; }
+  .filter-field select { min-width: 135px; height: 40px; }
+  .toolbar .filter-submit { height: 40px; }
+  .text-link { color: #4d6b50; font-size: 12px; text-decoration: none; padding: 10px 0; }
+  .list-summary { display: flex; gap: 18px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .list-summary p { margin: 0; }
+  .list-summary strong { color: #354c3b; font-weight: 550; }
+  .scope-note { margin: 8px 0 0; }
+  .table-wrap { margin-top: 18px; overflow-x: auto; border: 1px solid #dfe5da; border-radius: 8px; background: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+  th { background: #f1f4ee; color: #71806a; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  th, td { padding: 16px 14px; vertical-align: middle; }
+  tbody tr + tr { border-top: 1px solid #e8ece3; }
+  tbody tr:hover { background: #fafbf7; }
+  .selection-column { width: 24px; }
+  td input { margin: 0; accent-color: #49684a; }
+  .place-cell { font-weight: 550; white-space: nowrap; }
+  .name-cell { min-width: 100px; max-width: 240px; overflow-wrap: anywhere; }
+  .date-cell { font-size: 12px; white-space: nowrap; color: #74816d; }
+  .record-status { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; white-space: nowrap; font-size: 12px; color: #7a8572; }
+  .status-note { background: #f5eee0; color: #866931; border-radius: 4px; padding: 2px 5px; font-size: 11px; }
+  .row-actions { display: flex; flex-wrap: wrap; gap: 8px 14px; min-width: 150px; align-items: center; }
+  .row-actions a, .visits-page button.text-button { color: #416746; font: inherit; font-size: 12px; white-space: nowrap; background: transparent; border: 0; padding: 3px 0; text-decoration: none; }
+  .row-actions a:hover, .visits-page button.text-button:hover { color: #243d28; text-decoration: underline; }
+  .visits-page button.muted, .muted { color: #899181; }
+  .selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; padding: 12px 16px; background: #edf2e8; border-radius: 6px; font-size: 12px; }
+  .visits-page button.quiet-button { background: transparent; color: #65785f; border: 1px solid #dbe3d6; }
+  .dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+  .dialog-heading h2 { font-size: 20px; }
+  .pagination { display: flex; gap: 22px; justify-content: center; align-items: center; margin-top: 22px; font-size: 13px; color: #b1b9ab; }
+  .pagination a { color: #416746; text-decoration: none; }
+  .empty { padding: 32px; text-align: center; }
+  .date-note { margin-top: 14px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .table-wrap:focus-visible { outline: 2px solid #8c9e84; outline-offset: 2px; }
   .actions {
     display: flex;
     gap: 12px;
@@ -370,9 +416,7 @@
     margin-top: 5px;
   }
   @media (max-width: 700px) {
-    .records {
-      grid-template-columns: 1fr;
-    }
+
     .dialog {
       padding: 18px;
     }

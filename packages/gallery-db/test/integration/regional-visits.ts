@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type pg from 'pg';
 import { sql, type Kysely } from 'kysely';
 import {
-  publicRegionalVisited, regionOverview, regionPhotos, adminVisited, publicVisited,
+  publicRegionalVisited, regionOverview, regionPhotos, adminVisited, adminVisitIndex, publicVisited,
   saveVisit, deleteVisit, publicPhotoFeed, readPublishedDerivative,
 } from '../../src/index.server.ts';
 
@@ -45,6 +45,24 @@ export async function regionalVisits(
   const chosen = national.photos.filter((p) => fixturePhotoIds.has(p.id));
   const countryId = await saveVisit(db, user, { country: 'CN', photoIds: chosen.map((p) => p.id), start: '2080-01-01', end: '2080-01-31', label: 'Country untouched' });
   const provinceId = await saveVisit(db, user, { country: 'CN', region: 'CN-FJ', photoIds: fixtureFj.map((p) => p.id), start: '2080-01-01', end: '2080-01-04', label: 'Regional independent' });
+  const nationalIndex = await adminVisitIndex(db, { q: 'Country untouched' });
+  assert.equal(nationalIndex.total, 1, 'overview works without choosing a country');
+  assert.equal(nationalIndex.records[0]!.id, countryId);
+  assert.equal(nationalIndex.records[0]!.placeName, '中国');
+  const provinceIndex = await adminVisitIndex(db, { scope: 'region' });
+  assert.ok(provinceIndex.records.some((v) => v.id === provinceId && v.region === 'CN-FJ'));
+  assert.ok(provinceIndex.records.some((v) => v.region === 'CN-JX'), 'all provinces are visible without a province selection');
+  assert.ok(!provinceIndex.records.some((v) => v.id === countryId), 'national and provincial journeys stay independent');
+  assert.ok(!('photos' in provinceIndex) && provinceIndex.records.every((v) => !('photoIds' in v)), 'overview contains no photo payload');
+  assert.ok(!JSON.stringify(provinceIndex).includes(assets[0]!), 'overview does not expose source IDs');
+  const filtered = await adminVisitIndex(db, { scope: 'region', place: 'CN-FJ', q: 'independent', status: 'manual', page: 999 });
+  assert.equal(filtered.total, 1);
+  assert.equal(filtered.page, 1, 'outdated page clamps to last available page');
+  assert.equal(filtered.records[0]!.id, provinceId);
+  assert.equal((await adminVisitIndex(db, { scope: 'region', q: 'independent', status: 'auto' })).total, 0);
+  assert.equal((await adminVisitIndex(db, { scope: 'region', place: 'CN-JX', q: '福建' })).total, 0);
+  await assert.rejects(adminVisitIndex(db, { status: 'bogus' }), /状态/);
+  await assert.rejects(adminVisitIndex(db, { page: 0 }), /页码/);
   assert.equal((await adminVisited(db, 'CN')).records.find((v) => v.id === countryId)?.label, 'Country untouched');
   assert.equal((await regionOverview(pub, 'CN-FJ', provinceId)).region.visits.find((v) => v.id === provinceId)?.count, 3);
   await assert.rejects(regionPhotos(pub, 'CN-FJ', { scope: 'country', visitId: provinceId }), /省级到访/);
@@ -68,6 +86,9 @@ export async function regionalVisits(
   assert.equal(reduced.count, 2);
   assert.equal(reduced.label, '');
   assert.equal(reduced.needsReview, true);
+  const reviewIndex = await adminVisitIndex(db, { scope: 'region', status: 'review' });
+  assert.ok(reviewIndex.records.some((v) => v.id === provinceId && v.count === 2 && !v.invalid && v.label === ''),
+    'partially invalid evidence appears once as reviewable with only current details');
   assert.equal((await adminVisited(db, 'CN')).records.find((v) => v.id === countryId)?.count, 4);
   assert.ok((await publicVisited(pub)).countries.find((c) => c.id === 'CN')?.visits.some((v) => v.id === countryId && v.label === 'Country untouched'));
   await assert.rejects(saveVisit(db, user, { country: 'CN', region: 'CN-FJ', photoIds: fixtureFj.map((p) => p.id), start: null, end: null }), /位置已变化/);
@@ -76,6 +97,13 @@ export async function regionalVisits(
   assert.ok(!empty.records.some((v) => v.id === provinceId));
   assert.ok(empty.stale.some((v) => v.id === provinceId && v.version === 1));
   assert.ok(!JSON.stringify(empty.stale).includes(assets[0]!), 'fully stale record exposes no private evidence');
+  const invalidIndex = await adminVisitIndex(db, { scope: 'region', status: 'invalid', place: 'CN-FJ' });
+  const invalid = invalidIndex.records.find((v) => v.id === provinceId)!;
+  assert.ok(invalid);
+  assert.equal(invalid.count, 0);
+  assert.equal(invalid.start, null);
+  assert.equal(invalid.label, '');
+  assert.ok(invalidIndex.places.some((p) => p.id === 'CN-FJ'), 'invalid-only destinations remain reachable for cleanup');
   await assert.rejects(regionOverview(pub, 'CN-FJ', provinceId), /已变化|暂无/);
   await owner.query('UPDATE public.asset_exif SET latitude=24.5,longitude=118.12 WHERE "assetId"=ANY($1::uuid[])', [assets.slice(2, 4)]);
   // Country/region deletion cannot cross the independent tables.

@@ -42,12 +42,12 @@
   }
   a,
   button {
-    flex: 1;
+    flex: 1 0 auto;
     text-align: center;
     font: inherit;
     font-size: 12px;
     line-height: normal;
-    padding: 8px 4px;
+    padding: 8px 14px;
     border: 0;
     border-radius: 4px;
     color: inherit;

@@ -317,6 +317,64 @@ async function mapPhotos(
     page,
   };
 }
+export type VisitIndexRow = {
+  id: string; country: string; region: string | null; place: string; placeName: string;
+  start: string | null; end: string | null; label: string; count: number;
+  manual: boolean; needsReview: boolean; invalid: boolean; version: number;
+};
+/** A single authorized snapshot supplies all journey summaries. Photo membership and
+ * thumbnail URLs are loaded only by the editor, never sent with this overview. */
+export async function adminVisitIndex(db: Kysely<unknown>, options: {
+  scope?: 'country' | 'region'; place?: string; q?: string; status?: string; page?: number;
+} = {}): Promise<{
+  records: VisitIndexRow[]; total: number; activeTotal: number; invalidTotal: number; placeCount: number;
+  places: { id: string; name: string; count: number }[]; page: number; pages: number;
+  unassigned: number; unassignedProvince: number; restricted: number;
+}> {
+  if (!db.isTransaction) return db.transaction().setIsolationLevel('repeatable read')
+    .execute((trx) => adminVisitIndex(trx, options));
+  const { scope = 'country', place = '', q = '', status = '', page = 1 } = options;
+  ensure(scope === 'country' || scope === 'region', '到访范围无效。');
+  ensure(['', 'auto', 'manual', 'review', 'invalid'].includes(status), '到访状态无效。');
+  ensure(Number.isInteger(page) && page >= 1 && page <= 100000, '页码无效。');
+  ensure(q.length <= 200, '搜索内容过长。');
+  if (place) scope === 'region' ? regionCode(place) : countryCode(place);
+  const world = await visitedSnapshot(db);
+  const regional = scope === 'region' ? await regionalSnapshot(db, 'CN', world) : null;
+  const snapshot = regional ?? world;
+  const destination = (code: string) => ({ country: scope === 'region' ? 'CN' : code,
+    region: scope === 'region' ? code : null, place: code,
+    placeName: scope === 'region' ? regionCode(code).name : names.get(code)!,
+  });
+  const records: VisitIndexRow[] = snapshot.visits.map((v) => ({
+    ...destination(v.country), id: v.id, start: v.start, end: v.end, label: v.label,
+    count: v.photos.length, manual: v.manual, needsReview: v.needsReview, invalid: false, version: v.version,
+  }));
+  const activeIds = new Set(records.map((v) => v.id));
+  for (const v of snapshot.stale) {
+    if (activeIds.has(v.id)) continue;
+    // Keep only identity/version for invalid evidence; do not revive unavailable titles or dates.
+    records.push({ ...destination(v.region_code ?? v.country_code), id: v.id,
+      start: null, end: null, label: '', count: 0, manual: true, needsReview: true, invalid: true, version: v.version });
+  }
+  const places = [...new Set(records.map((v) => v.place))].map((id) => ({
+    id, name: destination(id).placeName, count: records.filter((v) => v.place === id && !v.invalid).length,
+  })).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  const query = q.trim().toLocaleLowerCase();
+  const filtered = records.filter((v) => (!place || v.place === place)
+    && (!query || `${v.placeName} ${v.label} ${v.start ?? ''} ${v.end ?? ''}`.toLocaleLowerCase().includes(query))
+    && (!status || (status === 'auto' ? !v.manual : status === 'manual' ? v.manual
+      : status === 'review' ? v.needsReview : v.invalid)))
+    .sort((a, b) => Number(a.invalid) - Number(b.invalid)
+      || (b.start ?? '').localeCompare(a.start ?? '') || a.id.localeCompare(b.id));
+  const pages = Math.max(1, Math.ceil(filtered.length / 20)), current = Math.min(page, pages);
+  return { records: filtered.slice((current - 1) * 20, current * 20), total: filtered.length,
+    activeTotal: activeIds.size, invalidTotal: records.length - activeIds.size,
+    placeCount: places.filter((p) => p.count > 0).length, places, page: current, pages,
+    unassigned: world.unassigned, unassignedProvince: regional?.unassignedProvince ?? 0,
+    restricted: regional?.restricted ?? 0 };
+}
+
 export async function adminVisited(db: Kysely<unknown>, code?: string, region?: string): Promise<{
   countries: VisitedCountry[]; regions: VisitedCountry[]; region: string | null;
   nationalCount: number; unassignedProvince: number; restricted: number; unassigned: number;

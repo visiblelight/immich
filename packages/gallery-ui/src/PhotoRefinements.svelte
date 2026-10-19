@@ -35,6 +35,8 @@
   let selected = $state<string[]>([]),
     minimum = $state<number | undefined>(),
     maximum = $state<number | undefined>();
+  let expanded = $state<string[]>([]);
+  let searchExpansion = $state<{ query: string; values: Record<string, boolean> }>({ query: '', values: {} });
   let left = $state(0),
     top = $state(0);
   let anchor: HTMLElement | undefined;
@@ -72,6 +74,32 @@
     );
   });
   const placeTree = $derived(placeChoiceTree(places, search));
+  function ancestors(id: string) {
+    const result: string[] = [];
+    let parent = places.find((p) => p.id === id)?.parent;
+    while (parent && !result.includes(parent)) {
+      result.push(parent);
+      parent = places.find((p) => p.id === parent)?.parent;
+    }
+    return result;
+  }
+  const searchExpanded = $derived.by(() => {
+    const query = search.trim().toLocaleLowerCase();
+    return new Set(query ? places.filter((p) => p.name.toLocaleLowerCase().includes(query)
+      || p.path.toLocaleLowerCase().includes(query)
+        && !places.find((parent) => parent.id === p.parent)?.path.toLocaleLowerCase().includes(query))
+      .flatMap((p) => ancestors(p.id)) : []);
+  });
+  const isExpanded = (id: string): boolean => search.trim()
+    ? (searchExpansion.query === search ? searchExpansion.values[id] : undefined) ?? searchExpanded.has(id)
+    : expanded.includes(id);
+  function togglePlace(id: string) {
+    if (search.trim()) {
+      searchExpansion = { query: search, values: {
+        ...(searchExpansion.query === search ? searchExpansion.values : {}), [id]: !isExpanded(id),
+      } };
+    } else expanded = expanded.includes(id) ? expanded.filter((value) => value !== id) : [...expanded, id];
+  }
   function includedBySelection(place: PlaceChoice) {
     let id = place.parent;
     const seen = new Set<string>();
@@ -98,6 +126,7 @@
     active = field;
     anchor = button;
     search = '';
+    searchExpansion = { query: '', values: {} };
     selected =
       field === 'place'
         ? filters.place
@@ -106,6 +135,7 @@
         : [...(field === 'camera' ? filters.cameras : filters.lenses)];
     minimum = filters.focalMin ?? undefined;
     maximum = filters.focalMax ?? undefined;
+    expanded = field === 'place' && filters.place ? ancestors(filters.place) : [];
     await tick();
     dialog.showModal();
     position();
@@ -324,6 +354,12 @@
     {#each nodes as place (place.id)}
       {@const included = includedBySelection(place)}
       <li>
+        <div class="place-row">
+        {#if place.children.length}<button type="button" class="branch-toggle"
+          aria-label={`${isExpanded(place.id) ? '收起' : '展开'}${place.name}的下级地点`}
+          aria-expanded={isExpanded(place.id)} onclick={() => togglePlace(place.id)}>
+          <svg class:expanded={isExpanded(place.id)} aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>{:else}<span class="branch-spacer"></span>{/if}
         <button
           type="button"
           class="option place-option"
@@ -342,7 +378,8 @@
             >{selected.includes(place.id) ? '✓' : included ? '·' : ''}</span
           >
         </button>
-        {#if place.children.length}{@render placeBranches(place.children)}{/if}
+        </div>
+        {#if place.children.length && isExpanded(place.id)}{@render placeBranches(place.children)}{/if}
       </li>
     {/each}
   </ul>
@@ -513,10 +550,17 @@
     list-style: none;
   }
   .place-branches .place-branches {
-    margin-left: 16px;
-    padding-left: 10px;
+    margin-left: 14px;
+    padding-left: 6px;
     border-left: 1px solid #e1e6dc;
   }
+  .place-row { display: flex; align-items: center; }
+  .place-row .place-option { flex: 1; min-width: 0; padding-left: 6px; gap: 6px; }
+  .branch-toggle, .branch-spacer { flex: 0 0 28px; width: 28px; }
+  .branch-toggle { display: grid; place-items: center; height: 36px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7b8874; }
+  .branch-toggle:hover { background: #eaf0e4; color: #344d3d; }
+  .branch-toggle svg { transition: transform 0.15s; }
+  .branch-toggle svg.expanded { transform: rotate(90deg); }
   .place-option.included {
     color: #526c49;
   }

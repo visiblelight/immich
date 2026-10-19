@@ -655,6 +655,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       const {
         publicVisited,
         adminVisited,
+        adminVisitIndex,
         countryPhotos,
         saveVisit,
         deleteVisit,
@@ -701,6 +702,11 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
       assert.ok(moved.countries.some((c) => c.id === 'FR'));
       const reduced = moved.countries.find((c) => c.id === 'GE')!.visits.find((v) => v.id === correction)!;
       assert.equal(reduced.count, 1);
+      const overview = await adminVisitIndex(adminDb);
+      assert.ok(overview.records.some((v) => v.country === 'FR'));
+      assert.ok(overview.records.some((v) => v.country === 'GE'));
+      assert.ok(overview.records.some((v) => v.id === correction && v.needsReview));
+      assert.equal(overview.activeTotal, (await publicVisited(publicDb)).countries.reduce((n, c) => n + c.visits.length, 0));
       assert.equal(reduced.label, '');
       assert.notEqual(reduced.start, '2025-01-01');
       const photos = await countryPhotos(publicDb, 'FR');
