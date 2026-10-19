@@ -92,7 +92,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
       return json({ ...(await adminState(app.db)), user: locals.user, publicOrigin: app.publicOrigin });
     if (params.action === 'map-settings') return json(await adminMapSettings(app.db, app.mapSecretKey));
     if (params.action === 'visits')
-      return json(await adminVisited(app.db, url.searchParams.get('country') ?? undefined));
+      return json(await adminVisited(app.db, url.searchParams.get('country') ?? undefined, url.searchParams.get('region') ?? undefined));
     if (params.action === 'articles')
       return json(
         await listArticles(

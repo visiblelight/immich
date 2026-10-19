@@ -1,4 +1,5 @@
 import { ensure } from './content.ts';
+import { regionByCode } from './regions.ts';
 export type PhotoFilters = {
   place: string;
   cameras: string[];
@@ -15,13 +16,18 @@ export type FilterEvidence = {
   month: string;
 };
 export const equipmentKey = (v: unknown) =>
-  typeof v === 'string' ? v.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase() : '';
+  typeof v === 'string'
+    ? v.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase()
+    : '';
 export const equipmentName = (v: unknown) =>
   typeof v === 'string' ? v.normalize('NFKC').trim().replace(/\s+/g, ' ') : '';
 export function photoFilters(input: Partial<PhotoFilters> = {}): PhotoFilters {
   const place = input.place ?? '';
   ensure(
-    typeof place === 'string' && (!place || /^(country:[A-Z]{2}|(?:region|city):\d+)$/.test(place)),
+    typeof place === 'string' &&
+      (!place ||
+        /^(country:[A-Z]{2}|(?:region|city):\d+)$/.test(place) ||
+        (place.startsWith('region:') && !!regionByCode(place.slice(7)))),
     '地点筛选无效。',
   );
   const list = (values: unknown) => {
@@ -36,8 +42,14 @@ export function photoFilters(input: Partial<PhotoFilters> = {}): PhotoFilters {
   const min = input.focalMin ?? null,
     max = input.focalMax ?? null;
   for (const v of [min, max])
-    ensure(v === null || (Number.isFinite(v) && v >= 0 && v <= 100000), '焦距范围无效。');
-  ensure(min === null || max === null || min <= max, '最小焦距不能大于最大焦距。');
+    ensure(
+      v === null || (Number.isFinite(v) && v >= 0 && v <= 100000),
+      '焦距范围无效。',
+    );
+  ensure(
+    min === null || max === null || min <= max,
+    '最小焦距不能大于最大焦距。',
+  );
   return {
     place,
     cameras: list(input.cameras ?? []),
@@ -55,7 +67,9 @@ export function matchesPhoto(
 ) {
   return (
     (exclude === 'place' || !f.place || p.places.includes(f.place)) &&
-    (exclude === 'camera' || !f.cameras.length || f.cameras.includes(p.camera)) &&
+    (exclude === 'camera' ||
+      !f.cameras.length ||
+      f.cameras.includes(p.camera)) &&
     (exclude === 'lens' || !f.lenses.length || f.lenses.includes(p.lens)) &&
     (exclude === 'focal' ||
       (f.focalMin === null && f.focalMax === null) ||
@@ -66,12 +80,17 @@ export function matchesPhoto(
     (exclude === 'month' || !month || p.month === month)
   );
 }
-export function appendPhotoFilters(q: URLSearchParams, f?: Partial<PhotoFilters>) {
+export function appendPhotoFilters(
+  q: URLSearchParams,
+  f?: Partial<PhotoFilters>,
+) {
   if (f?.place) q.set('place', f.place);
   for (const c of f?.cameras ?? []) q.append('camera', c);
   for (const l of f?.lenses ?? []) q.append('lens', l);
-  if (f?.focalMin !== null && f?.focalMin !== undefined) q.set('focalMin', String(f.focalMin));
-  if (f?.focalMax !== null && f?.focalMax !== undefined) q.set('focalMax', String(f.focalMax));
+  if (f?.focalMin !== null && f?.focalMin !== undefined)
+    q.set('focalMin', String(f.focalMin));
+  if (f?.focalMax !== null && f?.focalMax !== undefined)
+    q.set('focalMax', String(f.focalMax));
   return q;
 }
 
@@ -85,7 +104,10 @@ export type PlaceChoice = {
 };
 export type PlaceChoiceNode = PlaceChoice & { children: PlaceChoiceNode[] };
 /** Stable IDs define hierarchy. Search keeps the ancestors of every matching place. */
-export function placeChoiceTree(places: PlaceChoice[], search = ''): PlaceChoiceNode[] {
+export function placeChoiceTree(
+  places: PlaceChoice[],
+  search = '',
+): PlaceChoiceNode[] {
   const byId = new Map(places.map((p) => [p.id, p]));
   const included = new Set<string>();
   const query = search.trim().toLocaleLowerCase();
@@ -108,7 +130,10 @@ export function placeChoiceTree(places: PlaceChoice[], search = ''): PlaceChoice
   const visited = new Set<string>();
   const build = (parent: string): PlaceChoiceNode[] =>
     (children.get(parent) ?? [])
-      .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN') || a.id.localeCompare(b.id))
+      .sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, 'zh-CN') || a.id.localeCompare(b.id),
+      )
       .filter((p) => !visited.has(p.id))
       .map((p) => {
         visited.add(p.id);

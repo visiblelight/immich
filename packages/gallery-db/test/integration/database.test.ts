@@ -6,6 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { placesAndFilters } from './places.ts';
+import { regionalVisits } from './regional-visits.ts';
 import { articles } from './articles.ts';
 import { sharedPhotosAndTags } from './shared-photos.ts';
 import { itemPublication } from './item-publication.ts';
@@ -157,6 +158,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         '0010',
         '0011',
         '0012',
+        '0013',
       ]);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
@@ -166,7 +168,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
           )
         ).rows[0].count,
-        '33',
+        '35',
       );
     });
     await t.test('runtime compatibility checks validate service roles and view contracts', async () => {
@@ -769,6 +771,11 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         [a.id, duplicate.id],
       ]);
       assert.ok(!(await countryPhotos(publicDb, 'FR', { scope: 'all' })).photos.some((p) => mapPhotoIds.has(p.id)));
+    });
+    await t.test('regional visits: live GPS, privacy, hierarchy, deduplication and independent overrides', async () => {
+      const regionAssets = Array.from({ length: 7 }, () => randomUUID());
+      for (const asset of regionAssets) await sourceAsset(asset, ids.owner);
+      await regionalVisits(adminDb, publicDb, owner, ids.user, regionAssets, album);
     });
     await t.test('shared photo publication, tag intersection, concurrency and public scope', async () => {
       const tagAssets = [randomUUID(), randomUUID()];

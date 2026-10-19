@@ -1,8 +1,26 @@
 <script lang="ts">
   import Frame from '$lib/MapAdminFrame.svelte';
+  import { SegmentedControl } from '@gallery/ui';
+  import { chinaRegions } from '@gallery/core';
   import { invalidateAll } from '$app/navigation';
   let { data } = $props();
   type RecordItem = (typeof data.visits.records)[number];
+  const scopeSelected = $derived(data.scope === 'region' ? !!data.region : !!data.country);
+  const records = $derived(scopeSelected ? data.visits.records : []);
+  const stale = $derived(scopeSelected ? data.visits.stale : []);
+  const availableRegions = $derived(chinaRegions.map(region => ({
+    id: region.code,
+    name: data.visits.regions.find(r => r.id === region.code)?.name ?? region.name,
+    count: data.visits.regions.find(r => r.id === region.code)?.count ?? 0,
+  })));
+  const regionName = $derived(availableRegions.find(r => r.id === data.region)?.name ?? '省级地区');
+  const scopeKey = $derived(`${data.scope}:${data.country}:${data.region}`);
+  $effect(() => {
+    void scopeKey;
+    selected = [];
+    editing = false;
+    message = '';
+  });
   let selected = $state<string[]>([]),
     editing = $state(false),
     id = $state<string | null>(null),
@@ -41,6 +59,7 @@
     node.addEventListener('keydown', trap);
     return {
       destroy() {
+        node.removeEventListener('keydown', trap);
         document.body.style.overflow = overflow;
         prior?.focus();
       },
@@ -75,7 +94,7 @@
   async function save() {
     busy = true;
     try {
-      await post('visit-save', { country: data.country, id, version, replace, photoIds, start, end, label });
+      await post('visit-save', { country: data.country, region: data.region || undefined, id, version, replace, photoIds, start, end, label });
       editing = false;
       selected = [];
       await invalidateAll();
@@ -91,7 +110,7 @@
   async function reset(record: { id: string; version: number }) {
     busy = true;
     try {
-      await post('visit-delete', record);
+      await post('visit-delete', { ...record, region: data.region || undefined });
       selected = [];
       await invalidateAll();
       message = '已移除人工校正，按照当前公开照片重新整理。';
@@ -111,29 +130,44 @@
   publicOrigin={data.publicOrigin}
   ><div class="map-admin">
     <h1>到访记录</h1>
-    <p>自动汇总公开照片的位置和当地拍摄日期。人工整理可以修改日期、合并记录，或选出部分照片另建一次到访。</p>
+    <p>自动汇总公开照片的位置和当地拍摄日期。可修改日期、合并记录，或选出部分照片另建一次到访。日期仅表示照片证据。</p>
+    <div class="scope-control"><SegmentedControl label="到访整理范围" value={data.scope} options={[
+      { value: 'country', label: '国家到访', href: '/visits' },
+      { value: 'region', label: '中国省级到访', href: '/visits?scope=region' },
+    ]} /></div>
     <div class="toolbar">
-      <label
-        >国家 <select
-          value={data.country}
-          onchange={(e) => (location.href = `/visits?country=${e.currentTarget.value}`)}
-          ><option value="">请选择国家</option>{#each data.visits.countries as c}<option value={c.id}
-              >{c.name} · {c.count} 张</option
-            >{/each}</select
-        ></label
-      >{#if data.country}<a href={`${data.publicOrigin}/visited/${data.country}`} target="_blank" rel="noreferrer"
-          >查看前台 →</a
-        >{/if}
+      {#if data.scope === 'region'}
+        <label>省级地区 <select value={data.region}
+          onchange={(e) => (location.href = `/visits?scope=region&region=${encodeURIComponent(e.currentTarget.value)}`)}>
+          <option value="">请选择省级地区</option>
+          {#each availableRegions as region}<option value={region.id}>{region.name} · {region.count} 张</option>{/each}
+        </select></label>
+        {#if data.visits.regions.some(region => region.id === data.region && region.count > 0)}<a href={`${data.publicOrigin}/visited/regions/${data.region}`} target="_blank" rel="noreferrer">查看前台 →</a>{/if}
+      {:else}
+        <label>国家 <select value={data.country}
+          onchange={(e) => (location.href = `/visits?country=${encodeURIComponent(e.currentTarget.value)}`)}>
+          <option value="">请选择国家</option>
+          {#each data.visits.countries as country}<option value={country.id}>{country.name} · {country.count} 张</option>{/each}
+        </select></label>
+        {#if data.country}<a href={`${data.publicOrigin}/visited/${data.country}`} target="_blank" rel="noreferrer">查看前台 →</a>{/if}
+      {/if}
     </div>
-    {#if message && !editing}<p class="notice" class:error={failed} role="status">{message}</p>{/if}
-    {#if data.visits.unassigned}<p>
-        {data.visits.unassigned} 张公开位置照片未能可靠归属国家。请在 Immich 核对 GPS；跨国界的近似位置不会强行归国。
+    {#if data.scope === 'region'}
+      <p class="scope-note">省级到访独立整理，不影响中国的国家到访记录。{#if data.region}当前整理：{regionName}。{/if}</p>
+      {#if data.visits.unassignedProvince || data.visits.restricted}<p class="notice">
+        全国照片中{#if data.visits.unassignedProvince}有 {data.visits.unassignedProvince} 张省级归属待核对{/if}{#if data.visits.unassignedProvince && data.visits.restricted}，{/if}{#if data.visits.restricted}有 {data.visits.restricted} 张受位置公开设置限制{/if}，未计入省级到访。
+        <a href={data.visits.unassignedProvince ? "/places?view=photos&review=region" : "/places?view=photos&review=restricted"}>前往地点管理</a>
       </p>{/if}
-    {#if selected.length > 1}<button onclick={() => open(data.visits.records.filter((v) => selected.includes(v.id)))}
+    {/if}
+    {#if message && !editing}<p class="notice" class:error={failed} role="status">{message}</p>{/if}
+    {#if data.scope === 'country' && data.visits.unassigned}<p>
+        {data.visits.unassigned} 张公开位置照片未能可靠归属国家。请在地点管理优先核对；跨国界的近似位置不会强行归国。
+      </p>{/if}
+    {#if selected.length > 1}<button onclick={() => open(records.filter((v) => selected.includes(v.id)))}
         >合并选中的 {selected.length} 段记录</button
       >{/if}
     <div class="records">
-      {#each data.visits.records as v}<article>
+      {#each records as v}<article>
           <label
             ><input type="checkbox" bind:group={selected} value={v.id} /><strong
               >{v.label || (v.start ? `${v.start} — ${v.end}` : '拍摄日期待确认')}</strong
@@ -160,12 +194,12 @@
           </div>
         </article>{/each}
     </div>
-    {#each data.visits.stale.filter((v) => !data.visits.records.some((r) => r.id === v.id)) as v}<p class="notice">
+    {#each stale.filter((v) => !records.some((r) => r.id === v.id)) as v}<p class="notice">
         一条人工记录已经没有有效公开照片，当前不会在前台显示。<button disabled={busy} onclick={() => void reset(v)}
           >移除失效校正</button
         >
       </p>{/each}
-    {#if data.country && !data.visits.records.length}<p>这个国家暂无有效公开记录。</p>{/if}
+    {#if scopeSelected && !records.length}<p>这个{data.scope === 'region' ? '省级地区' : '国家'}暂无有效公开记录。</p>{:else if !scopeSelected}<p>请选择{data.scope === 'region' ? '省级地区' : '国家'}，查看并整理到访记录。</p>{/if}
     {#if editing}<div class="shade">
         <div
           use:focusDialog
@@ -179,7 +213,7 @@
           }}
         >
           <h2 id="edit-title">{id ? '编辑到访' : '整理到访'}</h2>
-          <p>所选照片组成一段到访。取消选中的照片将恢复自动推导；不会修改 Immich 的照片信息。</p>
+          <p>所选照片组成一段{data.scope === 'region' ? regionName : '国家'}到访。取消选中的照片恢复自动推导；{data.scope === 'region' ? '不会改变国家到访记录。' : '不会改变省级到访记录。'}</p>
           {#if message}<p class="notice" class:error={failed} role="status">{message}</p>{/if}
           <form
             onsubmit={(e) => {
@@ -188,7 +222,7 @@
             }}
           >
             <label class="field"
-              >名称（可选）<input bind:value={label} maxlength="120" placeholder="例如：格鲁吉亚秋日旅行" /></label
+              >名称（可选）<input bind:value={label} maxlength="120" placeholder={data.scope === 'region' ? '例如：福建春日旅行' : '例如：格鲁吉亚秋日旅行'} /></label
             >
             <div class="dates">
               <label class="field">开始日期<input type="date" bind:value={start} /></label><label class="field"
@@ -227,10 +261,13 @@
 >
 
 <style>
+  .scope-control { width: max-content; margin-top: 24px; }
+  .scope-note { margin: 0; }
   .toolbar {
     display: flex;
     gap: 25px;
     align-items: center;
+    flex-wrap: wrap;
     margin: 25px 0;
   }
   .toolbar a {

@@ -2,14 +2,20 @@
   import world from './world-map.json';
   import { goto } from '$app/navigation';
   import type { VisitedCountry } from '@gallery/core';
+  import { SearchField } from '@gallery/ui';
+  import MapLegend from './MapLegend.svelte';
   let {
     countries: visited,
     total,
     unassigned = 0,
+    countryHref = (id: string) => `/visited/${id}`,
+    showHeading = true,
   }: {
     countries: VisitedCountry[];
     total: number;
     unassigned?: number;
+    countryHref?: (id: string) => string;
+    showHeading?: boolean;
   } = $props();
   type WorldCountry = (typeof world.countries)[number];
   const mapSize = world;
@@ -116,7 +122,7 @@
     if (moved && event.detail !== 0) return;
     if (!stats.has(country.id)) return;
     if (event.detail === 0 || lastPointer !== 'touch') {
-      void goto(`/visited/${country.id}`);
+      void goto(countryHref(country.id));
       return;
     }
     selected = country;
@@ -156,15 +162,17 @@
   }
 </script>
 
-<section class="heading">
-  <div>
-    <h1>去过</h1>
-  </div>
-  <div class="numbers">
-    <strong>{visited.length}</strong> 个国家 <span>·</span>
-    <strong>{total}</strong> 张有公开位置的照片
-  </div>
-</section>
+{#if showHeading}
+  <section class="heading">
+    <div>
+      <h1>去过</h1>
+    </div>
+    <div class="numbers">
+      <strong>{visited.length}</strong> 个国家 <span>·</span>
+      <strong>{total}</strong> 张有公开位置的照片
+    </div>
+  </section>
+{/if}
 <div class="map" class:drag>
   <div class="tools">
     <button onclick={() => zoom(0.7)} aria-label="放大地图">＋</button><button
@@ -197,7 +205,7 @@
         onkeydown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            if (stats.has(country.id)) void goto(`/visited/${country.id}`);
+            if (stats.has(country.id)) void goto(countryHref(country.id));
           }
         }}
         onfocus={(e) => focus(e, country)}
@@ -229,9 +237,7 @@
         writing-mode={sea.vertical ? 'vertical-rl' : 'horizontal-tb'}>{sea.name}</text
       >{/each}
   </svg>
-  <div class="legend">
-    <i></i> 去过 <i class="empty"></i> 尚未留下照片 <span>拖动 · 双指缩放</span>
-  </div>
+  <div class="legend"><MapLegend /></div>
 </div>
 <p class="note">
   根据已公开照片的拍摄时间整理，日期不代表出入境记录。{#if unassigned}另有 {unassigned}
@@ -240,12 +246,12 @@
 <section class="list">
   <div class="list-heading">
     <h2>沿途的记忆</h2>
-    <input aria-label="查找去过的国家" placeholder="查找国家" bind:value={search} />
+    <div class="location-search"><SearchField label="查找去过的国家" placeholder="查找国家" clearLabel="清除国家搜索" bind:value={search} /></div>
   </div>
   {#if !visited.length}<p>还没有可展示的足迹。发布允许公开位置的照片后，足迹会出现在这里。</p>{:else}<div
       class="country-list"
     >
-      {#each visited.filter((c) => c.name.includes(search)) as c}<a href={`/visited/${c.id}`}
+      {#each visited.filter((c) => c.name.includes(search.trim())) as c}<a href={countryHref(c.id)}
           ><strong>{c.name}</strong><span>{c.visits.length} 段记录 · {c.count} 张照片</span></a
         >{/each}
     </div>{/if}
@@ -267,7 +273,7 @@
 {#if selected}<aside class="sheet" aria-label="国家到访摘要">
     <button class="close" onclick={() => (selected = null)} aria-label="关闭摘要">×</button>{@render summary(
       selected,
-    )}<a class="enter" href={`/visited/${selected.id}`}>查看照片地图 →</a>
+    )}<a class="enter" href={countryHref(selected.id)}>查看照片地图 →</a>
   </aside>{/if}
 
 <style>
@@ -381,19 +387,6 @@
     align-items: center;
     pointer-events: none;
   }
-  .legend i {
-    width: 11px;
-    height: 11px;
-    background: #8fa99a;
-    border: 1px solid #83958b;
-  }
-  .legend .empty {
-    background: #fffdf7;
-    margin-left: 12px;
-  }
-  .legend span {
-    margin-left: 20px;
-  }
   .note {
     color: #7b8178;
     font-size: 11px;
@@ -406,18 +399,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 24px;
   }
   .list h2 {
     font-size: 19px;
     font-weight: 500;
+    margin: 0;
   }
-  .list input {
-    padding: 9px;
-    border: 1px solid #d9ded5;
-    background: transparent;
-    border-radius: 3px;
-    max-width: 40%;
-  }
+  .location-search { width: 260px; max-width: 45%; }
   .country-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, 220px);
@@ -531,9 +520,6 @@
       right: 12px;
       bottom: 12px;
       width: auto;
-    }
-    .legend span {
-      display: none;
     }
     .tools {
       right: 8px;

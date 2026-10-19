@@ -3,6 +3,7 @@ import { publicAlbumBrowse, publicPhotoFeed, relatedArticles } from '@gallery/db
 import { GalleryError } from '@gallery/core';
 import { error } from '@sveltejs/kit';
 import { getRuntime } from './runtime';
+import { mapReturnPath } from '../visited/navigation';
 
 export async function loadBrowse(url: URL, slug?: string, directPhoto?: string): Promise<BrowseData> {
   try {
@@ -34,7 +35,7 @@ export async function loadBrowse(url: URL, slug?: string, directPhoto?: string):
     const photo = catalog.active?.photos.find(p => p.id === selected);
     if (selected && !photo) error(404, '照片不存在或已从当前公开相册移除。');
     return { ...catalog, photoId: selected, photoTitle: photo?.group?.title || photo?.title, photoDescription: photo?.group?.description || photo?.description,
-      returnTo: /^\/visited\/[A-Z]{2}(?:\?[^#]*)?$/.test(q.get('returnTo') ?? '') ? q.get('returnTo') : null,
+      returnTo: mapReturnPath(q.get('returnTo')),
       relatedArticles: catalog.active ? await relatedArticles(app.db, catalog.active.id) : [], origin: app.origin };
   } catch (e) {
     if (e instanceof GalleryError) error(e.status, e.message);

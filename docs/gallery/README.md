@@ -15,6 +15,9 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [地区足迹 ADR 0021](decisions/0021-regional-visited-maps.md) | 已确认的中国省份及其他国家地区地图方案、位置保护与分阶段边界 |
+| [地区足迹真实接入](delivery/regional-visited.md) | 省份归属、地图详情、独立到访整理及本地验证状态 |
+| [中国地图样稿交付](delivery/china-map-prototype.md) | 本地交互样稿进度、视觉确认及真实数据接入边界 |
 | [连续浏览 ADR 0020](decisions/0020-continuous-browsing.md) | 相册/相片自动追加、位置恢复与兼容边界 |
 | [连续浏览交付](delivery/continuous-browsing.md) | 已确认的本地实现、隔离验收及生产发布状态 |
 | [地点与目录 ADR 0018](decisions/0018-places-filters-and-article-outline.md) | 地名、实际焦距组合筛选和目录交互 |

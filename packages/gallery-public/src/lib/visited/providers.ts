@@ -17,6 +17,7 @@ export interface PhotoMap {
   viewport(): Promise<MapViewport>;
   move(view: View): Promise<void>;
   markers(clusters: PhotoCluster[], click: (c: PhotoCluster) => void): Promise<void>;
+  clearMarkers(): void;
   resize(): void;
   destroy(): void;
 }
@@ -155,6 +156,10 @@ export async function createPhotoMap(
             .addTo(map),
         );
       },
+      clearMarkers() {
+        markers.forEach((m) => m.remove());
+        markers = [];
+      },
       resize() {
         map.resize();
       },
@@ -209,6 +214,10 @@ export async function createPhotoMap(
               title: c.photo.title,
             }),
         );
+      },
+      clearMarkers() {
+        markers.forEach((m) => (m.map = null));
+        markers = [];
       },
       resize() {
         const center = map.getCenter();
@@ -307,6 +316,12 @@ export async function createPhotoMap(
           }),
       );
       map.add(markers);
+    },
+    clearMarkers() {
+      // Invalidate a coordinate conversion still in flight before removing pins.
+      revision++;
+      map.remove(markers);
+      markers = [];
     },
     resize() {
       // AMap observes its container when resizeEnable is set; it has no public resize method.

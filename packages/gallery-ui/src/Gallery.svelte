@@ -6,6 +6,8 @@
   import LoadMore from './LoadMore.svelte';
   import type { BrowseStream } from './browse-stream';
   import AlbumCover from './AlbumCover.svelte';
+  import SearchField from './SearchField.svelte';
+  import SegmentedControl from './SegmentedControl.svelte';
 
   function previewPlaceholder(image: HTMLImageElement) {
     const ready = () => { delete image.dataset.loading; };
@@ -85,7 +87,6 @@
   let lastSearch = untrack(() => albumSearch?.query ?? '');
   let composingSearch = false;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  let searchInput = $state<HTMLInputElement>();
   $effect(() => {
     const query = albumSearch?.query ?? '';
     untrack(() => {
@@ -412,10 +413,14 @@
         <aside id="photo-filters" class="photo-filters" class:expanded={filtersOpen} aria-label="照片筛选">
           <section class="sort-options">
             <h2>排序</h2>
-            <nav aria-label="相片排序">
-              <a class:chosen={feed.sort === 'taken'} href={feedLink(1, '', 'taken')}>拍摄时间</a>
-              <a class:chosen={feed.sort === 'added'} href={feedLink(1, '', 'added')}>最近加入</a>
-            </nav>
+            <SegmentedControl
+              label="相片排序"
+              value={feed.sort}
+              options={[
+                { value: 'taken', label: '拍摄时间', href: feedLink(1, '', 'taken') },
+                { value: 'added', label: '最近加入', href: feedLink(1, '', 'added') },
+              ]}
+            />
           </section>
           {#if feed.filters}<PhotoRefinements
               filters={feed.filters}
@@ -530,22 +535,15 @@
                 }
               }}
             >
-              <svg
-                class="search-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg
-              >
-              <input
+              <SearchField
                 name="q"
-                aria-label="搜索相册"
+                label="搜索相册"
                 placeholder="搜索相册、照片或地点"
-                bind:this={searchInput}
+                clearLabel="清除相册搜索"
                 bind:value={searchText}
-                maxlength="120"
+                maxlength={120}
                 oninput={scheduleSearch}
+                onclear={applySearch}
                 oncompositionstart={() => {
                   composingSearch = true;
                   clearTimeout(searchTimer);
@@ -555,16 +553,6 @@
                   scheduleSearch();
                 }}
               />
-              {#if searchText}<button
-                  type="button"
-                  class="clear-search"
-                  aria-label="清除相册搜索"
-                  onclick={() => {
-                    searchText = '';
-                    applySearch();
-                    searchInput?.focus();
-                  }}><Icon name="close" size={14} /></button
-                >{/if}
             </form>{/if}
           {@render albumSorting()}
         </div>
@@ -878,25 +866,21 @@
 </dialog>
 
 {#snippet albumSorting()}
-  <span class="album-sorting" role="group" aria-label="相册排序">
-    <button
-      class:chosen={albumSort === 'updated'}
-      aria-pressed={albumSort === 'updated'}
-      onclick={() => {
-        if (stream) stream.changeSort('updated');
-        else albumSort = 'updated';
+  <span class="album-sorting">
+    <SegmentedControl
+      label="相册排序"
+      value={albumSort}
+      options={[
+        { value: 'updated', label: '最近更新' },
+        { value: 'taken', label: '拍摄时间' },
+      ]}
+      onchange={(sort) => {
+        const next = sort === 'taken' ? 'taken' : 'updated';
+        if (stream) stream.changeSort(next);
+        else albumSort = next;
         albumPage = 0;
-      }}>最近更新</button
-    >
-    <button
-      class:chosen={albumSort === 'taken'}
-      aria-pressed={albumSort === 'taken'}
-      onclick={() => {
-        if (stream) stream.changeSort('taken');
-        else albumSort = 'taken';
-        albumPage = 0;
-      }}>拍摄时间</button
-    >
+      }}
+    />
   </span>
 {/snippet}
 
@@ -909,56 +893,9 @@
     min-width: 0;
   }
   .album-search {
-    position: relative;
     width: 260px;
     display: flex;
     align-items: center;
-    color: #899285;
-  }
-  .album-search input {
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    height: 38px;
-    padding: 8px 32px 8px 34px;
-    border: 1px solid #e1e6dc;
-    border-radius: 6px;
-    background: transparent;
-    color: #354638;
-    font: inherit;
-    font-size: 12px;
-    transition: border-color 0.15s;
-  }
-  .album-search input::placeholder {
-    color: #899285;
-  }
-  .album-search input:focus {
-    outline: 2px solid #a3b59b55;
-    outline-offset: 1px;
-    border-color: #9eae96;
-  }
-  .search-icon {
-    position: absolute;
-    left: 11px;
-    width: 15px;
-    height: 15px;
-    pointer-events: none;
-  }
-  .clear-search {
-    position: absolute;
-    right: 3px;
-    width: 30px;
-    height: 32px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-    border: 0;
-    background: transparent;
-    color: #7c8875;
-    cursor: pointer;
-  }
-  .clear-search:hover {
-    color: #304b36;
   }
   @media (max-width: 600px) {
     .album-heading {
@@ -1021,18 +958,7 @@
   .album-sorting {
     display: inline-flex;
     margin-left: auto;
-    color: #64735e;
     flex-shrink: 0;
-    font-weight: 400;
-  }
-  .album-sorting button {
-    font-family: inherit;
-    line-height: normal;
-    color: inherit;
-    background: transparent;
-    cursor: pointer;
-    white-space: nowrap;
-    min-width: 72px;
   }
   .heading,
   .section-title {
@@ -2017,29 +1943,6 @@
   .photo-filters > section,
   .photo-tag-filter {
     margin: 0 0 28px;
-  }
-  .sort-options nav,
-  .album-sorting {
-    display: flex;
-    gap: 4px;
-    background: #eff2ec;
-    padding: 4px;
-    border-radius: 6px;
-  }
-  .sort-options a,
-  .album-sorting button {
-    flex: 1;
-    text-align: center;
-    font-size: 12px;
-    padding: 8px 4px;
-    border: 0;
-    border-radius: 4px;
-  }
-  .sort-options a.chosen,
-  .album-sorting button.chosen {
-    background: white;
-    color: #344d3d;
-    box-shadow: 0 1px 3px #24362812;
   }
   .timeline {
     position: static;

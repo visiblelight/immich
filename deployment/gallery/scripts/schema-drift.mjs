@@ -19,7 +19,7 @@ const options = {
 };
 if (process.argv[2] === 'before') {
   await writeFile('.gallery-local/phase-b/schema-before.json', JSON.stringify(current, null, 2));
-  console.log('Recorded Immich schema using @immich/sql-tools 0.6.3.');
+  console.log('Recorded Immich schema using the pinned @immich/sql-tools.');
 } else {
   const before = JSON.parse(await readFile('.gallery-local/phase-b/schema-before.json', 'utf8'));
   const drift = schemaDiff(before, current, options);

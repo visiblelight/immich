@@ -65,7 +65,7 @@ async function verify(name, designPreview = false) {
         assert.equal(asset.status, 200, `bundled map asset: ${path}`);
         assert.ok((await asset.arrayBuffer()).byteLength > 0);
       }
-      for (const path of ['/design/records', '/design/records/a-road-through-georgia', '/design/records/a-little-time-for-nothing', '/design/records/about', '/design', '/design/visited', '/design/visited/world', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
+      for (const path of ['/design/records', '/design/records/a-road-through-georgia', '/design/records/a-little-time-for-nothing', '/design/records/about', '/design', '/design/visited', '/design/visited/world', '/design/visited/china', '/design/visited/china?region=CN-FJ', '/design/visited/china?scope=world', '/design?album=georgia', '/design?album=city-notes', '/design?page=about', '/design/a?scene=story', '/design/b?scene=home', '/design/credits']) {
         const preview = await fetch(`${origin}${path}`);
         assert.equal(preview.status, designPreview ? 200 : 404, `preview gate: ${path}`);
         if (designPreview) {

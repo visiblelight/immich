@@ -1,0 +1,124 @@
+{
+  "version": "Natural Earth repository v5.1.2; admin-1 layer 5.1.1; admin-0 layer 5.1.1",
+  "downloaded": "2026-10-19",
+  "license": "Public domain",
+  "licenseUrl": "https://www.naturalearthdata.com/about/terms-of-use/",
+  "inputs": [
+    {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_1_states_provinces.geojson",
+      "sha256": "22d0e3ad85eb3e27f17cabf8ba2d50e554fbc27a87796ff891d958185da62fb5"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson",
+      "sha256": "239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255"
+    }
+  ],
+  "outputJsonSha256": "8d5e3700eaa65e8f6c2f7f891d0bcdf2a0bf99d902d40205540dcd4b062a2ffb",
+  "coordinateSystem": "WGS84 longitude/latitude; original coordinates preserved without simplification",
+  "grouping": "31 mainland regions use admin-1; Paracel Islands CN-X01~ joins CN-HI; HK/MO/TW use admin-0 outlines and join the existing CN world-map group; unrepresented islands remain unknown.",
+  "members": {
+    "CN-XJ": [
+      "CN-XJ"
+    ],
+    "CN-XZ": [
+      "CN-XZ"
+    ],
+    "CN-NM": [
+      "CN-NM"
+    ],
+    "CN-GS": [
+      "CN-GS"
+    ],
+    "CN-YN": [
+      "CN-YN"
+    ],
+    "CN-HL": [
+      "CN-HL"
+    ],
+    "CN-JL": [
+      "CN-JL"
+    ],
+    "CN-LN": [
+      "CN-LN"
+    ],
+    "CN-GX": [
+      "CN-GX"
+    ],
+    "CN-GD": [
+      "CN-GD"
+    ],
+    "CN-HI": [
+      "CN-HI",
+      "CN-X01~"
+    ],
+    "CN-FJ": [
+      "CN-FJ"
+    ],
+    "CN-ZJ": [
+      "CN-ZJ"
+    ],
+    "CN-SH": [
+      "CN-SH"
+    ],
+    "CN-JS": [
+      "CN-JS"
+    ],
+    "CN-SD": [
+      "CN-SD"
+    ],
+    "CN-HE": [
+      "CN-HE"
+    ],
+    "CN-TJ": [
+      "CN-TJ"
+    ],
+    "CN-BJ": [
+      "CN-BJ"
+    ],
+    "CN-SC": [
+      "CN-SC"
+    ],
+    "CN-CQ": [
+      "CN-CQ"
+    ],
+    "CN-GZ": [
+      "CN-GZ"
+    ],
+    "CN-HN": [
+      "CN-HN"
+    ],
+    "CN-NX": [
+      "CN-NX"
+    ],
+    "CN-SN": [
+      "CN-SN"
+    ],
+    "CN-QH": [
+      "CN-QH"
+    ],
+    "CN-SX": [
+      "CN-SX"
+    ],
+    "CN-JX": [
+      "CN-JX"
+    ],
+    "CN-HA": [
+      "CN-HA"
+    ],
+    "CN-HB": [
+      "CN-HB"
+    ],
+    "CN-AH": [
+      "CN-AH"
+    ],
+    "CN-HK": [
+      "HK"
+    ],
+    "CN-TW": [
+      "TW"
+    ],
+    "CN-MO": [
+      "MO"
+    ]
+  }
+}

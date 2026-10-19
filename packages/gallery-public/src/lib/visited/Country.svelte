@@ -1,16 +1,22 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { replaceState, goto } from '$app/navigation';
   import { page as route } from '$app/state';
   import type { MapViewport, MapPhoto, PhotoCluster, VisitedCountry } from '@gallery/core';
+  import { mapSelection, type ExpandedMapScope } from './map-selection';
   import { createPhotoMap, type Provider, type PhotoMap, type View } from './providers';
   let {
     country,
     bounds,
     providers,
     visitId,
-  }: { country: VisitedCountry; bounds: MapViewport; providers: Provider[]; visitId: string | null } =
+    regionCountry,
+    initialScope = null,
+  }: { country: VisitedCountry; bounds: MapViewport; providers: Provider[]; visitId: string | null; regionCountry?: string; initialScope?: ExpandedMapScope } =
     $props();
+  const ownScope = $derived(regionCountry ? 'region' : 'country');
+  const detailPath = $derived(regionCountry ? '/visited/regions/' + country.id : '/visited/' + country.id);
+  const apiPath = $derived(regionCountry ? '/api/visited/regions/' + country.id : '/api/visited/' + country.id);
   let container: HTMLDivElement, map: PhotoMap | undefined;
   let mapWrap: HTMLDivElement;
   let fullscreenButton: HTMLButtonElement;
@@ -37,6 +43,23 @@
     } catch {
       /* Unsupported browsers retain the immersive viewport layout. */
     }
+    await tick();
+    if (alive && fullscreen) fullscreenButton?.focus({ preventScroll: true });
+  }
+  function containFullscreenFocus(event: KeyboardEvent) {
+    if (!fullscreen || event.key !== 'Tab') return;
+    const controls = [...mapWrap.querySelectorAll<HTMLElement>(
+      'a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex]:not([tabindex="-1"])',
+    )].filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+    const first = controls[0], last = controls.at(-1);
+    const outside = !mapWrap.contains(document.activeElement);
+    if (event.shiftKey && (outside || document.activeElement === first)) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && (outside || document.activeElement === last)) {
+      event.preventDefault();
+      first?.focus();
+    }
   }
   let provider = $state(''),
     message = $state(''),
@@ -44,7 +67,7 @@
     photos = $state<MapPhoto[]>([]),
     total = $state(0),
     listPage = $state(1),
-    showAllCountries = $state(false),
+    expandedScope = $state<ExpandedMapScope>(untrack(() => initialScope)),
     selectedCluster = $state<PhotoCluster | null>(null),
     selectedPhotos = $state<MapPhoto[]>([]),
     selectedTotal = $state(0),
@@ -55,6 +78,7 @@
   let controller: AbortController | undefined,
     listController: AbortController | undefined,
     revision = 0,
+    scopeRevision = 0,
     alive = true,
     clusterViewport: MapViewport | undefined,
     selectionController: AbortController | undefined,
@@ -91,16 +115,21 @@
     url.searchParams.set('lat', view.latitude.toFixed(5));
     url.searchParams.set('zoom', view.zoom.toFixed(2));
     url.searchParams.set('provider', provider);
-    if (showAllCountries) url.searchParams.set('scope', 'all');
-    else url.searchParams.delete('scope');
+    if (expandedScope) {
+      url.searchParams.set('scope', expandedScope);
+      url.searchParams.delete('visit');
+    } else {
+      url.searchParams.delete('scope');
+      if (visitId) url.searchParams.set('visit', visitId);
+    }
     url.searchParams.set('language', mapLanguage);
     replaceState(url, route.state);
     lastUrl = url.pathname + url.search;
   }
   async function request(params: URLSearchParams, signal: AbortSignal) {
-    if (showAllCountries) params.set('scope', 'all');
+    if (expandedScope) params.set('scope', expandedScope);
     else if (visitId) params.set('visit', visitId);
-    const response = await fetch(`/api/visited/${country.id}?${params}`, { signal });
+    const response = await fetch(apiPath + '?' + params, { signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message);
     return data as { clusters: PhotoCluster[]; photos: MapPhoto[]; total: number };
@@ -109,18 +138,22 @@
     new URLSearchParams(Object.entries(v).map(([k, n]) => [k, String(n)]));
   async function refresh() {
     const current = map,
-      seq = revision;
+      seq = revision,
+      scopeSeq = scopeRevision;
     if (!current) return;
     controller?.abort();
     const c = (controller = new AbortController());
     try {
       const [view, v] = await Promise.all([current.view(), current.viewport()]);
-      if (!alive || seq !== revision || c.signal.aborted) return;
+      if (!alive || seq !== revision || scopeSeq !== scopeRevision || c.signal.aborted) return;
       lastView = view;
       remember(view);
       const data = await request(rangeParams(v), c.signal);
-      if (seq !== revision || c.signal.aborted) return;
-      await current.markers(data.clusters, (c) => void selectCluster(c, v));
+      if (seq !== revision || scopeSeq !== scopeRevision || c.signal.aborted) return;
+      await current.markers(data.clusters, (cluster) => {
+        if (alive && seq === revision && scopeSeq === scopeRevision) void selectCluster(cluster, v);
+      });
+      if (!alive || seq !== revision || scopeSeq !== scopeRevision || c.signal.aborted) return;
       loading = false;
     } catch (e) {
       if (!c.signal.aborted && alive && seq === revision) {
@@ -197,10 +230,14 @@
     await tick();
     selectionClose?.focus({ preventScroll: true });
   }
-  function changeScope(all: boolean) {
-    showAllCountries = all;
+  function changeScope(value: string) {
+    expandedScope = mapSelection(new URLSearchParams({ scope: value }), ownScope).expandedScope;
+    scopeRevision++;
     closeSelection(false);
     controller?.abort();
+    map?.clearMarkers();
+    message = '';
+    loading = !!provider;
     photos = [];
     total = 0;
     if (lastView) remember(lastView);
@@ -264,7 +301,7 @@
     lastView = initialView();
     lastUrl = location.pathname + location.search;
     const q = new URLSearchParams(location.search);
-    showAllCountries = q.get('scope') === 'all';
+    expandedScope = mapSelection(q, ownScope).expandedScope;
     mapLanguage = q.get('language') === 'local' ? 'local' : 'en';
     const p =
       providers.find((p) => p.provider === q.get('provider')) ??
@@ -293,6 +330,7 @@
 
 <svelte:window
   onkeydown={(event) => {
+    containFullscreenFocus(event);
     if (event.key === 'Escape' && fullscreen) {
       event.preventDefault();
       void leaveFullscreen();
@@ -305,25 +343,33 @@
 
 <div class="heading">
   <div>
-    <a href="/visited" class="back">← 世界足迹</a>
+    <div class="back-links">
+      <a href={regionCountry ? '/visited/regions/' + regionCountry : '/visited'} class="back">{regionCountry ? '← 中国省份足迹' : '← 世界足迹'}</a>
+      {#if regionCountry}<a class="back" href={'/visited/' + regionCountry}>全国照片地图</a>
+      {:else if country.id === 'CN'}<a class="back" href="/visited/regions/CN">中国省份足迹</a>{/if}
+    </div>
     <h1>{country.name}</h1>
     <p>{country.count} 张照片 · {country.visits.length} 段到访记录</p>
   </div>
   <div class="filters">
     <label
       >照片范围<select
-        value={showAllCountries ? 'all' : 'country'}
-        onchange={(e) => changeScope(e.currentTarget.value === 'all')}
-        ><option value="country">当前国家</option><option value="all">所有国家</option></select
+        value={expandedScope ?? ownScope}
+        onchange={(e) => changeScope(e.currentTarget.value)}
+        >{#if regionCountry}<option value="region">当前省份</option>{/if}<option value="country">{regionCountry ? '全国' : '当前国家'}</option><option value="all">所有国家</option></select
       ></label
     >
     <label
       >到访记录<select
-        disabled={showAllCountries}
-        title={showAllCountries ? '所有国家模式下不使用单国到访筛选' : undefined}
-        value={showAllCountries ? '' : (visitId ?? '')}
+        disabled={!!expandedScope}
+        title={expandedScope ? '扩大照片范围时暂停当前地区的到访筛选' : undefined}
+        value={expandedScope ? '' : (visitId ?? '')}
         onchange={(e) => {
-          location.href = `/visited/${country.id}${e.currentTarget.value ? `?visit=${encodeURIComponent(e.currentTarget.value)}` : ''}`;
+          const url = new URL(location.href);
+          url.searchParams.delete('scope');
+          if (e.currentTarget.value) url.searchParams.set('visit', e.currentTarget.value);
+          else url.searchParams.delete('visit');
+          void goto(detailPath + url.search);
         }}
         ><option value="">所有到访</option>{#each country.visits as v}<option value={v.id}
             >{v.label || (v.start ? `${v.start} — ${v.end}` : '日期待确认')} · {v.count} 张</option
@@ -397,7 +443,7 @@
                 <img src={photo.thumbnail} alt={photo.title} loading="lazy" />
                 {#if photo.title !== '照片'}<strong>{photo.title}</strong>{/if}
                 <span
-                  >{photo.albumTitle}{showAllCountries && photo.countryName
+                  >{photo.albumTitle}{expandedScope === 'all' && photo.countryName
                     ? ` · ${photo.countryName}`
                     : ''}</span
                 >
@@ -422,7 +468,7 @@
     {message} <button onclick={() => void start(provider)}>重试</button>
   </p>{/if}
 <div class="list-heading">
-  <h2>{showAllCountries ? '所有国家的照片' : '这个国家的照片'} <span>{total}</span></h2>
+  <h2>{expandedScope === 'all' ? '所有国家的照片' : regionCountry && !expandedScope ? '这个省份的照片' : '这个国家的照片'} <span>{total}</span></h2>
 </div>
 {#if listLoading}<p role="status">正在读取照片…</p>{/if}
 <div class="photos">
@@ -540,6 +586,7 @@
     gap: 20px;
     margin: 28px 0 22px;
   }
+  .back-links { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
   .back {
     font-size: 12px;
     color: #7b8578;

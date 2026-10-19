@@ -3,6 +3,9 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 const directory = resolve('.gallery-local/drift');
+const serverManifest = JSON.parse(await readFile('server/package.json', 'utf8'));
+const manifest = JSON.parse(await readFile('deployment/gallery/verification/package.json', 'utf8'));
+if (manifest.version !== serverManifest.version) throw new Error('Verification lock belongs to a different Immich baseline');
 for (const file of [
   'server/dist/schema/index.js',
   'server/dist/repositories/database.repository.js',
@@ -17,11 +20,13 @@ for (const file of ['package.json', 'package-lock.json'])
   await cp(`deployment/gallery/verification/${file}`, `${directory}/${file}`);
 // npm is only used for this standalone, locked verification environment; it never
 // operates on the Immich/Gallery workspace dependency tree or its shared lock.
+// Upstream 3.3.3 pins Nest 12 with nestjs-zod 5.5 whose peer range still ends at
+// Nest 11; retain the upstream-selected versions instead of resolving a second Nest.
 const npmCli = resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js');
 await new Promise((ok, fail) => {
   const child = spawn(
     process.execPath,
-    [npmCli, 'ci', '--prefix', directory, '--ignore-scripts', '--no-audit', '--no-fund'],
+    [npmCli, 'ci', '--prefix', directory, '--ignore-scripts', '--no-audit', '--no-fund', '--legacy-peer-deps'],
     { stdio: 'inherit' },
   );
   child.on('error', fail);
@@ -29,16 +34,14 @@ await new Promise((ok, fail) => {
 });
 await rm(`${directory}/immich-code`, { recursive: true, force: true });
 await cp('server/dist', `${directory}/immich-code`, { recursive: true, force: true });
-await writeFile(`${directory}/immich-code/package.json`, JSON.stringify({ type: 'commonjs' }));
+await writeFile(`${directory}/immich-code/package.json`, JSON.stringify({ type: serverManifest.type ?? 'commonjs' }));
 await mkdir(`${directory}/node_modules/@immich/plugin-sdk`, { recursive: true });
 await cp('packages/plugin-sdk/dist', `${directory}/node_modules/@immich/plugin-sdk/dist`, {
   recursive: true,
   force: true,
 });
 await cp('packages/plugin-sdk/package.json', `${directory}/node_modules/@immich/plugin-sdk/package.json`);
-const serverVersion = JSON.parse(await readFile('server/package.json', 'utf8')).version;
-const manifest = JSON.parse(await readFile(`${directory}/package.json`, 'utf8'));
-if (manifest.version !== serverVersion) throw new Error('Verification lock belongs to a different Immich baseline');
+const serverVersion = serverManifest.version;
 await writeFile(
   `${directory}/build-provenance.json`,
   JSON.stringify(

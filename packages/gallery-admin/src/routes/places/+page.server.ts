@@ -7,5 +7,7 @@ export async function load({ locals, url }: { locals: App.Locals; url: URL }) {
     publicOrigin: app.publicOrigin,
     ...(await adminPlaces(app.db, url.searchParams.get('q') ?? '')),
     q: url.searchParams.get('q') ?? '',
+    view: url.searchParams.get('view') === 'photos' ? 'photos' : 'dictionary',
+    review: url.searchParams.get('review') ?? '',
   };
 }

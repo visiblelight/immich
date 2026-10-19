@@ -438,3 +438,35 @@ ADR 0012 已确认。拟新增文章、发布版本、独立素材及引用关�
 ## 0012：地点词典与标签实时停用（2026-10-05）
 
 新增 `place_label` 和 `photo_place`；完整字段、约束、权限及GPS失效语义见 [地点数据字典](places.md)。标签公开视图过滤active，关联和历史发布保留。本地已迁移，生产未迁移；见 [交付记录](../delivery/places-and-outline.md)。
+
+## 0013：独立省级到访记录（2026-10-19）
+
+与 `0013_regional_visits.sql` 同步新增两张 Gallery 表，不改动 Immich 表、现有国家记录或发布版本。实际部署状态另见地区足迹交付记录。
+
+### region_visit_override
+
+| 字段 | 类型与约束 | 含义 |
+|---|---|---|
+| id | uuid，主键 | 人工地区到访记录 ID |
+| region_code | text，`国家代码-地区代码` 格式，按核心地区清单校验 | 稳定地区编号，例如 CN-FJ |
+| start_local_date / end_local_date | date，可同时为空；非空时开始不晚于结束 | 以照片证据为依据的人工日期，不表示精确入省／离省时刻 |
+| label | text，默认空，最长 120 字符 | 到访名称 |
+| version | integer，默认 1，正数 | 乐观并发版本 |
+| created_at / updated_at | timestamptz，默认 now() | 创建与修改时间 |
+| updated_by | uuid，可空，引用 Gallery user，删除用户后置空 | 最近整理人 |
+
+`UNIQUE(id,region_code)` 供成员复合外键使用；`region_code` 索引用于专题查询。
+
+### region_visit_override_asset
+
+| 字段 | 类型与约束 | 含义 |
+|---|---|---|
+| override_id | uuid，与 region_code 共同引用父记录，删除级联 | 人工到访记录 |
+| region_code | text | 成员归属的省级地区 |
+| asset_id | uuid，无 Immich 外键 | 来源照片身份；不复制 GPS、标题或拍摄日期 |
+
+主键 `(override_id,asset_id)`；唯一约束 `(region_code,asset_id)` 防止同地区人工记录重复使用证据。国家表和省级表互不引用、互不覆盖；同一照片可以参与国家与省级两个层级的记录。
+
+`gallery_admin` 可读写，`gallery_public` 仅供服务端读取。每次输出以当前发布祖先链、当前发布版本、来源权限、可用媒体和实时 GPS 重新核验，Asset UUID 不进入公开 DTO。部分成员失效时隐藏人工名称、按剩余有效证据重算日期；全部失效时前台不展示，后台只保留可删除的记录 ID／版本。写入在地图设置行锁后重读当前证据。
+
+此次迁移仅增表，旧代码可继续使用；回滚应用不会删除省级整理结果。需撤销结构时先备份，并确认不再有新应用写入，再由迁移角色删除新表。常驻服务不持有数据库所有者或迁移凭据。

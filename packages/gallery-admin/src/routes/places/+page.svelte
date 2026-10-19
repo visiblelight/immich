@@ -16,8 +16,16 @@
   let busy = $state(false),
     message = $state(''),
     failed = $state(false),
-    tab = $state('dictionary');
-  let reviewFilter = $state<'country' | 'city' | 'all'>(untrack(() => data.photos.some(p => p.reviewCategory === 'country') ? 'country' : 'city'));
+    tab = $state(untrack(() => data.view));
+  type ReviewFilter = 'country' | 'region' | 'city' | 'restricted' | 'all';
+  let reviewFilter = $state<ReviewFilter>(untrack(() =>
+    ['country', 'region', 'city', 'restricted', 'all'].includes(data.review) ? data.review as ReviewFilter :
+    data.photos.some(p => p.reviewCategory === 'country') ? 'country'
+      : data.photos.some(p => p.reviewCategory === 'region') ? 'region' : 'city'));
+  const reviewLabels: Record<ReviewFilter, string> = {
+    country: '国家未识别', region: '省级地区待核对', city: '城镇待完善',
+    restricted: '受公开设置限制', all: '全部',
+  };
   let photoQuery = $state('');
   let selected = $state<string[]>([]), mapAsset = $state('');
   let placeQuery = $state(''), placeSearchAsset = $state('');
@@ -25,10 +33,12 @@
   let placeRequest = 0;
   const pending = $derived(data.photos.filter(p => p.needsReview));
   const countryPending = $derived(pending.filter(p => p.reviewCategory === 'country'));
+  const regionPending = $derived(pending.filter(p => p.reviewCategory === 'region'));
   const cityPending = $derived(pending.filter(p => p.reviewCategory === 'city'));
-  const inReviewFilter = (p: (typeof data.photos)[number]) => reviewFilter === 'all' || p.reviewCategory === reviewFilter;
+  const restricted = $derived(data.photos.filter(p => p.privacyRestricted));
+  const inReviewFilter = (p: (typeof data.photos)[number]) => reviewFilter === 'all' || (reviewFilter === 'restricted' ? p.privacyRestricted : p.reviewCategory === reviewFilter);
   const visiblePhotos = $derived(data.photos.filter(p => inReviewFilter(p) &&
-    [p.filename, p.city, p.state, ...p.places.map(v => v.name)].filter(Boolean).join(' ').toLocaleLowerCase().includes(photoQuery.trim().toLocaleLowerCase())));
+    [p.filename, p.city, p.state, p.regionName, ...p.places.map(v => v.name)].filter(Boolean).join(' ').toLocaleLowerCase().includes(photoQuery.trim().toLocaleLowerCase())));
   const selectedPhotos = $derived(data.photos.filter(p => selected.includes(p.asset_id)));
   const samePosition = (a: (typeof data.photos)[number], b: (typeof data.photos)[number]) => a.latitude === b.latitude && a.longitude === b.longitude;
   async function searchPhotoPlaces(asset: string) {
@@ -106,7 +116,7 @@
     <h1>地点管理</h1>
     <p>
       统一中文名称、英文名称与别名。GPS 由 Immich
-      管理，位置改变后旧的人工归属自动失效。城市自动匹配由来源名称和邻近坐标共同核对，不代表行政边界测绘结果。
+      管理，位置改变后旧的人工归属自动失效。省级地区由边界数据判断，城镇由来源地名和邻近坐标共同核对。人工归属与边界判断冲突时会提示重新核对。
     </p>
     {#if message}<p role="status" class="notice" class:error={failed}>{message}</p>{/if}
     <nav class="tabs">
@@ -136,14 +146,18 @@
       <div class="review-toolbar">
         <div class="tabs" aria-label="照片归属筛选">
           <button class:chosen={reviewFilter === 'country'} aria-pressed={reviewFilter === 'country'} onclick={() => { reviewFilter = 'country'; selected = []; }}>国家未识别 {countryPending.length}</button>
+          <button class:chosen={reviewFilter === 'region'} aria-pressed={reviewFilter === 'region'} onclick={() => { reviewFilter = 'region'; selected = []; }}>省级地区待核对 {regionPending.length}</button>
           <button class:chosen={reviewFilter === 'city'} aria-pressed={reviewFilter === 'city'} onclick={() => { reviewFilter = 'city'; selected = []; }}>城镇待完善 {cityPending.length}</button>
+          <button class:chosen={reviewFilter === 'restricted'} aria-pressed={reviewFilter === 'restricted'} onclick={() => { reviewFilter = 'restricted'; selected = []; }}>受公开设置限制 {restricted.length}</button>
           <button class:chosen={reviewFilter === 'all'} aria-pressed={reviewFilter === 'all'} onclick={() => { reviewFilter = 'all'; selected = []; }}>全部 {data.photos.length}</button>
         </div>
         <input aria-label="搜索归属照片" placeholder="搜索文件名或地点" bind:value={photoQuery} />
       </div>
-      <p>当前显示 {visiblePhotos.length} 张{reviewFilter === 'country' ? '国家未识别的照片' : reviewFilter === 'city' ? '城镇待完善的照片' : '有 GPS 的照片'}。人工确认到国家或省州也视为已核对；相同坐标的照片可一起确认。</p>
+      <p>当前显示 {visiblePhotos.length} 张{reviewFilter === 'all' ? '有 GPS 的照片' : `${reviewLabels[reviewFilter]}的照片`}。可以直接确认国家或省级地区；相同坐标的照片可一起确认。</p>
       {#if reviewFilter === 'country'}<p class="country-warning">请优先确认这些照片的国家归属。候选国家尚未生效，需要你手动确认。</p>
-      {:else if reviewFilter === 'city'}<p class="field-hint">这些照片已识别国家，仅城镇名称待完善，不影响按国家浏览。</p>{/if}
+      {:else if reviewFilter === 'region'}<p class="field-hint">这些照片的中国省级归属尚不可靠，或人工归属与边界判断冲突。可直接选择省级地区，无需先选择城镇。</p>
+      {:else if reviewFilter === 'city'}<p class="field-hint">这些照片仅城镇名称待完善，不影响已确认的国家和省级地区统计。</p>
+      {:else if reviewFilter === 'restricted'}<p class="field-hint">这些照片的省级位置受当前公开设置限制。此处可维护归属，但不会额外公开省份；需要在相册或照片中调整位置公开方式并发布。此分类与归属待核对分别统计。</p>{/if}
       {#if selected.length}<p role="status">已选择 {selected.length} 张同坐标照片；在其中任意一张选择地点并确认，即可一并保存。<button onclick={() => selected = []}>取消选择</button></p>{/if}
       <div class="place-photo-list">
         {#each visiblePhotos as photo (photo.asset_id)}<article class="photo-review">
@@ -157,7 +171,8 @@
                 disabled={busy || (!!selectedPhotos[0] && !samePosition(photo, selectedPhotos[0]))}
                 onchange={(e) => selected = e.currentTarget.checked ? [...selected, photo.asset_id] : selected.filter(id => id !== photo.asset_id)} />
                 <strong>{photo.filename}</strong></label>
-              <p class="review-status" class:pending={photo.needsReview} class:country-missing={photo.reviewCategory === 'country'}>{#if photo.reviewCategory === 'country'}<strong>国家未识别 · 需人工确认</strong>{:else if photo.reviewCategory === 'city'}<strong>城镇待完善</strong>{/if}{photo.reviewReason}</p>
+              <p class="review-status" class:pending={photo.needsReview} class:country-missing={photo.reviewCategory === 'country'}>{#if photo.reviewCategory === 'country'}<strong>国家未识别 · 需人工确认</strong>{:else if photo.reviewCategory === 'region'}<strong>{photo.regionConflict ? '省级归属冲突 · 需重新核对' : '省级地区待核对'}</strong>{:else if photo.reviewCategory === 'city'}<strong>城镇待完善</strong>{/if}{photo.reviewReason}</p>
+              {#if photo.privacyRestricted}<p class="privacy-note">受位置公开设置限制：当前不会用于省级地图。</p>{/if}
               {#if data.photos.filter(p => samePosition(p, photo) && inReviewFilter(p)).length > 1}
                 <button class="text-button" disabled={busy} onclick={() => selected = data.photos.filter(p => samePosition(p, photo) && inReviewFilter(p)).map(p => p.asset_id)}>选择此坐标的 {data.photos.filter(p => samePosition(p, photo) && inReviewFilter(p)).length} 张照片</button>
               {/if}
@@ -191,15 +206,15 @@
               >
                 <label
                   >校正到地点<select name="place" aria-label={`校正 ${photo.filename} 的地点`} required
-                    ><option value="">选择确认过的地点</option>{#if photo.country}<option value={`country:${photo.country}`}>{photo.countryName}（只确认国家）</option>{/if}{#each photo.candidates as p}<option
+                    ><option value="">选择确认过的地点</option>{#if photo.country}<option value={`country:${photo.country}`}>{photo.countryName}（只确认国家）</option>{/if}{#if photo.regionCandidates.length}<optgroup label="省级地区（无需选择城镇）">{#each photo.regionCandidates as p}<option value={p.id}>{p.name}（只确认省级地区）</option>{/each}</optgroup>{/if}{#each photo.candidates as p}<option
                         value={p.id}>{p.name} · {p.corroborated ? '来源地名吻合 · 待确认 · ' : ''}距城镇中心约 {p.distance}km</option
-                      >{/each}{#each [...new Map([...data.places, ...(placeSearchAsset === photo.asset_id ? placeResults : [])].map(p => [p.id,p])).values()].filter((p) => p.country === photo.country && p.kind !== 'country' && !photo.candidates.some((c) => c.id === p.id)) as p}<option
+                      >{/each}{#each [...new Map([...data.places, ...(placeSearchAsset === photo.asset_id ? placeResults : [])].map(p => [p.id,p])).values()].filter((p) => p.country === photo.country && p.kind !== 'country' && !photo.candidates.some((c) => c.id === p.id) && !photo.regionCandidates.some((c) => c.id === p.id)) as p}<option
                         value={p.id}>{p.path}</option
                       >{/each}</select
                   ></label
                 ><button disabled={busy || !photo.country}>确认{selection(photo).length > 1 ? ` ${selection(photo).length} 张照片` : ''}归属</button>
               </form>
-              <p>{photo.country ? '候选地名需你核对；也可搜索并确认到国家或省州。确认后立即应用，无需重新发布。' : '暂未找到可靠国家候选，请先在 Immich 核对 GPS；系统不会强行归给最近国家。'}</p>
+              <p>{photo.country ? '候选地名需你核对；可以只确认国家或省级地区。确认立即生效，公开范围仍遵循照片的位置设置。' : '暂未找到可靠国家候选，请先在 Immich 核对 GPS；系统不会强行归给最近国家。'}</p>
               {#if placeSearchAsset === photo.asset_id && placeQuery && !placeSearching && !placeResults.some(p => p.country === photo.country)}<p>没有可用的搜索结果，请使用候选或更换关键词。</p>{/if}
               {#if photo.manual_place}<button
                   disabled={busy}
@@ -213,7 +228,7 @@
                     })}>恢复自动判断</button
                 >{/if}
             </div>
-          </article>{:else}<p>{photoQuery ? '没有符合搜索条件的照片。' : reviewFilter === 'country' ? '没有国家未识别的照片。' : reviewFilter === 'city' ? '没有城镇待完善的照片。' : '暂无带 GPS 的照片。'}</p>{/each}
+          </article>{:else}<p>{photoQuery ? '没有符合搜索条件的照片。' : reviewFilter === 'all' ? '暂无带 GPS 的照片。' : `没有${reviewLabels[reviewFilter]}的照片。`}</p>{/each}
       </div>
     {/if}
     <dialog bind:this={dialog} aria-label="编辑地点" class="place-editor" onclose={() => (editing = null)}>
@@ -287,6 +302,7 @@
   .review-toolbar input { width: min(320px, 100%); }
   .review-select { display: flex; align-items: center; gap: 10px; }
   .review-status { font-size: 13px; }
+  .photo-review .privacy-note { font-size: 12px; color: #68776f; background: #eff3ed; padding: 8px 10px; border-radius: 4px; }
   .country-warning, .review-status.country-missing { color: #9b422f; }
   .review-status strong { margin-bottom: 4px; }
   .review-status.pending:not(.country-missing) { color: #956025; }

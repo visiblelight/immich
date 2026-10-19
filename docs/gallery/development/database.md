@@ -30,7 +30,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:prepare:db-tests
 现有机器导出结构和必要技术元数据（容器名称只适用于本地开发环境）：
 
 ```sh
-docker exec immich_postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --schema-only --no-owner --no-privileges' > .gallery-local/immich-schema.sql
+docker exec immich_postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --schema-only --exclude-schema=gallery --no-owner --no-privileges --clean --if-exists' > .gallery-local/immich-schema.sql
 
 docker exec immich_postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --data-only --no-owner --no-privileges --table=public.migration_overrides --table=public.kysely_migrations' > .gallery-local/immich-migration-metadata.sql
 
@@ -39,7 +39,7 @@ sh deployment/gallery/scripts/pnpm.sh gallery:test:db \
   "$PWD/.gallery-local/immich-migration-metadata.sql"
 ```
 
-第二份文件只包含迁移名称、时间与 schema 覆盖定义。`migration_overrides` 是上游比较函数／触发器等定义时必须使用的技术记录；省略它会产生不真实的漂移报告。没有导出用户、照片、相册、位置或凭据数据。
+第一份文件排除 Gallery schema，保留 Immich 及其扩展；不要改用 `--schema=public`，它会遗漏扩展并可能重复创建默认 schema。`--clean --if-exists` 的删除语句仅供下面的新建隔离库恢复，不可用于现有图库。第二份文件只包含迁移名称、时间与 schema 覆盖定义。`migration_overrides` 是上游比较函数／触发器等定义时必须使用的技术记录；省略它会产生不真实的漂移报告。没有导出用户、照片、相册、位置或凭据数据。
 
 验收器新建带 `gallery.isolation=true` 标签的临时 PG14 容器，随机回环端口、随机密码、内存数据盘，不挂载现有图库／数据库卷。仅向此库恢复结构，随后使用合成数据验证；无论测试成功或失败均尝试删除本次容器。连接信息位于忽略目录，权限 0600。不要把 dump、连接文件或 `.gallery-local` 提交到 Git。
 
@@ -90,3 +90,10 @@ sh deployment/gallery/scripts/pnpm.sh exec node \
 阶段 E 将实现图片解码／缩放／清除嵌入 EXIF/GPS、公开响应 DTO、no-store、缓存命中前重授权和地图点详情分页。现在没有公开媒体 HTTP 接口或静态缓存入口，因此尚未提供端到端的图片隐私验收。
 
 本轮验证的是本地 PG14 无 TLS 回环连接。远程连接的 CA／TLS 配置和证书验证在部署阶段单独验证；现有运行连接工厂继续拒绝 URL 查询参数覆盖角色或 TLS 行为。
+
+
+### 2026-10-19 验证工具同步
+
+独立验证 manifest/lock 已对齐当前 Immich 3.3.3 的已锁定依赖，复制 `server/dist` 时保留上游 ESM 模块类型，检查器使用动态导入运行原始迁移和 schema 检查。版本不匹配在复制或安装之前报错。上游选定的 Nest 12／nestjs-zod 5.5 组合尚存在 peer 声明滞后，独立 `npm ci` 使用 `--legacy-peer-deps` 保留上游组合，不降级或复制第二套 Nest；不改变仓库根 pnpm 锁。
+
+候选构建可通过 `GALLERY_BUILD_SUBDIR=regions-candidate` 传给 `gallery:test:db`，隔离 HTTP 服务读取相同构建目录。测试只恢复真实结构和技术迁移元数据，照片、用户、发布记录均为新建的合成数据。
