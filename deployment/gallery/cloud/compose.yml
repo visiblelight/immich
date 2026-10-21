@@ -65,6 +65,15 @@ services:
       edge:
         aliases: [vision-gallery-public]
   admin:
+    environment:
+      GALLERY_MEDIA_STATUS_DIRECTORY: /run/gallery-media-status
+    volumes:
+      - type: bind
+        source: ${GALLERY_CDN_STATE_PATH:-/var/lib/gallery-media/public}/status
+        target: /run/gallery-media-status
+        read_only: true
+        bind:
+          create_host_path: false
     extends:
       file: ../compose/compose.yml
       service: admin

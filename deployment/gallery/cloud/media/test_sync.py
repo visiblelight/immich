@@ -39,6 +39,19 @@ class SyncTest(unittest.TestCase):
         self.assertNotIn(old['key'], self.cloud.objects)
         self.assertEqual(list(self.ready()), [new['key']])
         self.assertEqual(self.cloud.refreshes, [old['key']])
+    def test_attribution_policy_and_rollback_hold(self):
+        old,new=image(),image(b'\xff\xd8signed')
+        self.run_sync([old])
+        records=[dict(kind='start',attributionKey='a'*64),new,dict(kind='complete',count=1,failures=0)]
+        result=sync.reconcile(iter(records),self.cloud,self.root,{'pauseGarbageCollection':True},1800)
+        self.assertEqual(result['uploaded'],1)
+        self.assertIn(old['key'],self.cloud.objects)
+        self.assertEqual(list(self.ready()),[new['key']])
+        state=json.loads((self.root/'public/status/sync.json').read_text())
+        self.assertEqual((state['phase'],state['attributionKey']),('complete','a'*64))
+        self.assertNotIn('key',state)
+        self.assertEqual(sync.reconcile(iter(records),self.cloud,self.root,{},1900)['uploaded'],0)
+        self.assertNotIn(old['key'],self.cloud.objects)
     def test_removal_grace_and_shared_reference(self):
         item = image(); self.run_sync([item]); self.run_sync([item], 1500)
         self.run_sync([], 1600)

@@ -1,3 +1,4 @@
+import { mediaAttributionSettings, saveMediaAttribution, mediaAttributionStatus } from '@gallery/db/server';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { GalleryError, ensure, uuid } from '@gallery/core';
 import {
@@ -86,6 +87,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
   try {
     ensure(locals.user, '请先登录。', 401);
     const app = getRuntime();
+    if (params.action === 'media-attribution-status') return json(await mediaAttributionStatus(app.db));
+    if (params.action === 'media-attribution') return json(await mediaAttributionSettings(app.db));
     if (params.action === 'places') return json(await adminPlaces(app.db, url.searchParams.get('q') ?? ''));
     if (params.action === 'photos') return json(await photoLibrary(app.db, url.searchParams));
     if (params.action === 'state')
@@ -143,6 +146,7 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
     ensure(locals.user, '请先登录。', 401);
     const user = locals.user;
     switch (params.action) {
+      case 'media-attribution': return json(await saveMediaAttribution(app.db, user, input));
       case 'place-save':
         await savePlace(app.db, user, input);
         return json({ ok: true });

@@ -5,6 +5,7 @@ source_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 install -d -m 755 /opt/gallery-media /etc/gallery
 install -d -m 711 /var/lib/gallery-media
 install -d -o root -g 1000 -m 750 /var/lib/gallery-media/public
+install -d -o root -g 1000 -m 750 /var/lib/gallery-media/public/status
 python3 -m venv /opt/gallery-media/venv
 /opt/gallery-media/venv/bin/pip install --index-url https://pypi.org/simple -r "$source_dir/requirements.lock"
 install -m 644 "$source_dir/sync.py" /opt/gallery-media/sync.py

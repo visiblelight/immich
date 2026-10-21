@@ -2,6 +2,7 @@
   import { tick, untrack, onMount } from 'svelte';
   import { goto, beforeNavigate } from '$app/navigation';
   import AdminSidebar from './AdminSidebar.svelte';
+  import MediaAttributionSettings from './MediaAttributionSettings.svelte';
   import { sameAlbumContent, galleryInventory, albumPhotoCounts, albumTreeRows } from '@gallery/core';
   import type {
     AlbumListSort,
@@ -842,6 +843,7 @@
           <p class="muted">一次保存基本信息、关于选篇、页脚及联系链接，立即应用到前台。</p>
         </div>
       </section>
+      <MediaAttributionSettings />
     {:else}<header class="page-heading">
         <div>
           <h1>个人账号</h1>

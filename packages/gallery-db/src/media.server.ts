@@ -1,3 +1,6 @@
+import type { MediaAttribution } from '@gallery/core';
+import { attributionKey } from './media-attribution.server.ts';
+import { addImageAttribution } from './image-attribution.server.ts';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
@@ -71,10 +74,10 @@ async function encodingSlot() {
   };
 }
 /** Keep Immich's dimensions, compressed pixels and colour profile; remove private metadata. */
-export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promise<Buffer> {
+export async function sanitizeImage(bytes: Buffer, variant: MediaVariant, attribution?: MediaAttribution): Promise<Buffer> {
   if (!['thumbnail', 'preview'].includes(variant) || bytes.length > MAX_CACHE)
     throw new Error('Media unavailable');
-  const key = variant + ':' + createHash('sha256').update(bytes).digest('hex');
+  const key = attributionKey(attribution) + ':' + variant + ':' + createHash('sha256').update(bytes).digest('hex');
   const cached = sanitized.get(key);
   if (cached) {
     sanitized.delete(key);
@@ -88,7 +91,7 @@ export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promi
   const work = (async () => {
     const release = await encodingSlot();
     try {
-      const result = await prepareImage(bytes, key);
+      const result = await prepareImage(bytes, key, attribution);
       if (result.length <= MAX_CACHE) {
         sanitized.set(key, result);
         cacheBytes += result.length;
@@ -111,8 +114,9 @@ export async function sanitizeImage(bytes: Buffer, variant: MediaVariant): Promi
     pendingBytes -= bytes.length;
   }
 }
-async function prepareImage(bytes: Buffer, key: string): Promise<Buffer> {
-  const result = stripImageMetadata(bytes);
+async function prepareImage(bytes: Buffer, key: string, attribution?: MediaAttribution): Promise<Buffer> {
+  const clean = stripImageMetadata(bytes);
+  const result = attribution?.enabled ? addImageAttribution(clean, attribution) : clean;
   if (validated.has(key)) {
     validated.delete(key);
     validated.add(key);

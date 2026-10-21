@@ -1,3 +1,4 @@
+import { mediaAttributionSettings } from '@gallery/db/server';
 import { readSourceDerivative, sanitizeImage, imageContentType } from '@gallery/db/server';
 import { isUuid } from '@gallery/core';
 import { getRuntime } from '$lib/server/runtime';
@@ -15,7 +16,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
       variant as 'thumbnail' | 'preview',
       app.root,
     );
-    const output = await sanitizeImage(bytes, variant as 'thumbnail' | 'preview');
+    const output = await sanitizeImage(bytes, variant as 'thumbnail' | 'preview', await mediaAttributionSettings(app.db));
     return new Response(new Uint8Array(output), {
       headers: {
         'content-type': imageContentType(output),

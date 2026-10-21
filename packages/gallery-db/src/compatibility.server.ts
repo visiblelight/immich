@@ -29,6 +29,7 @@ export async function assertDatabaseCompatibility(
     pg_has_role(current_user, 'gallery_view_owner', 'MEMBER')
   ) AS unsafe`.execute(db);
   if (privileges.rows[0]?.unsafe !== false) throw new Error('Unsafe Gallery database privileges');
+  await sql`SELECT enabled,creator,homepage,copyright,version FROM gallery.media_attribution WHERE id=1`.execute(db);
   // Explicit columns force PostgreSQL to validate underlying view dependencies.
   await sql`SELECT name,copyright_name,footer_text FROM gallery.published_site LIMIT 0`.execute(db);
   await sql`SELECT album_id, release_id, ancestor_ids, description_document FROM gallery.published_album LIMIT 0`.execute(

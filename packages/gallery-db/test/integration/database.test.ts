@@ -159,6 +159,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         '0011',
         '0012',
         '0013',
+        '0014',
       ]);
       assert.deepEqual(await migrate(migrator), []);
       await assert.rejects(migrate(admin), /require gallery_migrator/);
@@ -168,7 +169,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
           )
         ).rows[0].count,
-        '35',
+        '36',
       );
     });
     await t.test('runtime compatibility checks validate service roles and view contracts', async () => {

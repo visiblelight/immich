@@ -3,6 +3,8 @@
 import { sql } from 'kysely';
 import {
   runtime,
+  mediaAttributionSettings,
+  attributionKey,
   readArticlePhotoDerivative,
   readPublishedDerivative,
   sanitizeImage,
@@ -24,6 +26,8 @@ async function emit(bytes: Buffer) {
 }
 try {
   await app.ready();
+  const attribution = await mediaAttributionSettings(app.db);
+  await send({kind:'start', attributionKey:attributionKey(attribution)});
   // The listing is only a candidate set. Reauthorize every item in the existing media reader.
   const photos = (
     await sql<{
@@ -51,7 +55,7 @@ try {
     for (const variant of ['thumbnail', 'preview'] as const) {
       try {
         const media = await readPublishedDerivative(app.db, item.album_id, item.photo_id, variant, app.root);
-        await emit(await sanitizeImage(media.bytes, variant));
+        await emit(await sanitizeImage(media.bytes, variant, attribution));
       } catch {
         failures++;
       }
@@ -67,7 +71,7 @@ try {
           variant,
           app.root,
         );
-        await emit(await sanitizeImage(media.bytes, variant));
+        await emit(await sanitizeImage(media.bytes, variant, attribution));
       } catch {
         failures++;
       }
@@ -80,7 +84,7 @@ try {
         failures++;
       }
     }
-  await send({ kind: 'complete', count: seen.size, failures });
+  await send({ kind: 'complete', count: seen.size, failures, attributionKey: attributionKey(attribution) });
 } finally {
   await app.db.destroy();
 }

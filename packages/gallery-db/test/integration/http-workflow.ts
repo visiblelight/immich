@@ -132,6 +132,7 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
     assert.equal(wrongHost.status, 200); // No redirect to any value supplied by a request header.
     assert.equal((await fetch(`${origins.admin}/albums`, { redirect: 'manual' })).status, 303);
     await api('source', undefined, 401);
+    await api('media-attribution',undefined,401);
     assert.equal((await fetch(`${origins.admin}/media/source/${asset}`)).status, 401);
     const signed = await api('login', {
       email: 'gallery@example.invalid',
@@ -256,6 +257,25 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
       200,
     );
     assert.equal((await fetch(`${origins.public}/media/${created.id}/${randomUUID()}`)).status, 404);
+    const unsignedSettings=await api('media-attribution').then(r=>r.json());
+    const beforeAttribution=await current();
+    const sourceBefore=await readFile(`${mediaRoot}/${asset}-preview.jpg`);
+    await readyCdn(imageBytes);
+    const signedSettings=await api('media-attribution',{...unsignedSettings,enabled:true,creator:'https://vision.ke',homepage:'https://vision.ke',copyright:''}).then(r=>r.json());
+    await api('media-attribution',{...signedSettings,creator:'forbidden'},403,'https://unrelated.example');
+    await api('media-attribution',unsignedSettings,409);
+    const marked=await fetch(photoUrl,{redirect:'manual'});
+    assert.equal(marked.status,200,'Old unsigned CDN entry must not match new signed output');
+    const markedBytes=Buffer.from(await marked.arrayBuffer());
+    assert.match((await sharp(markedBytes).metadata()).xmp!.toString(),/https:\/\/vision.ke/);
+    assert.deepEqual((await current()).albums,beforeAttribution.albums,'Changing attribution must not change albums/groups/release relationships');
+    assert.deepEqual(await readFile(`${mediaRoot}/${asset}-preview.jpg`),sourceBefore);
+    await readyCdn(markedBytes);
+    assert.equal((await fetch(photoUrl,{redirect:'manual'})).status,302);
+    await api('media-attribution',{...signedSettings,enabled:false});
+    const reverted=await fetch(photoUrl,{redirect:'manual'});
+    assert.equal(reverted.status,200);
+    assert.deepEqual(Buffer.from(await reverted.arrayBuffer()),imageBytes);
     await readyCdn(imageBytes);
     const cdnImage = await fetch(photoUrl, { redirect: 'manual' });
     assert.equal(cdnImage.status, 302);

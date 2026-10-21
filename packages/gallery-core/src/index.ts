@@ -25,3 +25,5 @@ export * from './map-presets.ts';
 export * from './photo-filters.ts';
 
 export * from './regions.ts';
+
+export * from './media-attribution.ts';

@@ -35,3 +35,11 @@ CDN 配置：URL A 鉴权 300 秒；`/gallery/` 边缘强制缓存 1 天（忽�
 将 public/config.json 的 enabled 原子改为 false，即时停止签发 CDN URL；停止 timer，前台回到 ECS。保留 URL 鉴权、私有 Bucket 和对象，不删除 Immich 来源图。旧签名 5 分钟后失效。密钥轮换须协调 CDN 主备 KEY 与本文件。
 
 云备份脚本在独占同步锁后备份配置、签名密钥和 ledger，归档属于私有备份。不能只备份 ready 清单然后删除 ledger；后者负责追踪可回收对象。
+
+## 图片署名与首次切换（0014）
+
+Gallery 的 `media_attribution` 配置在输出时统一应用于 Immich 照片，HTTP 与导出共用同一实现；独立上传的文章插图不自动署名。对象标识仍为实际文件内容 SHA-256，同配置重复扫描不重复上传。新输出与旧 ready 清单不匹配时直接返回源站图片。
+
+新版 exporter 增加 `start.attributionKey`，worker 在 `public/status/sync.json` 写入当前策略哈希、时间、阶段、处理数量和失败数（不包含密钥、对象名或照片 ID）。后台只读挂载这个子目录，设置 `GALLERY_MEDIA_STATUS_DIRECTORY`；状态过期、未知或策略不同不能声称同步完成。署名配置的修订号和更新时间不参与图片内容。
+
+首次生产切换前须停止 timer 并等待在途任务完成，安装新版 worker、创建 status 目录，在 `/etc/gallery/media-sync.json` 设置 `"pauseGarbageCollection": true`。完成备份、迁移与 Compose 状态目录协调后恢复同步。该选项只保留旧可重建对象，公开清单仍仅包含当前输出；权限和旧签名 5 分钟时限不变。验收通过后将该选项设为 false，恢复原 10 分钟宽限回收；勿长期暂停以免存储增长。应用回滚时可使用保留旧文件，或从未改变的 Immich 衍生图重新同步；不覆盖或删除 Immich 文件。

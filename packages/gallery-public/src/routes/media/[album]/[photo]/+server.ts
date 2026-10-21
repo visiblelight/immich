@@ -1,3 +1,4 @@
+import { mediaAttributionSettings } from '@gallery/db/server';
 import { readPublishedDerivative, sanitizeImage, imageContentType, publishedCdnRedirect } from '@gallery/db/server';
 import { isUuid } from '@gallery/core';
 import { getRuntime } from '$lib/server/runtime';
@@ -16,7 +17,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
       variant as 'thumbnail' | 'preview',
       app.root,
     );
-    const output = await sanitizeImage(media.bytes, variant as 'thumbnail' | 'preview');
+    const output = await sanitizeImage(media.bytes, variant as 'thumbnail' | 'preview', await mediaAttributionSettings(app.db));
     const cdn = await publishedCdnRedirect(output, authorizedAt);
     if (cdn) return cdn;
     return new Response(new Uint8Array(output), {

@@ -115,8 +115,20 @@ def reconcile(records, cloud, root, config, now=None):
     ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
     desired, ready, failures, uploads = set(), {}, 0, 0
     complete = None
+    policy = None
+    status_dir = root / 'public/status'
+    status_dir.mkdir(parents=True, exist_ok=True)
+    def progress(phase):
+        atomic_json(status_dir / 'sync.json', {'checkedAt': int(time.time()*1000),
+            'phase': phase, 'attributionKey': policy, 'objects': len(ready), 'failures': failures}, True)
     for record in records:
         if complete is not None: raise ValueError('Trailing export data')
+        if record.get('kind') == 'start':
+            if policy is not None or desired: raise ValueError('Unexpected policy header')
+            policy = record.get('attributionKey')
+            if not isinstance(policy, str) or not re.fullmatch(r'(unsigned-v1|[a-f0-9]{64})', policy): raise ValueError('Invalid policy')
+            progress('running')
+            continue
         if record.get('kind') == 'complete':
             complete = record
             continue
@@ -133,6 +145,7 @@ def reconcile(records, cloud, root, config, now=None):
             ready[key] = True
         except Exception:
             failures += 1
+        progress('running')
     if complete is None or complete['count'] != len(desired):
         raise ValueError('Incomplete export; refusing garbage collection')
     failures += complete['failures']
@@ -141,7 +154,7 @@ def reconcile(records, cloud, root, config, now=None):
     if ready: probe_access(config, next(iter(ready)))
     atomic_json(root / 'public/ready.json', {'version': 1, 'checkedAt': int(time.time()*1000), 'objects': ready}, True)
     removed = []
-    if not failures:
+    if not failures and config.get('pauseGarbageCollection') is not True:
         for key, entry in list(ledger.items()):
             if key not in desired and now - entry['lastSeen'] >= 600:
                 try:
@@ -154,6 +167,7 @@ def reconcile(records, cloud, root, config, now=None):
                 for key in removed: del ledger[key]
             except Exception: failures += 1  # keep journal entries and retry refresh next run
     atomic_json(ledger_path, ledger)
+    progress('failed' if failures else 'complete')
     return {'objects': len(ready), 'uploaded': uploads, 'removed': len(removed), 'failures': failures}
 
 def main():
@@ -180,7 +194,7 @@ def main():
                 yield json.loads(line)
             if process.wait() != 0: raise RuntimeError('Gallery export failed')
         try:
-            result = reconcile(records(), Cloud(config), ROOT, public)
+            result = reconcile(records(), Cloud(config), ROOT, {**public, 'pauseGarbageCollection':config.get('pauseGarbageCollection',False)})
             atomic_json(ROOT / 'status.json', {'checkedAt': int(time.time()*1000), **result})
             print(json.dumps(result))
             if result['failures']: raise RuntimeError('Some media require retry')
