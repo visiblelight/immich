@@ -151,3 +151,11 @@
 - 证据在忽略目录 `.gallery-local/community/card-likes-{desktop,mobile}.png`，日志 `/tmp/gallery-card-likes-{check,build}.log`。本轮仅本地界面调整，没有修改数据、提交或发布生产。
 
 用户随后确认本地效果并授权提交、推送及生产发布。本次仅更新界面及文档，不需要数据库迁移或配置变更；部署结果在下方单独记录。
+
+### 列表点赞调整生产发布
+
+- 应用提交 `03bab9aae2cd89a580348a375ee38c220de55517` 已推送。GitHub Gallery [运行 40106372374](https://github.com/visiblelight/immich/actions/runs/40106372374) 的检查、镜像构建和生产部署全部成功。
+- 生产镜像 `ghcr.io/visiblelight/gallery@sha256:5aa74fb6a7c8ba8a817b4251106769824a1dbf88e241dabd554fdf580595de11`，服务器发布记录与提交一致，前后台 readiness 正常。无数据库迁移、内容修改或互动数据写入。
+- 正式域名浏览器复核：首批 24 个相册采用照片数量同行布局且无零赞统计；48 张相片同样不显示零赞；没有计数加载错误。现有登录状态保留，打开零赞照片大图后点赞按钮仍存在。
+- 当时公开列表均为零赞，非零点赞的同行及右对齐效果依据前述本地真实数据验收；未为截图向生产添加点赞。生产截图 `.gallery-local/community/card-likes-production-albums.png`，发布日志 `/tmp/gallery-card-likes-production-ci.log`。
+- 原有本地 Immich 升级配置、评估文档和 `mise.lock` 修改继续保留，未纳入提交。
