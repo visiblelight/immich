@@ -6,6 +6,19 @@ export const handle: Handle = async ({ event, resolve }) => {
     return resolve(event);
   try {
     const app = getRuntime();
+    const origin = new URL(app.origin);
+    if (
+      ['GET', 'HEAD'].includes(event.request.method) &&
+      origin.hostname === 'localhost' &&
+      event.request.headers.get('host') === `127.0.0.1${origin.port ? ':' + origin.port : ''}`
+    )
+      return new Response(null, {
+        status: 307,
+        headers: {
+          location: `${app.origin}${event.url.pathname}${event.url.search}`,
+          'cache-control': 'no-store',
+        },
+      });
     await app.ready();
     const response = await resolve(event);
     response.headers.set('cache-control', 'no-store');

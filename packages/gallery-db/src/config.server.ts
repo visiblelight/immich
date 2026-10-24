@@ -1,4 +1,4 @@
-export type DatabaseService = 'gallery-public' | 'gallery-admin';
+export type DatabaseService = 'gallery-public' | 'gallery-admin' | 'gallery-community';
 
 /** Explicit connection only: never read Immich environment variables or log URLs. */
 export function databaseConfig(connectionString: string, service: DatabaseService) {
@@ -20,7 +20,7 @@ export function databaseConfig(connectionString: string, service: DatabaseServic
   }
 
   // PG enforces actual privileges; this is only a fail-fast configuration guard.
-  const expectedRole = service === 'gallery-public' ? 'gallery_public' : 'gallery_admin';
+  const expectedRole = service.replace('-', '_');
   if (parsed.username !== expectedRole) {
     throw new Error(`Gallery runtime requires the ${expectedRole} database role`);
   }

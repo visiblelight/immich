@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack, onMount, onDestroy } from 'svelte';
+  import { tick, untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import { enterViewerFullscreen, exitViewerFullscreen } from './viewer-fullscreen';
   import { captureTime } from '../../gallery-core/src/capture-time';
   import Markdown from './Markdown.svelte';
@@ -10,11 +10,18 @@
   import SegmentedControl from './SegmentedControl.svelte';
 
   function previewPlaceholder(image: HTMLImageElement) {
-    const ready = () => { delete image.dataset.loading; };
+    const ready = () => {
+      delete image.dataset.loading;
+    };
     if (image.complete && image.naturalWidth) ready();
     image.addEventListener('load', ready);
     image.addEventListener('error', ready);
-    return { destroy() { image.removeEventListener('load', ready); image.removeEventListener('error', ready); } };
+    return {
+      destroy() {
+        image.removeEventListener('load', ready);
+        image.removeEventListener('error', ready);
+      },
+    };
   }
   import PublicFrame from './PublicFrame.svelte';
   import Icon from './Icon.svelte';
@@ -39,6 +46,17 @@
     relatedArticles = [],
     albumSearch,
     searchAlbums,
+    accountControl,
+    albumActions,
+    albumComments,
+    albumHasComments,
+    commentsEnabled = false,
+    photoLike,
+    photoCommentCount,
+    photoInformation,
+    photoCommunity,
+    likeCount,
+    albumHref,
   }: {
     site: {
       name: string;
@@ -51,6 +69,17 @@
     stream?: BrowseStream;
     albumSearch?: { query: string; matchedIds: string[] };
     searchAlbums?: (query: string) => void;
+    accountControl?: Snippet;
+    albumActions?: Snippet<[DisplayAlbum]>;
+    albumComments?: Snippet<[DisplayAlbum, boolean, () => void]>;
+    albumHasComments?: (album: DisplayAlbum) => boolean;
+    commentsEnabled?: boolean;
+    photoLike?: Snippet<[DisplayPhoto]>;
+    photoCommentCount?: (photo: DisplayPhoto) => number;
+    photoInformation?: Snippet<[DisplayPhoto]>;
+    photoCommunity?: Snippet<[DisplayPhoto]>;
+    likeCount?: (kind: 'album' | 'photo', id: string) => number | null;
+    albumHref?: (album: DisplayAlbum) => string;
     active?: DisplayAlbum | null;
     preview?: boolean;
     about?: boolean;
@@ -209,6 +238,49 @@
     );
 
   let info = $state(true);
+  let photoTab = $state('information');
+  const hasPhotoStory = $derived(
+    !!photo &&
+      !!(
+        (photo.group
+          ? photo.group.title?.trim() || photo.group.description?.trim()
+          : photo.title?.trim() || photo.description?.trim()) || photo.tags?.length
+      ),
+  );
+  const hasPhotoDiscussion = $derived(!!photoCommunity || hasPhotoStory);
+  let compactLayout = $state(false),
+    albumDiscussionOpen = $state(false);
+  let albumDiscussion = $state<HTMLDialogElement>();
+  const hasStory = $derived(!!active && !!documentMarkdown(active, active.summary).trim());
+  const hasDiscussion = $derived(!!active && !!albumComments && !!albumHasComments?.(active));
+  const showStory = $derived(hasStory || hasDiscussion || (!!albumComments && albumDiscussionOpen));
+  onMount(() => {
+    const media = matchMedia('(max-width: 760px)');
+    const update = () => {
+      compactLayout = media.matches;
+      if (!media.matches) albumDiscussion?.close();
+    };
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  });
+  $effect(() => {
+    active?.id;
+    untrack(() => {
+      albumDiscussionOpen = false;
+      albumDiscussion?.close();
+    });
+  });
+  async function openDiscussion() {
+    albumDiscussionOpen = true;
+    await tick();
+    if (compactLayout && albumDiscussion && !albumDiscussion.open) albumDiscussion.showModal();
+  }
+  function collapseDiscussion() {
+    albumDiscussionOpen = false;
+    if (!hasStory && !hasDiscussion) albumDiscussion?.close();
+  }
+
   let page = $state(
     untrack(() => Math.max(0, Math.min(Math.ceil((items.length || 1) / 48) - 1, initialPage - 1))),
   );
@@ -242,9 +314,12 @@
     albumSearch?.query;
     albumPage = 0;
   });
-  const link = (a: DisplayAlbum) => (preview ? `/preview/${a.id}` : `/albums/${a.slug}`);
+  const link = (a: DisplayAlbum) =>
+    albumHref ? albumHref(a) : preview ? `/preview/${a.id}` : `/albums/${a.slug}`;
   let albumSort = $state<'updated' | 'taken'>('updated');
-  $effect(() => { if (stream) albumSort = stream.sort === 'taken' ? 'taken' : 'updated'; });
+  $effect(() => {
+    if (stream) albumSort = stream.sort === 'taken' ? 'taken' : 'updated';
+  });
   let children = $derived(
     albums
       .filter((a) =>
@@ -288,7 +363,11 @@
   }
   async function show(p: DisplayPhoto) {
     if (stream) {
-      photo = p; stream.photoChange(p); await tick(); if (!viewer.open) viewer.showModal(); return;
+      photo = p;
+      stream.photoChange(p);
+      await tick();
+      if (!viewer.open) viewer.showModal();
+      return;
     }
     if (!preview && navigatePhoto) {
       navigatePhoto(p);
@@ -300,8 +379,10 @@
   }
   function choose(next: DisplayPhoto | null) {
     if (!next) return;
-    if (stream) { photo = next; stream.photoChange(next); }
-    else if (!preview && navigatePhoto) navigatePhoto(next, true);
+    if (stream) {
+      photo = next;
+      stream.photoChange(next);
+    } else if (!preview && navigatePhoto) navigatePhoto(next, true);
     else photo = next;
   }
   async function shift(offset: number) {
@@ -326,18 +407,30 @@
     choose(items[(next + items.length) % items.length] ?? null);
   }
   $effect(() => {
-    if (stream && photo && itemIndex(photo) >= items.length - 5 && stream.photos?.hasMore && !stream.loading.photos && !stream.errors.photos) {
+    if (
+      stream &&
+      photo &&
+      itemIndex(photo) >= items.length - 5 &&
+      stream.photos?.hasMore &&
+      !stream.loading.photos &&
+      !stream.errors.photos
+    ) {
       untrack(() => void stream?.load('photos'));
     }
   });
   $effect(() => {
     if (!stream) return;
-    const selected = initialPhotoId ? active?.photos.find(p => p.id === initialPhotoId) : null;
+    const selected = initialPhotoId ? active?.photos.find((p) => p.id === initialPhotoId) : null;
     untrack(() => {
       if (selected && photo?.id !== selected.id) {
         photo = selected;
-        void tick().then(() => { if (viewer?.isConnected && !viewer.open) viewer.showModal(); });
-      } else if (!initialPhotoId && photo) { photo = null; viewer?.close(); }
+        void tick().then(() => {
+          if (viewer?.isConnected && !viewer.open) viewer.showModal();
+        });
+      } else if (!initialPhotoId && photo) {
+        photo = null;
+        viewer?.close();
+      }
     });
   });
   function angle(offset: number) {
@@ -348,6 +441,7 @@
   function keys(e: KeyboardEvent) {
     if (
       !viewer?.open ||
+      (e.target instanceof Element && !viewer.contains(e.target)) ||
       (e.target instanceof HTMLElement && e.target.closest('input,textarea,[contenteditable=true]'))
     )
       return;
@@ -367,20 +461,39 @@
 
 <svelte:window onkeydown={keys} />
 {#snippet story()}<Markdown text={active ? documentMarkdown(active, active.summary) : ''} />{/snippet}
+{#snippet discussion()}
+  {#if active}
+    {#if hasStory}<div class="album-description">
+        <h2 class="story-heading">相册介绍</h2>
+        {@render story()}
+      </div>{/if}
+    {#if albumComments}{@render albumComments(
+        active,
+        albumDiscussionOpen && !hasStory && !hasDiscussion,
+        collapseDiscussion,
+      )}{/if}
+  {/if}
+{/snippet}
 {#if preview}<div class="preview-notice">
     草稿预览 · 仅管理员可见 · 当前显示已保存内容 <a href="/albums">返回工作台 →</a>
   </div>{/if}
 {#snippet albumPagination()}
-  {#if stream?.albums}<LoadMore more={stream.albums.hasMore} loading={stream.loading.albums} error={stream.errors.albums} label="相册" load={() => stream!.load('albums')} previous={stream.previous.albums} loadPrevious={() => stream!.load('albums', true)} />
+  {#if stream?.albums}<LoadMore
+      more={stream.albums.hasMore}
+      loading={stream.loading.albums}
+      error={stream.errors.albums}
+      label="相册"
+      load={() => stream!.load('albums')}
+      previous={stream.previous.albums}
+      loadPrevious={() => stream!.load('albums', true)}
+    />
   {:else if children.length > 24}<div class="pagination">
       <button disabled={albumPage === 0} onclick={() => albumPage--}>上一页</button><span
         >{albumPage + 1} / {Math.ceil(children.length / 24)}</span
-      ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}
-        >下一页</button
-      >
+      ><button disabled={(albumPage + 1) * 24 >= children.length} onclick={() => albumPage++}>下一页</button>
     </div>{/if}
 {/snippet}
-<PublicFrame {site} active={about ? 'about' : feed ? 'photos' : 'albums'} {preview}>
+<PublicFrame {site} active={about ? 'about' : feed ? 'photos' : 'albums'} {preview} {accountControl}>
   <main>
     {#if about}<article class="about">
         <h1>在路上，也在日常里</h1>
@@ -417,8 +530,16 @@
               label="相片排序"
               value={feed.sort}
               options={[
-                { value: 'taken', label: '拍摄时间', href: feedLink(1, '', 'taken') },
-                { value: 'added', label: '最近加入', href: feedLink(1, '', 'added') },
+                {
+                  value: 'taken',
+                  label: '拍摄时间',
+                  href: feedLink(1, '', 'taken'),
+                },
+                {
+                  value: 'added',
+                  label: '最近加入',
+                  href: feedLink(1, '', 'added'),
+                },
               ]}
             />
           </section>
@@ -488,7 +609,9 @@
                 )}>清除失效标签</a
               >
             </p>{/if}
-          {#if !items.length}<p>没有符合当前筛选条件的照片。<a href="/photos">清除筛选</a></p>{/if}
+          {#if !items.length}<p>
+              没有符合当前筛选条件的照片。<a href="/photos">清除筛选</a>
+            </p>{/if}
           {#each items as p, index (p.id)}{@const month =
               (feed.sort === 'added' ? p.addedAt : p.localTakenAt)?.slice(0, 7) || 'unknown'}
             {#if index === 0 || month !== ((feed.sort === 'added' ? items[index - 1]?.addedAt : items[index - 1]?.localTakenAt)?.slice(0, 7) || 'unknown')}<h2
@@ -509,19 +632,33 @@
                 width="600"
                 height="450"
                 loading="lazy"
-              />{#if listTitle(p)}<span>{listTitle(p)}</span>{/if}</button
+              />{#if listTitle(p)}<span>{listTitle(p)}</span
+                >{/if}{#if likeCount?.('photo', p.id) != null}<span
+                  class="card-likes"
+                  aria-label={`${likeCount!('photo', p.id)} 人点赞`}>♡ {likeCount!('photo', p.id)}</span
+                >{/if}</button
             >
           {/each}
           {#if !items.length}<p class="empty">这里还没有公开照片。</p>{/if}
-          {#if stream?.photos}<LoadMore more={stream.photos.hasMore} loading={stream.loading.photos} error={stream.errors.photos} label="照片" load={() => stream!.load('photos')} previous={stream.previous.photos} loadPrevious={() => stream!.load('photos', true)} />{:else}<div class="pagination feed-pagination">
-            {#if feed.page > 1}<a href={feedLink(feed.page - 1)}>上一页</a>{/if}<span
-              >{feed.page} / {Math.max(1, Math.ceil(feed.total / 48))}</span
-            >{#if feed.page * 48 < feed.total}<a href={feedLink(feed.page + 1)}>下一页</a>{/if}
-          </div>{/if}
+          {#if stream?.photos}<LoadMore
+              more={stream.photos.hasMore}
+              loading={stream.loading.photos}
+              error={stream.errors.photos}
+              label="照片"
+              load={() => stream!.load('photos')}
+              previous={stream.previous.photos}
+              loadPrevious={() => stream!.load('photos', true)}
+            />{:else}<div class="pagination feed-pagination">
+              {#if feed.page > 1}<a href={feedLink(feed.page - 1)}>上一页</a>{/if}<span
+                >{feed.page} / {Math.max(1, Math.ceil(feed.total / 48))}</span
+              >{#if feed.page * 48 < feed.total}<a href={feedLink(feed.page + 1)}>下一页</a>{/if}
+            </div>{/if}
         </div>
       </div>
     {:else if !active}<div class="heading album-heading">
-        <h1>相册 <small>{stream?.albums?.total ?? children.length} 本</small></h1>
+        <h1>
+          相册 <small>{stream?.albums?.total ?? children.length} 本</small>
+        </h1>
         <div class="album-tools">
           {#if albumSearch}<form
               class="album-search"
@@ -558,54 +695,84 @@
         </div>
       </div>
       <div class="album-grid">
-        {#each (stream ? children : children.slice(albumPage * 24, (albumPage + 1) * 24)) as album (album.id)}<a
+        {#each stream ? children : children.slice(albumPage * 24, (albumPage + 1) * 24) as album (album.id)}<a
             class="album-card"
             id={`album-${album.id}`}
             href={link(album)}
-            >{#if album.cover}<div class="album-cover">{#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}</div>{:else}<div class="empty-cover">
+            >{#if album.cover}<div class="album-cover">
+                {#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}
+              </div>{:else}<div class="empty-cover">
                 {album.title.slice(0, 1)}
               </div>{/if}
             <h2>{album.title}</h2>
             <p>
               {albumSubtitle(album)}
-            </p></a
+            </p>
+            {#if likeCount?.('album', album.id) != null}<span
+                class="card-likes"
+                aria-label={`${likeCount!('album', album.id)} 人点赞`}>♡ {likeCount!('album', album.id)}</span
+              >{/if}</a
           >{/each}
       </div>
       {@render albumPagination()}
       {#if !children.length}<div class="empty">
-          <h2>{albumSearch?.query ? '没有找到匹配的相册' : '相册正在整理中'}</h2>
-          <p>{albumSearch?.query ? '试试其它相册名、照片描述或地点。' : '发布后的作品会在这里出现。'}</p>
+          <h2>
+            {albumSearch?.query ? '没有找到匹配的相册' : '相册正在整理中'}
+          </h2>
+          <p>
+            {albumSearch?.query ? '试试其它相册名、照片描述或地点。' : '发布后的作品会在这里出现。'}
+          </p>
         </div>{/if}
     {:else}<div class="breadcrumbs">
         <a href="/albums">相册</a>{#each crumbs as parent}<span>/</span><a href={link(parent)}
             >{parent.title}</a
           >{/each}
       </div>
-      <h1>{active.title}</h1>
-      <div class="detail" class:no-story={!documentMarkdown(active, active.summary).trim()}>
+      <div class="album-title-row">
+        <h1>{active.title}</h1>
+        {#if albumActions}{@render albumActions(active)}{/if}
+      </div>
+      <div class="detail" class:no-story={!showStory || compactLayout}>
         <div class="images">
           {#if children.length}<h2 class="section-title">
               子相册 <span>{stream?.albums?.total ?? children.length}</span>
               {@render albumSorting()}
             </h2>
             <div class="children-grid" class:compact-children={active.photos.length > 0}>
-              {#each (stream ? children : children.slice(albumPage * 24, (albumPage + 1) * 24)) as album (album.id)}<a
+              {#each stream ? children : children.slice(albumPage * 24, (albumPage + 1) * 24) as album (album.id)}<a
                   class="album-card"
-            id={`album-${album.id}`}
+                  id={`album-${album.id}`}
                   href={link(album)}
-                  >{#if album.cover}<div class="album-cover">{#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}</div>{:else}<div class="empty-cover">
+                  >{#if album.cover}<div class="album-cover">
+                      {#key album.cover}<AlbumCover src={album.cover} alt={album.title} />{/key}
+                    </div>{:else}<div class="empty-cover">
                       {album.title.slice(0, 1)}
                     </div>{/if}
                   <h2>{album.title}</h2>
-                  <p>{albumSubtitle(album)}</p></a
+                  <p>{albumSubtitle(album)}</p>
+                  {#if likeCount?.('album', album.id) != null}<span
+                      class="card-likes"
+                      aria-label={`${likeCount!('album', album.id)} 人点赞`}
+                      >♡ {likeCount!('album', album.id)}</span
+                    >{/if}</a
                 >{/each}
             </div>
             {@render albumPagination()}{/if}
-          {#if active.photos.length}<h2 class="section-title">
+          <div class="photo-list-heading">
+            <h2 class="section-title">
               照片 <span>{stream ? active.count : active.photos.length}</span>
-            </h2>{/if}
+            </h2>
+            {#if compactLayout && (hasStory || hasDiscussion || commentsEnabled)}
+              <button class="discussion-entry" onclick={openDiscussion}
+                >{hasStory || hasDiscussion ? (albumComments ? '说明与评论' : '相册介绍') : '写评论'}
+                <span aria-hidden="true">↗</span></button
+              >
+            {:else if !showStory && commentsEnabled}<button class="discussion-entry" onclick={openDiscussion}
+                >写评论 <span aria-hidden="true">＋</span></button
+              >{/if}
+          </div>
           <div class="photos-grid">
-            {#each (stream ? items : items.slice(page * 48, (page + 1) * 48)) as p, index (p.id)}<button
+            {#each stream ? items : items.slice(page * 48, (page + 1) * 48) as p, index (p.id)}<button
                 aria-label={`查看${p.group?.title || p.title || `第 ${page * 48 + index + 1} 张照片`}`}
                 id={`photo-${p.id}`}
                 class="photo"
@@ -624,25 +791,30 @@
                 >{#if p.group}<span class="stack-label"
                     >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group
                       .title || '照片组'}</span
-                  >{:else if p.title}<span>{p.title}</span>{/if}</button
+                  >{:else if p.title}<span>{p.title}</span>{/if}{#if likeCount?.('photo', p.id) != null}<span
+                    class="card-likes"
+                    aria-label={`${likeCount!('photo', p.id)} 人点赞`}>♡ {likeCount!('photo', p.id)}</span
+                  >{/if}</button
               >{/each}
           </div>
           {#if !active.photos.length && !children.length}<p class="empty">
               本册暂无直接照片{children.length ? '，可以继续浏览子相册。' : '。'}
-            </p>{/if}{#if stream?.photos && (items.length || stream.photos.hasMore)}<LoadMore more={stream.photos.hasMore} loading={stream.loading.photos} error={stream.errors.photos} label="照片" load={() => stream!.load('photos')} previous={stream.previous.photos} loadPrevious={() => stream!.load('photos', true)} />{:else if items.length > 48}<div class="pagination">
+            </p>{/if}{#if stream?.photos && (items.length || stream.photos.hasMore)}<LoadMore
+              more={stream.photos.hasMore}
+              loading={stream.loading.photos}
+              error={stream.errors.photos}
+              label="照片"
+              load={() => stream!.load('photos')}
+              previous={stream.previous.photos}
+              loadPrevious={() => stream!.load('photos', true)}
+            />{:else if items.length > 48}<div class="pagination">
               <button disabled={page === 0} onclick={() => page--}>上一页</button><span
                 >{page + 1} / {Math.ceil(items.length / 48)}</span
               ><button disabled={(page + 1) * 48 >= items.length} onclick={() => page++}>下一页</button>
             </div>{/if}
         </div>
-        {#if documentMarkdown(active, active.summary).trim()}<aside class="album-story" aria-label="相册介绍">
-            <div class="desktop-story">
-              <h2 class="story-heading">相册介绍</h2>
-              {@render story()}
-            </div>
-            <details class="mobile-story">
-              <summary>相册介绍 · 展开阅读</summary>{@render story()}
-            </details>
+        {#if showStory && !compactLayout}<aside class="album-story" aria-label="相册说明与评论">
+            {@render discussion()}
           </aside>{/if}
       </div>{/if}
     {#if !photo && relatedArticles.length}<aside class="related-articles" aria-label="相关文章">
@@ -652,6 +824,21 @@
       </aside>{/if}
   </main>
 </PublicFrame>
+{#if compactLayout && active}
+  <dialog
+    bind:this={albumDiscussion}
+    class="album-discussion"
+    aria-label="相册说明与评论"
+    onclose={() => (albumDiscussionOpen = false)}
+  >
+    <header>
+      <span>{active.title}</span><button aria-label="关闭相册评论" onclick={() => albumDiscussion?.close()}
+        >×</button
+      >
+    </header>
+    <div class="discussion-body">{@render discussion()}</div>
+  </dialog>
+{/if}
 <dialog
   bind:this={viewer}
   data-gallery-viewer
@@ -670,7 +857,8 @@
     <div class="viewer-toolbar">
       <span
         >{feed ? '相片' : '相册项目'}
-        {(stream?.photoOffset ?? 0) + itemIndex(photo) + 1} / {stream?.photos?.total ?? items.length}{variants.length
+        {(stream?.photoOffset ?? 0) + itemIndex(photo) + 1} / {stream?.photos?.total ??
+          items.length}{variants.length
           ? ` · 组内 ${variants.findIndex((p) => p.id === photo!.id) + 1} / ${variants.length}`
           : ''}</span
       >
@@ -748,6 +936,9 @@
         }}
       >
         <img src={photo.src} alt={photo.alt || photo.title || '照片'} />
+        {#if photoLike}<div class="photo-like-overlay">
+            {@render photoLike(photo)}
+          </div>{/if}
         {#if immersive}<button
             class="immersive-exit"
             aria-label="退出沉浸模式"
@@ -757,91 +948,113 @@
             }}
           ></button>{/if}
       </div>
-      {#if info}<aside class="photo-information">
-          {#if (photo.group ? photo.group.title?.trim() || photo.group.description?.trim() : photo.title?.trim() || photo.description?.trim()) || photo.tags?.length}<section
-              class="work-description"
-            >
-              <h2>{photoTitle(photo)}</h2>
-              {#if photo.tags?.length}<nav class="photo-tags" aria-label="照片标签">
-                  {#each photo.tags as tag}<a href={`/photos?${new URLSearchParams({ tag: tag.id })}`}
-                      >{tag.name}</a
-                    >{/each}
-                </nav>{/if}
-              {#if photo.group}<Markdown
-                  text={photo.group.description}
-                />{:else if photo.description}<Markdown text={photo.description} />{/if}
-            </section>{/if}
-          <section class="capture-facts">
-            <p>
-              <span>{captureTime(photo).label}</span><strong>{captureTime(photo).value}</strong>
-            </p>
-            {#if feed?.sort === 'added' && photo.addedAt}<p>
-                <span>加入 Gallery</span><strong
-                  >{date(photo.addedAt)}{photo.addedEstimated ? '（历史估算）' : ''}</strong
-                >
-              </p>{/if}
-            {#if photo.latitude !== null && photo.longitude !== null}<section class="location-facts">
-                <h3>拍摄位置</h3>
-                {#if photo.places?.length}<nav class="place-trail" aria-label="按拍摄地点筛选">
-                    {#each photo.places.filter((p, i, all) => p.name !== all[i + 1]?.name) as place, index}<span
-                        class="place-step"
-                      >
-                        {#if index > 0}<span class="place-separator" aria-hidden="true">›</span>{/if}<a
-                          href={`/photos?${new URLSearchParams({ place: place.id })}`}>{place.name}</a
-                        >
-                      </span>{/each}
+      {#if info}<aside
+          class="photo-information"
+          class:comments-active={hasPhotoDiscussion && photoTab === 'comments'}
+        >
+          {#if hasPhotoDiscussion}<div class="photo-community-tabs">
+              <SegmentedControl
+                label="照片内容"
+                options={[
+                  { value: 'information', label: '照片信息' },
+                  {
+                    value: 'comments',
+                    label: photoCommunity
+                      ? `评论${photoCommentCount?.(photo) ? ` · ${photoCommentCount(photo)}` : ''}`
+                      : '说明',
+                  },
+                ]}
+                value={photoTab}
+                onchange={(value) => (photoTab = value)}
+              />
+            </div>{/if}
+          {#if hasPhotoDiscussion && photoTab === 'comments'}
+            {#if hasPhotoStory}<section class="work-description">
+                <h2>{photoTitle(photo)}</h2>
+                {#if photo.tags?.length}<nav class="photo-tags" aria-label="照片标签">
+                    {#each photo.tags as tag}<a href={`/photos?${new URLSearchParams({ tag: tag.id })}`}
+                        >{tag.name}</a
+                      >{/each}
                   </nav>{/if}
-                {#if photo.places?.[0]?.kind === 'country'}<a
-                    class="place-map"
-                    href={`/visited/${photo.places[0].id.split(':')[1]}?${new URLSearchParams({ lat: String(photo.latitude), lng: String(photo.longitude), zoom: '11' })}`}
-                    >查看地图</a
-                  >{/if}
-                <p class="coordinates">
-                  {photo.latitude.toFixed(4)}, {photo.longitude.toFixed(4)}
-                </p>
+                {#if photo.group}<Markdown
+                    text={photo.group.description}
+                  />{:else if photo.description}<Markdown text={photo.description} />{/if}
               </section>{/if}
-          </section>
-          {#if photo.exif && Object.entries(photo.exif).some(([key, v]) => ['make', 'model', 'lensModel', 'fNumber', 'focalLength', 'iso', 'exposureTime'].includes(key) && v !== null && v !== '')}<section
-              class="camera-details"
-            >
-              <h3>拍摄参数</h3>
-              <dl>
-                {#each ['make', 'model', 'lensModel', 'focalLength', 'fNumber', 'exposureTime', 'iso']
-                  .map((key) => [key, photo!.exif![key]] as const)
-                  .filter(([, value]) => value !== null && value !== undefined && value !== '') as [key, value]}<div
-                    class:equipment={['make', 'model', 'lensModel'].includes(key)}
-                  >
-                    <dt>
-                      {(
-                        {
-                          make: '品牌',
-                          model: '相机',
-                          lensModel: '镜头',
-                          fNumber: '光圈',
-                          focalLength: '焦距',
-                          iso: 'ISO',
-                          exposureTime: '快门',
-                        } as Record<string, string>
-                      )[key]}
-                    </dt>
-                    <dd>
-                      {key === 'fNumber'
-                        ? `f/${value}`
-                        : key === 'focalLength'
-                          ? `${value} mm`
-                          : key === 'exposureTime'
-                            ? `${value} s`
-                            : value}
-                    </dd>
-                  </div>{/each}
-              </dl>
-            </section>{/if}
-          {#if photo.occurrences?.length}<section class="photo-context">
-              <h3>所在相册</h3>
-              {#each photo.occurrences as occurrence}<a href={`/albums/${occurrence.albumSlug}`}
-                  >{occurrence.albumTitle} →</a
-                >{/each}{#if feed && photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
-            </section>{/if}
+            {@render photoCommunity?.(photo)}
+          {:else}
+            {#if photoInformation}{@render photoInformation(photo)}{:else}
+              <section class="capture-facts">
+                <p>
+                  <span>{captureTime(photo).label}</span><strong>{captureTime(photo).value}</strong>
+                </p>
+                {#if feed?.sort === 'added' && photo.addedAt}<p>
+                    <span>加入 Gallery</span><strong
+                      >{date(photo.addedAt)}{photo.addedEstimated ? '（历史估算）' : ''}</strong
+                    >
+                  </p>{/if}
+                {#if photo.latitude !== null && photo.longitude !== null}<section class="location-facts">
+                    <h3>拍摄位置</h3>
+                    {#if photo.places?.length}<nav class="place-trail" aria-label="按拍摄地点筛选">
+                        {#each photo.places.filter((p, i, all) => p.name !== all[i + 1]?.name) as place, index}<span
+                            class="place-step"
+                          >
+                            {#if index > 0}<span class="place-separator" aria-hidden="true">›</span>{/if}<a
+                              href={`/photos?${new URLSearchParams({ place: place.id })}`}>{place.name}</a
+                            >
+                          </span>{/each}
+                      </nav>{/if}
+                    {#if photo.places?.[0]?.kind === 'country'}<a
+                        class="place-map"
+                        href={`/visited/${photo.places[0].id.split(':')[1]}?${new URLSearchParams({ lat: String(photo.latitude), lng: String(photo.longitude), zoom: '11' })}`}
+                        >查看地图</a
+                      >{/if}
+                    <p class="coordinates">
+                      {photo.latitude.toFixed(4)}, {photo.longitude.toFixed(4)}
+                    </p>
+                  </section>{/if}
+              </section>
+              {#if photo.exif && Object.entries(photo.exif).some(([key, v]) => ['make', 'model', 'lensModel', 'fNumber', 'focalLength', 'iso', 'exposureTime'].includes(key) && v !== null && v !== '')}<section
+                  class="camera-details"
+                >
+                  <h3>拍摄参数</h3>
+                  <dl>
+                    {#each ['make', 'model', 'lensModel', 'focalLength', 'fNumber', 'exposureTime', 'iso']
+                      .map((key) => [key, photo!.exif![key]] as const)
+                      .filter(([, value]) => value !== null && value !== undefined && value !== '') as [key, value]}<div
+                        class:equipment={['make', 'model', 'lensModel'].includes(key)}
+                      >
+                        <dt>
+                          {(
+                            {
+                              make: '品牌',
+                              model: '相机',
+                              lensModel: '镜头',
+                              fNumber: '光圈',
+                              focalLength: '焦距',
+                              iso: 'ISO',
+                              exposureTime: '快门',
+                            } as Record<string, string>
+                          )[key]}
+                        </dt>
+                        <dd>
+                          {key === 'fNumber'
+                            ? `f/${value}`
+                            : key === 'focalLength'
+                              ? `${value} mm`
+                              : key === 'exposureTime'
+                                ? `${value} s`
+                                : value}
+                        </dd>
+                      </div>{/each}
+                  </dl>
+                </section>{/if}
+              {#if photo.occurrences?.length}<section class="photo-context">
+                  <h3>所在相册</h3>
+                  {#each photo.occurrences as occurrence}<a href={`/albums/${occurrence.albumSlug}`}
+                      >{occurrence.albumTitle} →</a
+                    >{/each}{#if feed && photo.group}<a href={photoLink(photo)}>查看整组 →</a>{/if}
+                </section>{/if}
+            {/if}{/if}
         </aside>{/if}
     </div>
     <nav class="album-navigation" aria-label={feed ? '当前相片列表' : '同相册项目'}>
@@ -885,6 +1098,14 @@
 {/snippet}
 
 <style>
+  .card-likes {
+    display: inline-block !important;
+    padding: 3px 0 !important;
+    font-size: 12px !important;
+    line-height: 1.5;
+    color: #7b8477;
+    background: transparent !important;
+  }
   .album-tools {
     display: flex;
     align-items: center;
@@ -1035,8 +1256,16 @@
     background-size: 200% 100%;
     animation: photo-loading 1.6s linear infinite;
   }
-  @keyframes photo-loading { to { background-position: -200% 0; } }
-  @media (prefers-reduced-motion: reduce) { .photo img[data-loading] { animation: none; } }
+  @keyframes photo-loading {
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .photo img[data-loading] {
+      animation: none;
+    }
+  }
   .stack .photo-frame {
     margin: 3px 12px 15px 3px;
   }
@@ -1263,7 +1492,7 @@
     margin-left: 8px;
     font-size: 12px;
   }
-  .children-grid + .section-title {
+  .children-grid + .photo-list-heading {
     margin-top: 42px;
   }
   button {
@@ -1304,9 +1533,6 @@
     font-size: 18px;
     font-weight: 500;
     margin: 30px 0 16px;
-  }
-  .mobile-story {
-    display: none;
   }
   .empty {
     padding: 70px 0;
@@ -1492,17 +1718,6 @@
     .detail aside {
       border-top: 1px solid #e3e8de;
       padding-top: 25px;
-    }
-    .desktop-story {
-      display: none;
-    }
-    .mobile-story {
-      display: block;
-    }
-    .mobile-story summary {
-      font-size: 14px;
-      cursor: pointer;
-      padding-bottom: 22px;
     }
     .viewer-body {
       grid-template-columns: minmax(0, 1fr);
@@ -1770,14 +1985,6 @@
       padding: 20px;
       border: 1px solid #dce3d7;
     }
-    .mobile-story summary {
-      padding-bottom: 0;
-    }
-    .mobile-story[open] summary {
-      padding-bottom: 20px;
-      margin-bottom: 18px;
-      border-bottom: 1px solid #d6dfd1;
-    }
     dialog[open] {
       display: block;
       height: auto;
@@ -2032,7 +2239,7 @@
   .compact-children p {
     font-size: 11px;
   }
-  .compact-children + .section-title {
+  .compact-children + .photo-list-heading {
     margin-top: 0;
   }
   .section-title {
@@ -2459,5 +2666,160 @@
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  .album-title-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin: 18px 0 32px;
+  }
+  .album-title-row h1 {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .photo-list-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .photo-list-heading .section-title {
+    margin: 0;
+  }
+  .discussion-entry {
+    background: none;
+    border: 0;
+    padding: 8px 0;
+    color: #73816b;
+    font: inherit;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .discussion-entry span {
+    margin-left: 8px;
+  }
+  .detail .album-story {
+    position: sticky;
+    top: 24px;
+    max-height: calc(100dvh - 48px);
+    overflow: auto;
+    padding: 0 0 0 26px;
+    border: 0;
+    border-left: 1px solid #e3e8de;
+    border-radius: 0;
+    background: transparent;
+  }
+  .album-description {
+    padding: 0 0 16px;
+  }
+  .album-description .story-heading {
+    border: 0;
+    padding: 0;
+    margin: 0 0 20px;
+  }
+  .photo-like-overlay {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 5;
+    color: #eef2eb;
+    border-radius: 30px;
+    background: #172119b8;
+    backdrop-filter: blur(8px);
+  }
+  .photo-like-overlay:empty {
+    display: none;
+  }
+  @media (min-width: 761px) {
+    .viewer-body .photo-information.comments-active {
+      display: flex;
+      flex-direction: column;
+    }
+    .comments-active .photo-community-tabs,
+    .comments-active .work-description {
+      flex: none;
+    }
+    .comments-active :global(.community-panel) {
+      display: flex;
+      flex-direction: column;
+      flex: 1 0 auto;
+    }
+    .comments-active :global(.comments) {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+    .comments-active :global(.composer) {
+      margin-top: auto;
+      flex-shrink: 0;
+    }
+  }
+  .photo-community-tabs {
+    position: sticky;
+    top: -22px;
+    z-index: 4;
+    padding: 0 0 16px;
+    background: #212a23;
+    --segment-background: #ffffff08;
+    --segment-color: #a3b09b;
+    --segment-chosen: #ffffff10;
+    --segment-active: #e1e9dc;
+  }
+  dialog.album-discussion[open] {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    inset: auto 0 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    max-height: 85dvh;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: 18px 18px 0 0;
+    padding: 0;
+    background: #fafbf9;
+    color: #303c34;
+    overflow: hidden;
+  }
+  dialog.album-discussion::backdrop {
+    background: #14231b70;
+    backdrop-filter: blur(3px);
+  }
+  .album-discussion header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 18px 22px;
+    border-bottom: 1px solid #e3e8de;
+    font-size: 14px;
+  }
+  .album-discussion header button {
+    border: 0;
+    background: none;
+    color: #788570;
+    font-size: 24px;
+    padding: 0 4px;
+    cursor: pointer;
+  }
+  .discussion-body {
+    padding: 22px 22px max(8px, env(safe-area-inset-bottom));
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  @media (max-width: 760px) {
+    .album-title-row {
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .photo-like-overlay {
+      top: 12px;
+      right: 12px;
+    }
   }
 </style>

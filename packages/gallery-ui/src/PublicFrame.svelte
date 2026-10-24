@@ -8,6 +8,7 @@
     preview = false,
     linkOrigin = '',
     children,
+    accountControl,
   }: {
     site: {
       name: string;
@@ -20,6 +21,7 @@
     preview?: boolean;
     linkOrigin?: string;
     children: Snippet;
+    accountControl?: Snippet;
   } = $props();
 </script>
 
@@ -32,7 +34,7 @@
   }}
 />
 <div class="public-site public-shell">
-  <PublicHeader name={site.name} {active} {preview} {linkOrigin} />
+  <PublicHeader name={site.name} {active} {preview} {linkOrigin} {accountControl} />
   <div class="public-content">{@render children()}</div>
   <footer class="public-footer">
     {#if site.contactLinks?.length}<nav aria-label="联系链接">

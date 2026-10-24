@@ -58,7 +58,7 @@ Gallery 和 Immich 共用数据库、分别使用 schema。正式备份采用整
 2. 使用与备份兼容的 PostgreSQL／扩展镜像，预建与备份一致的角色；恢复同一时间点的媒体。
 3. 使用 `pg_restore --exit-on-error` 恢复到空库，保留所有者与授权。不要向工作库执行 `--clean`。
 4. 比较相册／发布／照片／用户数量和正文摘要；检查扩展、迁移历史、来源白名单及三个运行角色。
-5. 撤销恢复库内全部旧会话：`UPDATE gallery.session SET revoked_at=now() WHERE revoked_at IS NULL;`，避免备份中的旧会话复活。
+5. 撤销恢复库内全部旧会话：`UPDATE gallery.session SET revoked_at=now() WHERE revoked_at IS NULL;`，避免备份中的旧会话复活。已应用 `0015_community` 的恢复库还须执行 `UPDATE gallery.member_session SET revoked_at=now() WHERE revoked_at IS NULL; UPDATE gallery.member_challenge SET consumed_at=now() WHERE consumed_at IS NULL;`，使前台用户重新获取验证码登录。仅对恢复目标库操作，不修改备份源库。
 6. 使用运行角色检查发布页面、照片、相册下线后的拒绝行为；管理员重新登录，验证草稿保存与发布。
 7. 验收后才切换连接与入口；保留旧库作为回滚点。数据库发生不可逆升级时，不通过降级镜像冒充回滚，使用升级前整库及媒体快照。
 

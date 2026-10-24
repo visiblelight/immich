@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import PublicFrame from '../PublicFrame.svelte';
   import ArticleReader from './ArticleReader.svelte';
   import { articleImageKey, type ArticleContent, type ArticleImage } from '../../../gallery-core/src/article';
@@ -8,8 +9,14 @@
     article,
     linkOrigin = '',
     editHref = '',
+    interaction,
   }: {
-    site: { name: string; contactLinks?: ContactLink[]; copyrightName?: string; footerText?: string };
+    site: {
+      name: string;
+      contactLinks?: ContactLink[];
+      copyrightName?: string;
+      footerText?: string;
+    };
     article: Pick<ArticleContent, 'title' | 'document'> & {
       firstPublishedAt?: string | null;
       publishedAt?: string | null;
@@ -18,6 +25,7 @@
     };
     linkOrigin?: string;
     editHref?: string;
+    interaction?: Snippet;
   } = $props();
 </script>
 
@@ -37,6 +45,7 @@
     document={article.document}
     resolveImage={(node) => article.images[articleImageKey(node)] ?? null}
     related={article.related}
+    {interaction}
   />
 </PublicFrame>
 

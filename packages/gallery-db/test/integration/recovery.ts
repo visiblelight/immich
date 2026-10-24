@@ -15,6 +15,156 @@ import {
   readArticlePhotoDerivative,
 } from '../../src/index.server.ts';
 
+/** Focused restore verification uses only the labelled, synthetic test database. */
+export async function communityRecovery(config: {
+  name: string;
+  ownerUrl: string;
+}) {
+  assert.ok(config.name.startsWith('gallery-db-check-'));
+  assert.equal(
+    execFileSync(
+      'docker',
+      [
+        'inspect',
+        config.name,
+        '--format',
+        '{{index .Config.Labels "gallery.isolation"}}',
+      ],
+      {
+        encoding: 'utf8',
+      },
+    ).trim(),
+    'true',
+  );
+  const source = new pg.Client({ connectionString: config.ownerUrl });
+  const url = new URL(config.ownerUrl);
+  url.pathname = '/gallery_community_restore';
+  const restored = new pg.Client({ connectionString: url.toString() });
+  const tables = [
+    'community_settings',
+    'member',
+    'member_session',
+    'member_challenge',
+    'community_comment',
+    'community_like',
+  ];
+  const snapshot = async (db: pg.Client) => {
+    const result: Record<string, { count: number; sha256: string }> = {};
+    for (const table of tables) {
+      const { rows } = await db.query(
+        `SELECT to_jsonb(t) AS row FROM gallery.${table} t ORDER BY to_jsonb(t)::text`,
+      );
+      result[table] = {
+        count: rows.length,
+        sha256: createHash('sha256').update(JSON.stringify(rows)).digest('hex'),
+      };
+    }
+    return result;
+  };
+  await source.connect();
+  try {
+    const expected = await snapshot(source);
+    for (const table of tables)
+      assert.ok(
+        expected[table]!.count > 0,
+        `${table} fixture must be nonempty`,
+      );
+    const dump = execFileSync(
+      'docker',
+      [
+        'exec',
+        config.name,
+        'pg_dump',
+        '-U',
+        'postgres',
+        '-d',
+        'gallery_test',
+        '-Fc',
+      ],
+      { maxBuffer: 64 * 1024 * 1024 },
+    );
+    execFileSync('docker', [
+      'exec',
+      config.name,
+      'createdb',
+      '-U',
+      'postgres',
+      'gallery_community_restore',
+    ]);
+    execFileSync(
+      'docker',
+      [
+        'exec',
+        '-i',
+        config.name,
+        'pg_restore',
+        '-U',
+        'postgres',
+        '-d',
+        'gallery_community_restore',
+        '--exit-on-error',
+      ],
+      { input: dump, stdio: 'pipe' },
+    );
+    await restored.connect();
+    assert.deepEqual(await snapshot(restored), expected);
+    assert.ok(
+      Number(
+        (
+          await restored.query(
+            'SELECT count(*) FROM gallery.member_session WHERE revoked_at IS NULL',
+          )
+        ).rows[0].count,
+      ) > 0,
+    );
+    await restored.query(
+      'UPDATE gallery.member_session SET revoked_at=now() WHERE revoked_at IS NULL',
+    );
+    await restored.query(
+      'UPDATE gallery.member_challenge SET consumed_at=now() WHERE consumed_at IS NULL',
+    );
+    assert.equal(
+      (
+        await restored.query(
+          'SELECT count(*) FROM gallery.member_session WHERE revoked_at IS NULL',
+        )
+      ).rows[0].count,
+      '0',
+    );
+    assert.equal(
+      (
+        await restored.query(
+          'SELECT count(*) FROM gallery.member_challenge WHERE consumed_at IS NULL',
+        )
+      ).rows[0].count,
+      '0',
+    );
+    // Restore cleanup must never revoke sessions in the source database.
+    assert.deepEqual(await snapshot(source), expected);
+    await writeFile(
+      new URL(
+        '../../../../.gallery-local/phase-b/community-recovery.json',
+        import.meta.url,
+      ),
+      JSON.stringify(
+        {
+          passed: true,
+          data: 'synthetic',
+          dumpBytes: dump.length,
+          tables: expected,
+          sessionsAndChallengesRevoked: true,
+          sourceUnchanged: true,
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+  } finally {
+    await Promise.allSettled([source.end(), restored.end()]);
+  }
+}
+
 /** Full database recovery in a second database inside the labelled disposable test container. */
 export async function recovery(
   config: { name: string; ownerUrl: string; passwords: Record<string, string> },
@@ -24,7 +174,12 @@ export async function recovery(
   assert.equal(
     execFileSync(
       'docker',
-      ['inspect', config.name, '--format', '{{index .Config.Labels "gallery.isolation"}}'],
+      [
+        'inspect',
+        config.name,
+        '--format',
+        '{{index .Config.Labels "gallery.isolation"}}',
+      ],
       {
         encoding: 'utf8',
       },
@@ -36,6 +191,9 @@ export async function recovery(
   const snapshot = async (client: pg.Client) =>
     (
       await client.query(`SELECT
+    (SELECT count(*) FROM gallery.member) members,
+    (SELECT count(*) FROM gallery.community_comment) comments,
+    (SELECT count(*) FROM gallery.community_like) likes,
     (SELECT count(*) FROM gallery.album) albums,
     (SELECT count(*) FROM gallery.album_release) releases,
     (SELECT count(*) FROM gallery.album_release_photo) photos,
@@ -59,15 +217,41 @@ export async function recovery(
   const expected = await snapshot(source);
   const dump = execFileSync(
     'docker',
-    ['exec', config.name, 'pg_dump', '-U', 'postgres', '-d', 'gallery_test', '-Fc'],
+    [
+      'exec',
+      config.name,
+      'pg_dump',
+      '-U',
+      'postgres',
+      '-d',
+      'gallery_test',
+      '-Fc',
+    ],
     {
       maxBuffer: 64 * 1024 * 1024,
     },
   );
-  execFileSync('docker', ['exec', config.name, 'createdb', '-U', 'postgres', 'gallery_restore']);
+  execFileSync('docker', [
+    'exec',
+    config.name,
+    'createdb',
+    '-U',
+    'postgres',
+    'gallery_restore',
+  ]);
   execFileSync(
     'docker',
-    ['exec', '-i', config.name, 'pg_restore', '-U', 'postgres', '-d', 'gallery_restore', '--exit-on-error'],
+    [
+      'exec',
+      '-i',
+      config.name,
+      'pg_restore',
+      '-U',
+      'postgres',
+      '-d',
+      'gallery_restore',
+      '--exit-on-error',
+    ],
     { input: dump, stdio: ['pipe', 'pipe', 'pipe'] },
   );
   const url = new URL(config.ownerUrl);
@@ -81,9 +265,26 @@ export async function recovery(
   try {
     assert.deepEqual(await snapshot(restored), expected);
     // A restored credential/session snapshot must not revive old browser sessions.
-    await restored.query('UPDATE gallery.session SET revoked_at=now() WHERE revoked_at IS NULL');
+    await restored.query(
+      'UPDATE gallery.session SET revoked_at=now() WHERE revoked_at IS NULL',
+    );
+    await restored.query(
+      'UPDATE gallery.member_session SET revoked_at=now() WHERE revoked_at IS NULL',
+    );
     assert.equal(
-      (await restored.query('SELECT count(*) FROM gallery.session WHERE revoked_at IS NULL')).rows[0].count,
+      (
+        await restored.query(
+          'SELECT count(*) FROM gallery.session WHERE revoked_at IS NULL',
+        )
+      ).rows[0].count,
+      '0',
+    );
+    assert.equal(
+      (
+        await restored.query(
+          'SELECT count(*) FROM gallery.member_session WHERE revoked_at IS NULL',
+        )
+      ).rows[0].count,
       '0',
     );
     const catalog = await publicCatalog(db);
@@ -91,42 +292,80 @@ export async function recovery(
     assert.ok(album);
     const active = (await publicCatalog(db, album.slug)).active!;
     assert.equal(active.photos.length, 239); // One HTTP fixture work is hidden from Gallery.
-    const media = await readPublishedDerivative(db, album.id, active.photos[0]!.id, 'thumbnail', {
-      sourceRoot: '/data/thumbs',
-      mountedRoot: mediaRoot,
-    });
+    const media = await readPublishedDerivative(
+      db,
+      album.id,
+      active.photos[0]!.id,
+      'thumbnail',
+      {
+        sourceRoot: '/data/thumbs',
+        mountedRoot: mediaRoot,
+      },
+    );
     assert.ok((await sanitizeImage(media.bytes, 'thumbnail')).length > 0);
-    const copiedMedia = await mkdtemp(path.join(tmpdir(), 'gallery-article-restore-'));
+    const copiedMedia = await mkdtemp(
+      path.join(tmpdir(), 'gallery-article-restore-'),
+    );
     try {
-      await cp(path.join(mediaRoot, 'article-uploads'), copiedMedia, { recursive: true });
+      await cp(path.join(mediaRoot, 'article-uploads'), copiedMedia, {
+        recursive: true,
+      });
       const article = await publicArticle(db, 'http-article');
-      const material = (Object.values(article.images) as { kind: string; ref: string }[]).find(
-        (p) => p.kind === 'upload',
-      )!;
+      const material = (
+        Object.values(article.images) as { kind: string; ref: string }[]
+      ).find((p) => p.kind === 'upload')!;
       assert.ok(material);
-      const work = (Object.values(article.images) as { kind: string; ref: string; album: string }[]).find(
-        (p) => p.kind === 'photo',
-      )!;
+      const work = (
+        Object.values(article.images) as {
+          kind: string;
+          ref: string;
+          album: string;
+        }[]
+      ).find((p) => p.kind === 'photo')!;
       assert.ok(work);
       assert.ok(
         (
-          await readArticlePhotoDerivative(db, article.id, work.album, work.ref, 'preview', {
-            sourceRoot: '/data/thumbs',
-            mountedRoot: mediaRoot,
-          })
+          await readArticlePhotoDerivative(
+            db,
+            article.id,
+            work.album,
+            work.ref,
+            'preview',
+            {
+              sourceRoot: '/data/thumbs',
+              mountedRoot: mediaRoot,
+            },
+          )
         ).bytes.length,
       );
       assert.equal(
-        (await restored.query('SELECT count(*) FROM gallery.published_photo WHERE asset_id=$1', [work.ref]))
-          .rows[0].count,
+        (
+          await restored.query(
+            'SELECT count(*) FROM gallery.published_photo WHERE asset_id=$1',
+            [work.ref],
+          )
+        ).rows[0].count,
         '0',
       );
-      assert.ok((await readArticleMedia(db, copiedMedia, material.ref, 'preview', article.id)).length);
+      assert.ok(
+        (
+          await readArticleMedia(
+            db,
+            copiedMedia,
+            material.ref,
+            'preview',
+            article.id,
+          )
+        ).length,
+      );
     } finally {
       await rm(copiedMedia, { recursive: true, force: true });
     }
     await writeFile(
-      new URL('../../../../.gallery-local/phase-b/recovery.json', import.meta.url),
+      new URL(
+        '../../../../.gallery-local/phase-b/recovery.json',
+        import.meta.url,
+      ),
       JSON.stringify(
         {
           passed: true,

@@ -10,7 +10,7 @@
     type ArticleNode,
   } from '../../../gallery-core/src/article';
   import './article.css';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import Icon from '../Icon.svelte';
   import { exitViewerFullscreen, enterViewerFullscreen } from '../viewer-fullscreen';
   let copied = $state(false);
@@ -80,6 +80,7 @@
     document,
     resolveImage,
     related = [],
+    interaction,
   }: {
     title: string;
     date?: string;
@@ -88,6 +89,7 @@
     document: ArticleDocument;
     resolveImage: ArticleImageResolver;
     related?: { title: string; href: string }[];
+    interaction?: Snippet;
   } = $props();
   let dialog: HTMLDialogElement;
   let current = $state(0);
@@ -223,6 +225,9 @@
             >{/each}
         </div>
       </footer>{/if}
+    {#if interaction}<div class="article-interaction">
+        {@render interaction()}
+      </div>{/if}
   </article>
   {#if headings.length}<aside class="desktop-toc" style:max-height={tocHeight}>
       <span>本文目录</span>
@@ -284,6 +289,11 @@
 </dialog>
 
 <style>
+  .article-interaction {
+    margin: 42px 0 60px;
+    padding-top: 20px;
+    border-top: 1px solid #e4e7e0;
+  }
   .article-layout {
     max-width: 1100px;
     margin: 42px auto 100px;

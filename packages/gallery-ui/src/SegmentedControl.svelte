@@ -34,10 +34,10 @@
   .segmented-control {
     display: flex;
     gap: 4px;
-    background: #eff2ec;
+    background: var(--segment-background, #eff2ec);
     padding: 4px;
     border-radius: 6px;
-    color: #64735e;
+    color: var(--segment-color, #64735e);
     font-weight: 400;
   }
   a,
@@ -59,8 +59,8 @@
     box-sizing: border-box;
   }
   .chosen {
-    background: white;
-    color: #344d3d;
+    background: var(--segment-chosen, white);
+    color: var(--segment-active, #344d3d);
     box-shadow: 0 1px 3px #24362812;
   }
   a:focus-visible,

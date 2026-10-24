@@ -1,0 +1,71 @@
+.member-surface {
+  color: #303c34;
+  font-size: 14px;
+}
+.member-surface label {
+  display: block;
+  margin: 24px 0;
+  font-size: 12px;
+  color: #7a8773;
+}
+.member-surface input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid #dce3d6;
+  border-radius: 0;
+  background: transparent;
+  color: #303c34;
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.member-surface input:focus {
+  border-color: #526e4d;
+}
+.member-surface input[autocomplete='one-time-code'] {
+  letter-spacing: 8px;
+  font-size: 22px;
+}
+.member-surface button {
+  font: inherit;
+  cursor: pointer;
+}
+.member-surface button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.member-surface button:focus-visible {
+  outline: 2px solid #8eaa83;
+  outline-offset: 4px;
+}
+.member-surface .primary {
+  padding: 12px 24px;
+  border: 0;
+  border-radius: 30px;
+  background: #41664e;
+  color: #fff;
+  font-size: 13px;
+}
+.member-surface .text,
+.member-surface .alternates button {
+  background: none;
+  border: 0;
+  color: #5b7451;
+  padding: 8px 0;
+  font-size: 12px;
+}
+.member-surface .error {
+  color: #a0523a;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.member-surface .notice {
+  color: #526e4d;
+  font-size: 12px;
+  line-height: 1.7;
+}

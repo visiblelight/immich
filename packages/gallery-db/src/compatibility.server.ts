@@ -16,7 +16,7 @@ export async function assertDatabaseCompatibility(
     (rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls) AS elevated
     FROM pg_catalog.pg_roles WHERE rolname = current_user`.execute(db);
   const row = rows[0];
-  const expected = service === 'gallery-public' ? 'gallery_public' : 'gallery_admin';
+  const expected = service.replace('-', '_');
   if (!row || row.role !== expected || row.elevated || row.version < 140000 || row.version >= 150000) {
     throw new Error('Unsupported Gallery database contract');
   }
@@ -29,7 +29,28 @@ export async function assertDatabaseCompatibility(
     pg_has_role(current_user, 'gallery_view_owner', 'MEMBER')
   ) AS unsafe`.execute(db);
   if (privileges.rows[0]?.unsafe !== false) throw new Error('Unsafe Gallery database privileges');
-  await sql`SELECT enabled,creator,homepage,copyright,version FROM gallery.media_attribution WHERE id=1`.execute(db);
+  if (service === 'gallery-community') {
+    const unsafe = (
+      await sql<{ unsafe: boolean }>`SELECT (
+      pg_has_role(current_user,'gallery_admin','MEMBER') OR
+      has_table_privilege(current_user,'gallery.album','INSERT,UPDATE,DELETE') OR
+      has_table_privilege(current_user,'gallery."user"','SELECT,INSERT,UPDATE,DELETE')
+    ) AS unsafe`.execute(db)
+    ).rows[0]?.unsafe;
+    if (unsafe !== false) throw new Error('Unsafe Gallery community privileges');
+    await sql`SELECT registration,comments,likes,show_comments,show_likes FROM gallery.community_settings LIMIT 0`.execute(
+      db,
+    );
+    await sql`SELECT id,email,avatar_fingerprint FROM gallery.member LIMIT 0`.execute(db);
+    await sql`SELECT photo_id,asset_id,preview_path,thumbnail_path FROM gallery.published_media LIMIT 0`.execute(
+      db,
+    );
+    await sql`SELECT article_id,photo_id FROM gallery.published_article_photo LIMIT 0`.execute(db);
+    return;
+  }
+  await sql`SELECT enabled,creator,homepage,copyright,version FROM gallery.media_attribution WHERE id=1`.execute(
+    db,
+  );
   // Explicit columns force PostgreSQL to validate underlying view dependencies.
   await sql`SELECT name,copyright_name,footer_text FROM gallery.published_site LIMIT 0`.execute(db);
   await sql`SELECT album_id, release_id, ancestor_ids, description_document FROM gallery.published_album LIMIT 0`.execute(

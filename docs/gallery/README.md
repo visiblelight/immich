@@ -15,6 +15,8 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [用户与互动 ADR 0023](decisions/0023-members-comments-and-likes.md) | 前台邮箱验证码用户、评论与点赞的已确认范围及分阶段边界 |
+| [用户与互动交付](delivery/community.md) | 本地真实接入、隔离验收与阿里云发信联调状态 |
 | [地区足迹 ADR 0021](decisions/0021-regional-visited-maps.md) | 已确认的中国省份及其他国家地区地图方案、位置保护与分阶段边界 |
 | [地区足迹真实接入](delivery/regional-visited.md) | 省份归属、地图详情、独立到访整理及本地验证状态 |
 | [中国地图样稿交付](delivery/china-map-prototype.md) | 本地交互样稿进度、视觉确认及真实数据接入边界 |

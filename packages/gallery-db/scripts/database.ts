@@ -3,10 +3,19 @@ import pg from 'pg';
 import { migrate } from '../src/migrate.server.ts';
 
 const action = process.argv[2];
-if (!['bootstrap', 'migrate', 'source-enable', 'source-disable'].includes(action ?? '')) {
-  throw new Error('Usage: database.ts bootstrap|migrate|source-enable|source-disable [owner UUID] [label]');
+if (
+  !['bootstrap', 'community-bootstrap', 'migrate', 'source-enable', 'source-disable'].includes(action ?? '')
+) {
+  throw new Error(
+    'Usage: database.ts bootstrap|community-bootstrap|migrate|source-enable|source-disable [owner UUID] [label]',
+  );
 }
-const url = process.env[action === 'bootstrap' ? 'GALLERY_BOOTSTRAP_DATABASE_URL' : 'GALLERY_MIGRATION_DATABASE_URL'];
+const url =
+  process.env[
+    ['bootstrap', 'community-bootstrap'].includes(action!)
+      ? 'GALLERY_BOOTSTRAP_DATABASE_URL'
+      : 'GALLERY_MIGRATION_DATABASE_URL'
+  ];
 if (!url) throw new Error('Missing dedicated Gallery database administration URL');
 const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 5000 });
 try {
@@ -19,7 +28,10 @@ try {
       return [role.toLowerCase(), password] as const;
     });
     const immichRole = process.env.GALLERY_IMMICH_DATABASE_ROLE;
-    if (!immichRole || !(await client.query('SELECT 1 FROM pg_roles WHERE rolname=$1', [immichRole])).rowCount)
+    if (
+      !immichRole ||
+      !(await client.query('SELECT 1 FROM pg_roles WHERE rolname=$1', [immichRole])).rowCount
+    )
       throw new Error('Set the existing Immich database role');
     await client.query('BEGIN');
     await client.query(`GRANT USAGE, CREATE ON SCHEMA public TO ${pg.escapeIdentifier(immichRole)}`);
@@ -27,10 +39,26 @@ try {
       await readFile(new URL('../../../deployment/gallery/database/bootstrap.sql', import.meta.url), 'utf8'),
     );
     for (const [role, password] of passwords) {
-      await client.query(`ALTER ROLE ${pg.escapeIdentifier(`gallery_${role}`)} PASSWORD ${pg.escapeLiteral(password)}`);
+      await client.query(
+        `ALTER ROLE ${pg.escapeIdentifier(`gallery_${role}`)} PASSWORD ${pg.escapeLiteral(password)}`,
+      );
     }
     await client.query('COMMIT');
     console.log('Gallery roles and schema initialized. Source scope is empty.');
+  } else if (action === 'community-bootstrap') {
+    const password = process.env.GALLERY_COMMUNITY_PASSWORD;
+    if (!password || password.length < 32)
+      throw new Error('Set a dedicated community password of at least 32 characters');
+    await client.query('BEGIN');
+    await client.query(
+      await readFile(
+        new URL('../../../deployment/gallery/database/community-role.sql', import.meta.url),
+        'utf8',
+      ),
+    );
+    await client.query(`ALTER ROLE gallery_community PASSWORD ${pg.escapeLiteral(password)}`);
+    await client.query('COMMIT');
+    console.log('Dedicated Gallery community role configured.');
   } else if (action === 'migrate') {
     console.log('Applied Gallery migrations:', (await migrate(client)).join(', ') || 'already current');
   } else {

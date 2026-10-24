@@ -11,6 +11,7 @@
 !deployment/gallery/tsconfig.base.json
 !deployment/gallery/database
 !deployment/gallery/database/bootstrap.sql
+!deployment/gallery/database/community-role.sql
 !deployment/gallery/Dockerfile
 !deployment/gallery/Dockerfile.dockerignore
 **/node_modules

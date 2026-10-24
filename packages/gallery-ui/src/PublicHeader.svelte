@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getContext, type Snippet } from 'svelte';
+  const community = getContext<{ accountControl?: Snippet } | undefined>('gallery-community-header');
   let {
     name,
     active = 'albums',
@@ -6,6 +8,7 @@
     linkOrigin = '',
     recordsHref = '/records',
     aboutHref = '/about',
+    accountControl,
   }: {
     name: string;
     active?: string;
@@ -13,10 +16,12 @@
     linkOrigin?: string;
     recordsHref?: string;
     aboutHref?: string;
+    accountControl?: Snippet;
   } = $props();
+  const account = $derived(accountControl ?? community?.accountControl);
 </script>
 
-<header class="public-header" class:with-records={!!recordsHref}>
+<header class="public-header" class:with-records={!!recordsHref} class:with-account={!!account}>
   <a class="brand" href={linkOrigin + '/albums'}>{name}</a>
   <nav aria-label="主导航">
     {#each [['albums', '相册'], ['photos', '相片'], ['visited', '去过'], ...(recordsHref ? [['records', '记录']] : []), ['about', '关于']] as [id, label]}
@@ -26,6 +31,7 @@
         >{/if}
     {/each}
   </nav>
+  {#if account}<div class="account-control">{@render account()}</div>{/if}
 </header>
 
 <style>
@@ -65,6 +71,36 @@
     display: flex;
     gap: 28px;
     flex: none;
+  }
+  .with-account nav {
+    margin-left: auto;
+  }
+  .account-control {
+    display: flex;
+    align-items: center;
+    flex: none;
+  }
+  @media (max-width: 700px) {
+    .public-header.with-account {
+      height: auto;
+      min-height: 96px;
+      flex-wrap: wrap;
+      gap: 0 16px;
+      padding-top: 16px;
+    }
+    .with-account .brand {
+      max-width: calc(100% - 70px);
+    }
+    .with-account nav {
+      order: 3;
+      width: 100%;
+      justify-content: space-between;
+      margin: 4px 0 0;
+      gap: 14px;
+    }
+    .account-control {
+      margin-left: auto;
+    }
   }
   nav a {
     font-size: 14px;

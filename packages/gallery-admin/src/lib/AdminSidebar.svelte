@@ -7,12 +7,14 @@
     publicOrigin,
     onNavigate,
     articles = true,
+    community = true,
   }: {
     active: string;
     user: GalleryUser;
     publicOrigin: string;
     onNavigate?: (target: string) => void;
     articles?: boolean;
+    community?: boolean;
   } = $props();
   const entries = $derived([
     ['albums', '▦', '相册'],
@@ -24,6 +26,13 @@
     ['maps', '⌘', '地图设置'],
     ['settings', '⚙', '站点设置'],
     ['analytics', '↗', '访问统计'],
+    ...(community
+      ? [
+          ['members', '◎', '用户管理'],
+          ['comments', '≡', '评论管理'],
+          ['community-settings', '⚙', '互动设置'],
+        ]
+      : []),
   ] as const);
   function navigate(target: string) {
     if (onNavigate) onNavigate(target);
