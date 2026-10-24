@@ -1,6 +1,6 @@
 # 旅行日期与移动端看图器修复
 
-状态：2026-10-23 已在本地实现，未发布生产。
+状态：2026-10-24 已发布生产并完成真实图库验收。
 
 ## 本轮需求与实现
 
@@ -23,3 +23,11 @@
 ## 数据与回退
 
 无数据库迁移，不修改照片、Immich 媒体、相册/照片组/文章关联或到访覆盖记录。回退本轮代码即可恢复旧显示及排序。
+
+## 生产发布验收（2026-10-24）
+
+- 应用提交：`5a7b531f14dc4e9387af3121e322f041ea678657`。GitHub Actions [40056621495](https://github.com/visiblelight/immich/actions/runs/40056621495) 的 foundation、image、deploy 全部成功。另在本地完成 `gallery:smoke`。
+- 生产镜像：`ghcr.io/visiblelight/gallery@sha256:71eb0fc9698e7580dbe943d0956c00c09b9c07776d22a04f7e77e5c3943bc76f`。服务器发布记录与应用提交一致，public/admin readiness 均为 ready。
+- 世界页 10 个国家、415 张照片：逐段日期显示正常，顺序与地区最早照片日期倒序一致。中国的两段旅行分别显示；中国省份页显示江西 2018.06.09—2018.06.10、香港 2017.01.18。
+- 使用用户截图中的三清山第 5/9 张竖图（2160×2880）在 390×844 手机视口复验：旧版图片与信息栏重叠 182.5px；新版图片底边与信息栏顶边均为 600.59375px，无重叠。滚动后位置、地图坐标及相机参数完整可读。
+- 生产截图保留于 `.gallery-local/travel-viewer/production-travel-dates.jpg`、`production-mobile-information.jpg`、`production-mobile-scrolled.jpg`。
