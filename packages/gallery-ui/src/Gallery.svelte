@@ -632,11 +632,7 @@
                 width="600"
                 height="450"
                 loading="lazy"
-              />{#if listTitle(p)}<span>{listTitle(p)}</span
-                >{/if}{#if likeCount?.('photo', p.id) != null}<span
-                  class="card-likes"
-                  aria-label={`${likeCount!('photo', p.id)} 人点赞`}>♡ {likeCount!('photo', p.id)}</span
-                >{/if}</button
+              />{#if listTitle(p)}<span>{listTitle(p)}</span>{/if}{@render cardLikes('photo', p.id)}</button
             >
           {/each}
           {#if !items.length}<p class="empty">这里还没有公开照片。</p>{/if}
@@ -705,14 +701,11 @@
                 {album.title.slice(0, 1)}
               </div>{/if}
             <h2>{album.title}</h2>
-            <p>
-              {albumSubtitle(album)}
+            <p class="album-meta">
+              <span>{albumSubtitle(album)}</span>
+              {@render cardLikes('album', album.id)}
             </p>
-            {#if likeCount?.('album', album.id) != null}<span
-                class="card-likes"
-                aria-label={`${likeCount!('album', album.id)} 人点赞`}>♡ {likeCount!('album', album.id)}</span
-              >{/if}</a
-          >{/each}
+          </a>{/each}
       </div>
       {@render albumPagination()}
       {#if !children.length}<div class="empty">
@@ -749,12 +742,10 @@
                       {album.title.slice(0, 1)}
                     </div>{/if}
                   <h2>{album.title}</h2>
-                  <p>{albumSubtitle(album)}</p>
-                  {#if likeCount?.('album', album.id) != null}<span
-                      class="card-likes"
-                      aria-label={`${likeCount!('album', album.id)} 人点赞`}
-                      >♡ {likeCount!('album', album.id)}</span
-                    >{/if}</a
+                  <p class="album-meta">
+                    <span>{albumSubtitle(album)}</span>
+                    {@render cardLikes('album', album.id)}
+                  </p></a
                 >{/each}
             </div>
             {@render albumPagination()}{/if}
@@ -791,10 +782,7 @@
                 >{#if p.group}<span class="stack-label"
                     >▱ {active.photos.filter((x) => x.group?.id === p.group?.id).length} 张 · {p.group
                       .title || '照片组'}</span
-                  >{:else if p.title}<span>{p.title}</span>{/if}{#if likeCount?.('photo', p.id) != null}<span
-                    class="card-likes"
-                    aria-label={`${likeCount!('photo', p.id)} 人点赞`}>♡ {likeCount!('photo', p.id)}</span
-                  >{/if}</button
+                  >{:else if p.title}<span>{p.title}</span>{/if}{@render cardLikes('photo', p.id)}</button
               >{/each}
           </div>
           {#if !active.photos.length && !children.length}<p class="empty">
@@ -1078,6 +1066,11 @@
   {/if}
 </dialog>
 
+{#snippet cardLikes(kind: 'album' | 'photo', id: string)}
+  {@const count = likeCount?.(kind, id) ?? 0}
+  {#if count > 0}<span class="card-likes" aria-label={`${count} 人点赞`}>♡ {count}</span>{/if}
+{/snippet}
+
 {#snippet albumSorting()}
   <span class="album-sorting">
     <SegmentedControl
@@ -1105,6 +1098,21 @@
     line-height: 1.5;
     color: #7b8477;
     background: transparent !important;
+    white-space: nowrap;
+  }
+  .album-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .album-meta > span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .album-meta .card-likes {
+    margin-left: auto;
+    flex: 0 0 auto;
+    padding: 0 !important;
   }
   .album-tools {
     display: flex;
