@@ -2410,18 +2410,31 @@
     color: #7b8974;
   }
   @media (max-width: 760px) {
+    /* Keep intrinsic portrait dimensions from overflowing a shrunken grid row.
+       The image and metadata share one scroll container, with explicit rows. */
+    dialog:not(.immersive) .viewer-body:not(.without-info) {
+      grid-template-rows: min(65dvh, 640px) max-content;
+    }
     dialog:not(.immersive) .viewer-body:not(.without-info) .full-image {
-      height: auto;
+      height: 100%;
       min-height: 0;
-      align-self: start;
+      grid-row: 1;
+      overflow: hidden;
     }
     dialog:not(.immersive) .viewer-body:not(.without-info) .full-image > img {
-      height: auto;
-      max-height: 65dvh;
+      height: 100%;
+      max-height: 100%;
+      object-fit: contain;
     }
     dialog:not(.immersive) .viewer-body:not(.without-info) .group-variants {
+      grid-row: 1;
+      min-height: 0;
       height: 100%;
-      max-height: 65dvh;
+      max-height: 100%;
+    }
+    dialog:not(.immersive) .viewer-body:not(.without-info) .photo-information {
+      grid-row: 2;
+      overflow: visible;
     }
   }
   .detail.no-story {

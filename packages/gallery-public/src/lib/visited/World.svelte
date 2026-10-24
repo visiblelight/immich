@@ -1,7 +1,8 @@
 <script lang="ts">
   import world from './world-map.json';
   import { goto } from '$app/navigation';
-  import type { VisitedCountry } from '@gallery/core';
+  import { compareVisitedPlaces, visitDateRange, type VisitedCountry } from '@gallery/core';
+  import TravelDates from './TravelDates.svelte';
   import { SearchField } from '@gallery/ui';
   import MapLegend from './MapLegend.svelte';
   let {
@@ -251,15 +252,15 @@
   {#if !visited.length}<p>还没有可展示的足迹。发布允许公开位置的照片后，足迹会出现在这里。</p>{:else}<div
       class="country-list"
     >
-      {#each visited.filter((c) => c.name.includes(search.trim())) as c}<a href={countryHref(c.id)}
-          ><strong>{c.name}</strong><span>{c.visits.length} 段记录 · {c.count} 张照片</span></a
+      {#each visited.filter((c) => c.name.includes(search.trim())).toSorted(compareVisitedPlaces) as c}<a href={countryHref(c.id)}
+          ><strong>{c.name}</strong><span>{c.visits.length} 段记录 · {c.count} 张照片</span><TravelDates visits={c.visits} /></a
         >{/each}
     </div>{/if}
 </section>
 {#snippet summary(c: WorldCountry)}<p class="eyebrow">{c.en}</p>
   <h2>{c.name}</h2>
   {#if stats.get(c.id)}{#each stats.get(c.id)!.visits as visit}<div class="visit">
-        <span>{visit.label || (visit.start ? `${visit.start} — ${visit.end}` : '拍摄日期待确认')}</span><b
+        <span>{visit.label ? `${visit.label} · ` : ''}{visitDateRange(visit)}</span><b
           >{visit.count} 张</b
         >
       </div>{/each}{:else}<p>尚未留下公开的照片</p>{/if}{/snippet}

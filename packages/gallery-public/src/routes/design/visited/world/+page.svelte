@@ -17,7 +17,10 @@
         id: 'CN',
         name: '中国',
         count: 150,
-        visits: [{ id: 'sample', start: '2025-03-01', end: '2025-04-01', count: 150, manual: false, label: '' }],
+        visits: [
+          { id: 'spring', start: '2025-03-01', end: '2025-03-10', count: 100, manual: false, label: '' },
+          { id: 'autumn', start: '2025-11-01', end: '2025-11-01', count: 50, manual: false, label: '秋日出游' },
+        ],
       },
     ]}
     total={232}

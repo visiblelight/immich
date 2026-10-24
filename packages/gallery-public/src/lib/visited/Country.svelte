@@ -3,6 +3,7 @@
   import { replaceState, goto } from '$app/navigation';
   import { page as route } from '$app/state';
   import type { MapViewport, MapPhoto, PhotoCluster, VisitedCountry } from '@gallery/core';
+  import { visitDateRange } from '@gallery/core';
   import { mapSelection, type ExpandedMapScope } from './map-selection';
   import { createPhotoMap, type Provider, type PhotoMap, type View } from './providers';
   let {
@@ -372,7 +373,7 @@
           void goto(detailPath + url.search);
         }}
         ><option value="">所有到访</option>{#each country.visits as v}<option value={v.id}
-            >{v.label || (v.start ? `${v.start} — ${v.end}` : '日期待确认')} · {v.count} 张</option
+            >{v.label ? `${v.label} · ` : ''}{visitDateRange(v)} · {v.count} 张</option
           >{/each}</select
       ></label
     ><label

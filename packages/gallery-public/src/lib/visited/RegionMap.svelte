@@ -1,7 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { tick, untrack } from 'svelte';
-  import type { VisitedCountry } from '@gallery/core';
+  import { compareVisitedPlaces, type VisitedCountry } from '@gallery/core';
+  import TravelDates from './TravelDates.svelte';
   import { chinaLayout, type ChinaRegion } from './china-layout';
 
   import { SearchField } from '@gallery/ui';
@@ -17,10 +18,6 @@
   const regions = $derived(layout.regions);
   const stats = $derived(Object.fromEntries(summaries.map(region => [region.id, region])));
   const visited = $derived(regions.filter(region => stats[region.id]?.count));
-  function period(region: VisitedCountry) {
-    const dates = region.visits.flatMap(visit => [visit.start, visit.end]).filter((date): date is string => !!date).sort();
-    return dates.length ? dates[0] + ' — ' + dates.at(-1) : '拍摄日期待确认';
-  }
   let viewport = $state({
     x: 0,
     y: 0,
@@ -47,7 +44,10 @@
     viewport: typeof viewport;
   } | null = null;
   const matches = $derived(regions.filter((region) => region.fullName.includes(search.trim())));
-  const listed = $derived(search.trim() ? matches : visited);
+  const listed = $derived((search.trim() ? matches : visited).toSorted((a, b) => {
+    const first = stats[a.id], second = stats[b.id];
+    return first && second ? compareVisitedPlaces(first, second) : first ? -1 : second ? 1 : 0;
+  }));
   const href = (region: ChinaRegion) => '/visited/regions/' + region.id;
 
   function reset() {
@@ -249,7 +249,7 @@
       <div class="list-heading"><h2>沿途的记忆</h2><div class="location-search"><SearchField label="查找省级地区" placeholder="查找省份" clearLabel="清除省份搜索" bind:value={search} /></div></div>
       <div class="region-list">
         {#each listed as region}
-          {#if stats[region.id]}<a href={href(region)}><strong>{region.name}</strong><span>{stats[region.id]!.visits.length} 段记录 · {stats[region.id]!.count} 张照片</span></a>
+          {#if stats[region.id]}<a href={href(region)}><strong>{region.name}</strong><span>{stats[region.id]!.visits.length} 段记录 · {stats[region.id]!.count} 张照片</span><TravelDates visits={stats[region.id]!.visits} /></a>
           {:else}<button class="unvisited-row" onclick={() => { selected = region; map.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}><strong>{region.name}</strong><span>尚未留下照片</span></button>{/if}
         {/each}
       </div>
@@ -260,7 +260,7 @@
   <p class="summary-eyebrow">{region.fullName}</p><h2>{region.name}</h2>
   {#if stats[region.id]}{@const regionStats = stats[region.id]!}
     <p class="summary-count">{regionStats.visits.length} 段记录 <span>·</span> {regionStats.count} 张照片</p>
-    <p class="summary-date">{period(regionStats)}</p>
+    <div class="summary-date"><TravelDates visits={regionStats.visits} /></div>
   {:else}<p class="summary-count">尚未留下照片</p>{/if}
 {/snippet}
 

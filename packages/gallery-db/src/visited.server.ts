@@ -15,6 +15,8 @@ import {
   type GalleryUser,
   type VisitEvidence,
   regionByCode,
+  compareVisitsByCapture,
+  compareVisitedPlaces,
 } from '@gallery/core';
 import { countries } from '../../gallery-core/src/countries.ts';
 
@@ -170,9 +172,11 @@ export async function visitedSnapshot(db: Kysely<unknown>) {
           count: v.photos.length,
           manual: v.manual,
           label: v.label,
-        })),
+          photoStart: dates(v.photos).start,
+        })).sort(compareVisitsByCapture),
       });
     }
+    summaries.sort(compareVisitedPlaces);
     return { points, visits, summaries, unassigned, total: rows.length, stale, gap };
   };
   return db.isTransaction ? read(db) : db.transaction().setIsolationLevel('repeatable read').execute(read);
@@ -594,11 +598,11 @@ async function regionalSnapshot(
     const groups = visits.filter((v) => v.country === id);
     summaries.push({ id, name: regionByCode(id)!.name,
       count: groups.reduce((n, v) => n + v.photos.length, 0),
-      visits: groups.map((v) => ({ id: v.id, start: v.start, end: v.end, count: v.photos.length, manual: v.manual, label: v.label })),
+      visits: groups.map((v) => ({ id: v.id, start: v.start, end: v.end, count: v.photos.length, manual: v.manual, label: v.label, photoStart: dates(v.photos).start })).sort(compareVisitsByCapture),
     });
   }
   return {
-    points, visits, summaries, stale, world,
+    points, visits, summaries: summaries.sort(compareVisitedPlaces), stale, world,
     nationalCount: national.length,
     restricted: national.filter((p) => p.approximate).length,
     unassignedProvince: national.filter((p) => !p.approximate && !p.region).length,

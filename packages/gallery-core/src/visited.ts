@@ -5,6 +5,8 @@ export interface VisitSummary {
   count: number;
   manual: boolean;
   label: string;
+  /** Earliest local capture date, independent of manually edited travel dates. */
+  photoStart?: string | null;
 }
 export interface VisitedCountry {
   id: string;
@@ -18,6 +20,22 @@ export interface MapViewport {
   east: number;
   north: number;
   zoom: number;
+}
+export function visitPhotoStart(visit: VisitSummary) {
+  return visit.photoStart === undefined ? visit.start : visit.photoStart;
+}
+export function compareVisitsByCapture(a: VisitSummary, b: VisitSummary) {
+  return (visitPhotoStart(b) ?? '').localeCompare(visitPhotoStart(a) ?? '') || a.id.localeCompare(b.id);
+}
+/** Order places by their earliest photo, newest first; undated places come last. */
+export function compareVisitedPlaces(a: VisitedCountry, b: VisitedCountry) {
+  const earliest = (place: VisitedCountry) => place.visits.map(visitPhotoStart).filter((date): date is string => !!date).sort()[0] ?? '';
+  return earliest(b).localeCompare(earliest(a)) || a.id.localeCompare(b.id);
+}
+export function visitDateRange(visit: Pick<VisitSummary, 'start' | 'end'>) {
+  if (!visit.start) return '拍摄日期待确认';
+  const start = visit.start.replaceAll('-', '.');
+  return !visit.end || visit.end === visit.start ? start : `${start} — ${visit.end.replaceAll('-', '.')}`;
 }
 export interface MapPhoto {
   id: string;
