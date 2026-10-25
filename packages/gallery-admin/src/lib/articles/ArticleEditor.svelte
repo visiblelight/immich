@@ -15,6 +15,7 @@
   import AdminSidebar from '$lib/AdminSidebar.svelte';
   import RichTextEditor from './RichTextEditor.svelte';
   import { articleRequest } from './api';
+  import { articleDraftSnapshot, articleFailure } from './draft';
   import '$lib/design/admin.css';
   let {
     initial,
@@ -40,6 +41,18 @@
   let publishTimer: ReturnType<typeof setInterval> | undefined;
   let conflict = $state(false);
   let message = $state('');
+  let messageType = $state<'info' | 'success' | 'error'>('info');
+  let errorDetail = $state('');
+  function notify(text: string, type: 'info' | 'success' | 'error' = 'info') {
+    message = text;
+    messageType = type;
+    errorDetail = '';
+  }
+  function reportFailure(error: unknown, action: string) {
+    const failure = articleFailure(error, action);
+    notify(failure.message, 'error');
+    errorDetail = failure.detail;
+  }
   let status = $state('已保存');
   let focus = $state(false);
   let settings = $state(true);
@@ -119,8 +132,7 @@
   let work: Promise<boolean> | null = null;
   const resolve = (node: ArticleNode) => images[articleImageKey(node)] ?? null;
   function content(): ArticleContent {
-    const { title, summary, date, document, cover, listed, albums } = article;
-    return structuredClone($state.snapshot({ title, summary, date, document, cover, listed, albums }));
+    return articleDraftSnapshot(article);
   }
   function changed() {
     revision++;
@@ -143,12 +155,13 @@
     }
     if (!dirty) return true;
     const mark = revision;
-    const snapshot = content();
+    let snapshot: ArticleContent;
     try {
+      snapshot = content();
       validateArticleDocument(snapshot.document);
     } catch (error) {
-      status = '保存未完成';
-      message = (error as Error).message;
+      status = '保存失败';
+      reportFailure(error, '保存');
       return false;
     }
     saving = true;
@@ -167,12 +180,12 @@
         dirty = revision !== mark;
         if (!dirty) article.hasChanges = result.hasChanges;
         status = dirty ? '有未保存修改' : '已保存';
-        message = '';
+        notify('');
         return true;
       } catch (e) {
         conflict = (e as Error & { status?: number }).status === 409;
-        status = '保存未完成';
-        message = (e as Error).message;
+        status = '保存失败';
+        reportFailure(e, '保存');
         return false;
       } finally {
         saving = false;
@@ -195,7 +208,7 @@
     }).format(new Date(value));
   }
   async function manualSave() {
-    if (await save()) message = '草稿已保存。';
+    if (await save()) notify('草稿已保存。', 'success');
   }
   async function openPreview() {
     busy = true;
@@ -211,7 +224,7 @@
   async function publish() {
     if (busy) return;
     busy = true;
-    message = '';
+    notify('');
     publishPhase = 'saving';
     publishSeconds = 0;
     const started = Date.now();
@@ -228,9 +241,9 @@
       article.firstPublishedAt = result.firstPublishedAt;
       article.publishedAt = result.publishedAt;
       article.updatedAt = result.updatedAt;
-      message = '文章已发布，前台已更新。';
+      notify('文章已发布，前台已更新。', 'success');
     } catch (e) {
-      message = (e as Error).message;
+      reportFailure(e, '操作');
     } finally {
       clearInterval(publishTimer);
       publishPhase = null;
@@ -245,9 +258,9 @@
       const result = await articleRequest('article-offline', { id: article.id, version: article.version });
       article.status = result.status;
       article.version = result.version;
-      message = '文章已下线。';
+      notify('文章已下线。', 'success');
     } catch (e) {
-      message = (e as Error).message;
+      reportFailure(e, '操作');
     } finally {
       busy = false;
     }
@@ -262,7 +275,7 @@
       busy = false;
       await goto('/articles');
     } catch (e) {
-      message = (e as Error).message;
+      reportFailure(e, '操作');
     } finally {
       busy = false;
     }
@@ -419,7 +432,7 @@
   beforeNavigate(({ cancel }) => {
     if (saving || busy) {
       cancel();
-      message = '正在保存或发布，请稍等片刻再离开。';
+      notify('正在保存或发布，请稍等片刻再离开。');
     } else if (dirty && !confirm('正文尚未保存，确定离开并放弃未保存修改？')) cancel();
   });
   onDestroy(() => {
@@ -447,52 +460,58 @@
 <div class="workspace" class:focused={focus} style:--article-topbar-height={`${topbarHeight}px`}>
   {#if !focus}<AdminSidebar active="articles" user={initial.user} publicOrigin={initial.publicOrigin} />{/if}
   <main>
-    <header class="edit-top" bind:this={topbar} bind:offsetHeight={topbarHeight}>
-      <a href="/articles">← 文章</a><span class="save-status" role="status"
-        >{publishPhase === 'publishing' ? '正在发布…' : status}{#if publishPhase}<span aria-hidden="true"
-            >已等待 {publishSeconds} 秒</span
-          >{:else if article.updatedAt}<time
-            datetime={article.updatedAt}
-            title="最近保存时间 · 北京时间 UTC+8">最近保存 {savedTime(article.updatedAt)}</time
-          >{/if}</span
-      >
-      <div class="actions">
-        <button onclick={toggleOutline} aria-expanded={outlineOpen && !focus}>文章目录</button>
-        <button
-          onclick={() => {
-            void manualSave();
-          }}
-          disabled={busy || saving || conflict}>{saving ? '正在保存…' : '保存草稿'}</button
-        ><button onclick={openPreview} disabled={busy || conflict}>独立预览 ↗</button><button
-          onclick={toggleSettings}
-          aria-expanded={settings && !focus}>文章设置</button
-        ><button class="primary" onclick={publish} disabled={busy || saving || conflict}
-          >{publishPhase
-            ? '发布中…'
-            : busy
-              ? '处理中…'
-              : article.status === 'published'
-                ? '更新发布'
-                : '发布文章'}</button
+    <div class="article-top-stack" bind:this={topbar} bind:offsetHeight={topbarHeight}>
+      <header class="edit-top">
+        <a href="/articles">← 文章</a><span class="save-status" class:save-failed={status === '保存失败'} role="status"
+          >{publishPhase === 'publishing' ? '正在发布…' : status}{#if publishPhase}<span aria-hidden="true"
+              >已等待 {publishSeconds} 秒</span
+            >{:else if article.updatedAt}<time
+              datetime={article.updatedAt}
+              title="最近保存时间 · 北京时间 UTC+8">最近保存 {savedTime(article.updatedAt)}</time
+            >{/if}</span
         >
-      </div>
-    </header>
-    {#if publishPhase}<div class="publish-progress" aria-busy="true">
-        <span role="status"
-          >{publishPhase === 'saving' ? '正在保存最新草稿…' : '正在校验文章图片并发布…'}</span
-        >
-        <span class="publish-elapsed" aria-live="off">已等待 {publishSeconds} 秒</span>
-        {#if publishSeconds >= 10}<p>
-            图片较多时校验需要一些时间，请保留此页面；发布结果将在这里显示，无需重复点击。
-          </p>{/if}
-      </div>{/if}
-    {#if message}<div class="message" role="status">
-        {message}{#if /正文第 (\d+) 个图片组/.test(message)}<button
-            type="button"
-            onclick={() => editor?.locateGroup(Number(message.match(/正文第 (\d+) 个图片组/)?.[1]))}
-            >定位问题图片组</button
-          >{/if}{#if conflict}<p>当前文字仍保留在页面中。请先复制需要保留的内容，再重新载入文章。</p>{/if}
-      </div>{/if}
+        <div class="actions">
+          <button onclick={toggleOutline} aria-expanded={outlineOpen && !focus}>文章目录</button>
+          <button
+            onclick={() => {
+              void manualSave();
+            }}
+            disabled={busy || saving || conflict}>{saving ? '正在保存…' : '保存草稿'}</button
+          ><button onclick={openPreview} disabled={busy || conflict}>独立预览 ↗</button><button
+            onclick={toggleSettings}
+            aria-expanded={settings && !focus}>文章设置</button
+          ><button class="primary" onclick={publish} disabled={busy || saving || conflict}
+            >{publishPhase
+              ? '发布中…'
+              : busy
+                ? '处理中…'
+                : article.status === 'published'
+                  ? '更新发布'
+                  : '发布文章'}</button
+          >
+        </div>
+      </header>
+      {#if publishPhase}<div class="publish-progress" aria-busy="true">
+          <span role="status"
+            >{publishPhase === 'saving' ? '正在保存最新草稿…' : '正在校验文章图片并发布…'}</span
+          >
+          <span class="publish-elapsed" aria-live="off">已等待 {publishSeconds} 秒</span>
+          {#if publishSeconds >= 10}<p>
+              图片较多时校验需要一些时间，请保留此页面；发布结果将在这里显示，无需重复点击。
+            </p>{/if}
+        </div>{/if}
+      {#if message}<div class="message" class:error={messageType === 'error'} role={messageType === 'error' ? 'alert' : 'status'}>
+          <div class="message-text">{message}</div>{#if /正文第 (\d+) 个图片组/.test(message)}<button
+              type="button"
+              onclick={() => editor?.locateGroup(Number(message.match(/正文第 (\d+) 个图片组/)?.[1]))}
+              >定位问题图片组</button
+            >{/if}{#if conflict}<p>当前文字仍保留在页面中。请先复制需要保留的内容，再重新载入文章。</p>{/if}
+          {#if messageType === 'error'}
+            {#if dirty && !conflict}<button onclick={manualSave} disabled={busy || saving}>重试保存</button>{/if}
+            {#if errorDetail && !message.includes(errorDetail)}<details class="error-detail"><summary>错误详情</summary><pre>{errorDetail}</pre></details>{/if}
+          {/if}
+        </div>{/if}
+    </div>
     <div class="editor-with-outline" class:has-outline={outlineOpen && !focus}>
       {#if outlineOpen && !focus}<aside class="editor-outline" aria-label="编辑文章目录">
           <div class="panel-heading">
@@ -1022,17 +1041,19 @@
       no-repeat right 12px center;
     padding-right: 34px;
   }
-  .edit-top {
+  .article-top-stack {
     position: sticky;
     top: 0;
     z-index: 10;
     background: var(--article-workspace-background);
+    margin: -20px 0 24px;
+  }
+  .edit-top {
     padding: 14px 0;
     border-bottom: 1px solid #e5e9e4;
     display: flex;
     gap: 15px;
     align-items: center;
-    margin: -20px 0 24px;
     flex-wrap: wrap;
   }
   .edit-top .actions {
@@ -1050,8 +1071,38 @@
   .message {
     padding: 12px 18px;
     background: #e8efe1;
-    margin-bottom: 20px;
+    margin: 8px 0 0;
     border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .message.error {
+    background: #fff1eb;
+    color: #8a392c;
+    border: 1px solid #e7b5a6;
+    max-height: 30dvh;
+    overflow-y: auto;
+  }
+  .message-text {
+    overflow-wrap: anywhere;
+  }
+  .save-status.save-failed {
+    color: #9b3c2c;
+    font-weight: 600;
+  }
+  .message button {
+    margin-top: 8px;
+  }
+  .error-detail {
+    margin-top: 8px;
+  }
+  .error-detail summary {
+    cursor: pointer;
+  }
+  .error-detail pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
   }
   .editor-layout-articles {
     display: grid;
