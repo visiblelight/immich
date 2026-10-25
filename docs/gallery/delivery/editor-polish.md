@@ -31,3 +31,10 @@
 - `gallery:check` 零错误、零警告，`gallery:build` 通过。日志为 `/tmp/gallery-table-toolbar-check.log` 与 `/tmp/gallery-table-toolbar-build.log`。
 - 在本地真实后台新建独立验收草稿，以 45 段正文及末尾表格验证：滚动超过 2,200px 后操作栏仍紧贴格式栏；加行、加列、删除行列及保存成功；退出表格自动收起。1440px、632px、390px 宽度及专注写作模式均验证，操作栏间隙为 0，页面无横向溢出。
 - 本地效果已获用户确认，2026-10-25 用户授权提交、推送并发布生产，发布结果另行补记。既有文章和公开版本未改动；回退组件布局即可恢复原显示。
+
+### 生产发布与验收
+
+- 2026-10-25 应用提交 `1b6d22efe9fd17ad4900102e6b0e1dba85625a07` 已推送；[Gallery 流水线 40173751159](https://github.com/visiblelight/immich/actions/runs/40173751159) 的检查、测试、构建、冒烟、云端自动化测试、镜像及部署均通过。
+- 生产镜像：`ghcr.io/visiblelight/gallery@sha256:a9ff4c09d64282b4c28f4927b9374e77de88de02bf40520b3ecff97c1fad1fbf`。服务器当前版本一致，前后台 readiness 正常，服务器受控文件无未提交修改。
+- 正式后台在现有长文章末尾的表格中只读选中单元格验证：页面滚动超过 30,000px 后，表格操作栏顶部与文字工具栏底部相等，整体吸附在文章顶部操作区下方。正文与部署前一致，保存时间未变化，没有测试写入或重新发布文章。
+- 截图 `.gallery-local/verification/table-toolbar/production.png`，流水线日志 `/tmp/gallery-table-toolbar-production-ci.log`。生产保留上一应用版本用于回退；其他本地环境和升级评估修改未纳入本次提交。
