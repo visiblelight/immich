@@ -415,133 +415,135 @@
 </script>
 
 <div class="rich-editor">
-  <div class="toolbar" aria-label="文字格式">
-    {#if editorState.editor}
-      <button
-        title="正文"
-        class:chosen={editorState.editor.isActive('paragraph')}
-        onclick={() => editorState.editor?.chain().focus().setParagraph().run()}>正文</button
-      >
-      <button
-        title="二级标题"
-        class:chosen={editorState.editor.isActive('heading', { level: 2 })}
-        onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 2 }).run()}>H2</button
-      >
-      <button
-        title="三级标题"
-        class:chosen={editorState.editor.isActive('heading', { level: 3 })}
-        onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 3 }).run()}>H3</button
-      >
-      <button
-        title="四级标题"
-        class:chosen={editorState.editor.isActive('heading', { level: 4 })}
-        onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 4 }).run()}>H4</button
-      >
-      <span class="divider"></span>
-      <button
-        aria-label="加粗"
-        aria-pressed={editorState.editor.isActive('bold')}
-        onclick={() => editorState.editor?.chain().focus().toggleBold().run()}><b>B</b></button
-      >
-      <button
-        aria-label="斜体"
-        aria-pressed={editorState.editor.isActive('italic')}
-        onclick={() => editorState.editor?.chain().focus().toggleItalic().run()}><i>I</i></button
-      >
-      <button
-        title="引用"
-        class:chosen={editorState.editor.isActive('blockquote')}
-        onclick={() => editorState.editor?.chain().focus().toggleBlockquote().run()}>引用</button
-      >
-      <button
-        title="无序列表"
-        class:chosen={editorState.editor.isActive('bulletList')}
-        onclick={() => editorState.editor?.chain().focus().toggleBulletList().run()}>• 列表</button
-      >
-      <button
-        title="有序列表"
-        class:chosen={editorState.editor.isActive('orderedList')}
-        onclick={() => editorState.editor?.chain().focus().toggleOrderedList().run()}>1. 列表</button
-      >
-      <button
-        title="任务清单"
-        class:chosen={editorState.editor.isActive('taskList')}
-        onclick={() => editorState.editor?.chain().focus().toggleTaskList().run()}>☑ 清单</button
-      >
-      <button
-        title="插入表格"
-        onclick={() =>
-          editorState.editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-        >表格</button
-      >
-      <details class="more-format">
-        <summary>更多格式</summary>
-        <div class="format-menu">
-          <button
-            class:chosen={editorState.editor.isActive('underline')}
-            onclick={() => editorState.editor?.chain().focus().toggleUnderline().run()}>下划线</button
-          >
-          <button
-            class:chosen={editorState.editor.isActive('strike')}
-            onclick={() => editorState.editor?.chain().focus().toggleStrike().run()}>删除线</button
-          >
-          <button
-            class:chosen={editorState.editor.isActive('highlight')}
-            onclick={() => editorState.editor?.chain().focus().toggleHighlight().run()}>高亮</button
-          >
-          <button
-            class:chosen={editorState.editor.isActive('code')}
-            onclick={() => editorState.editor?.chain().focus().toggleCode().run()}>行内代码</button
-          >
-          <button
-            class:chosen={editorState.editor.isActive('codeBlock')}
-            onclick={() => editorState.editor?.chain().focus().toggleCodeBlock().run()}>代码块</button
-          >
-        </div>
-      </details>
-      <button
-        title="链接"
-        onclick={() => {
-          link = editorState.editor?.getAttributes('link').href ?? '';
-          linkError = '';
-          linkOpen = !linkOpen;
-        }}>链接</button
-      >
-      <button title="分隔线" onclick={() => editorState.editor?.chain().focus().setHorizontalRule().run()}
-        >—</button
-      >
-      <span class="divider"></span><button class="insert" onclick={onInsertImage}>＋ 图片</button>
-      <button
-        aria-label="撤销"
-        disabled={!editorState.editor.can().undo()}
-        onclick={() => editorState.editor?.chain().focus().undo().run()}>↶</button
-      >
-      <button
-        aria-label="重做"
-        disabled={!editorState.editor.can().redo()}
-        onclick={() => editorState.editor?.chain().focus().redo().run()}>↷</button
-      >
-    {/if}
+  <div class="editor-tools">
+    <div class="toolbar" aria-label="文字格式">
+      {#if editorState.editor}
+        <button
+          title="正文"
+          class:chosen={editorState.editor.isActive('paragraph')}
+          onclick={() => editorState.editor?.chain().focus().setParagraph().run()}>正文</button
+        >
+        <button
+          title="二级标题"
+          class:chosen={editorState.editor.isActive('heading', { level: 2 })}
+          onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 2 }).run()}>H2</button
+        >
+        <button
+          title="三级标题"
+          class:chosen={editorState.editor.isActive('heading', { level: 3 })}
+          onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 3 }).run()}>H3</button
+        >
+        <button
+          title="四级标题"
+          class:chosen={editorState.editor.isActive('heading', { level: 4 })}
+          onclick={() => editorState.editor?.chain().focus().toggleHeading({ level: 4 }).run()}>H4</button
+        >
+        <span class="divider"></span>
+        <button
+          aria-label="加粗"
+          aria-pressed={editorState.editor.isActive('bold')}
+          onclick={() => editorState.editor?.chain().focus().toggleBold().run()}><b>B</b></button
+        >
+        <button
+          aria-label="斜体"
+          aria-pressed={editorState.editor.isActive('italic')}
+          onclick={() => editorState.editor?.chain().focus().toggleItalic().run()}><i>I</i></button
+        >
+        <button
+          title="引用"
+          class:chosen={editorState.editor.isActive('blockquote')}
+          onclick={() => editorState.editor?.chain().focus().toggleBlockquote().run()}>引用</button
+        >
+        <button
+          title="无序列表"
+          class:chosen={editorState.editor.isActive('bulletList')}
+          onclick={() => editorState.editor?.chain().focus().toggleBulletList().run()}>• 列表</button
+        >
+        <button
+          title="有序列表"
+          class:chosen={editorState.editor.isActive('orderedList')}
+          onclick={() => editorState.editor?.chain().focus().toggleOrderedList().run()}>1. 列表</button
+        >
+        <button
+          title="任务清单"
+          class:chosen={editorState.editor.isActive('taskList')}
+          onclick={() => editorState.editor?.chain().focus().toggleTaskList().run()}>☑ 清单</button
+        >
+        <button
+          title="插入表格"
+          onclick={() =>
+            editorState.editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+          >表格</button
+        >
+        <details class="more-format">
+          <summary>更多格式</summary>
+          <div class="format-menu">
+            <button
+              class:chosen={editorState.editor.isActive('underline')}
+              onclick={() => editorState.editor?.chain().focus().toggleUnderline().run()}>下划线</button
+            >
+            <button
+              class:chosen={editorState.editor.isActive('strike')}
+              onclick={() => editorState.editor?.chain().focus().toggleStrike().run()}>删除线</button
+            >
+            <button
+              class:chosen={editorState.editor.isActive('highlight')}
+              onclick={() => editorState.editor?.chain().focus().toggleHighlight().run()}>高亮</button
+            >
+            <button
+              class:chosen={editorState.editor.isActive('code')}
+              onclick={() => editorState.editor?.chain().focus().toggleCode().run()}>行内代码</button
+            >
+            <button
+              class:chosen={editorState.editor.isActive('codeBlock')}
+              onclick={() => editorState.editor?.chain().focus().toggleCodeBlock().run()}>代码块</button
+            >
+          </div>
+        </details>
+        <button
+          title="链接"
+          onclick={() => {
+            link = editorState.editor?.getAttributes('link').href ?? '';
+            linkError = '';
+            linkOpen = !linkOpen;
+          }}>链接</button
+        >
+        <button title="分隔线" onclick={() => editorState.editor?.chain().focus().setHorizontalRule().run()}
+          >—</button
+        >
+        <span class="divider"></span><button class="insert" onclick={onInsertImage}>＋ 图片</button>
+        <button
+          aria-label="撤销"
+          disabled={!editorState.editor.can().undo()}
+          onclick={() => editorState.editor?.chain().focus().undo().run()}>↶</button
+        >
+        <button
+          aria-label="重做"
+          disabled={!editorState.editor.can().redo()}
+          onclick={() => editorState.editor?.chain().focus().redo().run()}>↷</button
+        >
+      {/if}
+    </div>
+    {#if editorState.editor?.isActive('table')}<div class="table-tools" aria-label="表格操作">
+        <span>表格</span>
+        <button onclick={() => editorState.editor?.chain().focus().addRowBefore().run()}>上方加行</button>
+        <button onclick={() => editorState.editor?.chain().focus().addRowAfter().run()}>下方加行</button>
+        <button onclick={() => editorState.editor?.chain().focus().deleteRow().run()}>删除行</button>
+        <button onclick={() => editorState.editor?.chain().focus().addColumnBefore().run()}>左侧加列</button>
+        <button onclick={() => editorState.editor?.chain().focus().addColumnAfter().run()}>右侧加列</button>
+        <button onclick={() => editorState.editor?.chain().focus().deleteColumn().run()}>删除列</button>
+        <button onclick={() => editorState.editor?.chain().focus().toggleHeaderRow().run()}>切换表头</button>
+        <button
+          disabled={!editorState.editor.can().mergeCells()}
+          onclick={() => editorState.editor?.chain().focus().mergeCells().run()}>合并单元格</button
+        >
+        <button
+          disabled={!editorState.editor.can().splitCell()}
+          onclick={() => editorState.editor?.chain().focus().splitCell().run()}>拆分单元格</button
+        >
+        <button onclick={() => editorState.editor?.chain().focus().deleteTable().run()}>删除表格</button>
+      </div>{/if}
   </div>
-  {#if editorState.editor?.isActive('table')}<div class="table-tools" aria-label="表格操作">
-      <span>表格</span>
-      <button onclick={() => editorState.editor?.chain().focus().addRowBefore().run()}>上方加行</button>
-      <button onclick={() => editorState.editor?.chain().focus().addRowAfter().run()}>下方加行</button>
-      <button onclick={() => editorState.editor?.chain().focus().deleteRow().run()}>删除行</button>
-      <button onclick={() => editorState.editor?.chain().focus().addColumnBefore().run()}>左侧加列</button>
-      <button onclick={() => editorState.editor?.chain().focus().addColumnAfter().run()}>右侧加列</button>
-      <button onclick={() => editorState.editor?.chain().focus().deleteColumn().run()}>删除列</button>
-      <button onclick={() => editorState.editor?.chain().focus().toggleHeaderRow().run()}>切换表头</button>
-      <button
-        disabled={!editorState.editor.can().mergeCells()}
-        onclick={() => editorState.editor?.chain().focus().mergeCells().run()}>合并单元格</button
-      >
-      <button
-        disabled={!editorState.editor.can().splitCell()}
-        onclick={() => editorState.editor?.chain().focus().splitCell().run()}>拆分单元格</button
-      >
-      <button onclick={() => editorState.editor?.chain().focus().deleteTable().run()}>删除表格</button>
-    </div>{/if}
   {#if pasteNotice}<div class="paste-notice" role="status">
       <span>{pasteNotice}</span><button aria-label="关闭粘贴提示" onclick={() => (pasteNotice = '')}>✕</button
       >
@@ -648,6 +650,12 @@
     cursor: col-resize;
   }
 
+  .editor-tools {
+    position: sticky;
+    top: var(--article-topbar-height, 0px);
+    z-index: 2;
+    background: #fffefc;
+  }
   .toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -656,10 +664,6 @@
     border-bottom: 1px solid #e4e8e1;
     border-top: 1px solid #e4e8e1;
     padding: 10px 16px;
-    position: sticky;
-    top: var(--article-topbar-height, 0px);
-    z-index: 2;
-    background: #fffefc;
   }
   .toolbar button {
     border: 0;
