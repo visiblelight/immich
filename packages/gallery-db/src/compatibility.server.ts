@@ -56,7 +56,7 @@ export async function assertDatabaseCompatibility(
   await sql`SELECT album_id, release_id, ancestor_ids, description_document FROM gallery.published_album LIMIT 0`.execute(
     db,
   );
-  await sql`SELECT album_id, photo_id, asset_id, location_mode, latitude, longitude, group_id, description_format, tags, taken_at, local_taken_at, time_zone, first_added_at FROM gallery.published_photo LIMIT 0`.execute(
+  await sql`SELECT album_id, photo_id, asset_id, location_mode, latitude, longitude, group_id, description_format, tags, taken_at, local_taken_at, time_zone, first_added_at, capture_status FROM gallery.published_photo LIMIT 0`.execute(
     db,
   );
   await sql`SELECT preview_id, preview_path, preview_update_id, thumbnail_id, thumbnail_path,
@@ -71,6 +71,9 @@ export async function assertDatabaseCompatibility(
   );
   await sql`SELECT article_id,album_id,group_id FROM gallery.published_article_group LIMIT 0`.execute(db);
   if (service === 'gallery-admin') {
+    await sql`SELECT asset_id,source_signature FROM gallery.capture_source_asset LIMIT 0`.execute(db);
+    await sql`SELECT asset_id,fingerprint,version FROM gallery.capture_evidence LIMIT 0`.execute(db);
+    await sql`SELECT asset_id,mode,version FROM gallery.capture_correction LIMIT 0`.execute(db);
     await sql`SELECT immich_asset_id,hidden_from_gallery FROM gallery.photo LIMIT 0`.execute(db);
     await sql`SELECT id,version,content FROM gallery.article LIMIT 0`.execute(db);
     await sql`SELECT asset_id, is_edited, latitude, longitude, city, source_description FROM gallery.admin_source_asset LIMIT 0`.execute(

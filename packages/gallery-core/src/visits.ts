@@ -4,6 +4,7 @@ export interface VisitEvidence {
   takenAt: string | null;
   localTakenAt: string | null;
   timeZone: string | null;
+  captureStatus?: string;
 }
 export interface InferredVisit {
   id: string;
@@ -23,6 +24,7 @@ export function knownTimeZone(zone: string | null | undefined) {
   }
 }
 export function evidenceDate(photo: VisitEvidence) {
+  if (photo.captureStatus && ['suggested','unknown','conflict','stale'].includes(photo.captureStatus)) return null;
   if (!knownTimeZone(photo.timeZone) || !photo.localTakenAt || !photo.takenAt) return null;
   const time = Date.parse(photo.takenAt),
     local = Date.parse(photo.localTakenAt);

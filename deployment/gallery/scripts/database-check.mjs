@@ -160,8 +160,8 @@ try {
         checkedAt: new Date().toISOString(),
         postgresImage: "14-vectorchord0.4.3-pgvectors0.2.0",
         data: "synthetic",
-        scope:
-          process.env.GALLERY_TEST_FOCUS === "community" ? "community" : "full",
+        scope: ["community", "capture"].includes(process.env.GALLERY_TEST_FOCUS)
+          ? process.env.GALLERY_TEST_FOCUS : "full",
         schemaOnly: true,
       },
       null,

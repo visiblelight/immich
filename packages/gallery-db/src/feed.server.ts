@@ -145,6 +145,7 @@ export async function publicPhotoFeed(
         taken_at: Date | null;
         local_taken_at: Date | null;
         time_zone: string | null;
+          capture_status: string;
         first_added_at: Date | null;
         estimated: boolean;
         group_id: string | null;
@@ -171,6 +172,7 @@ export async function publicPhotoFeed(
         takenAt: p.taken_at?.toISOString() ?? null,
         localTakenAt: p.local_taken_at?.toISOString() ?? null,
         timeZone: p.time_zone,
+          captureStatus: p.capture_status,
         addedAt: p.first_added_at?.toISOString() ?? null,
         addedEstimated: p.estimated,
         albumId: p.album_id,

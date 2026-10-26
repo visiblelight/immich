@@ -10,7 +10,7 @@
     publicOrigin,
   }: {
     children: Snippet;
-    active: 'places' | 'photos' | 'maps' | 'visits' | 'tags' | 'analytics';
+    active: 'capture-times' | 'places' | 'photos' | 'maps' | 'visits' | 'tags' | 'analytics';
     user: GalleryUser;
     publicOrigin: string;
   } = $props();
@@ -21,7 +21,7 @@
   <main class="main">
     <div class="topline">
       <span
-        >工作台 / {active === 'places'
+        >工作台 / {active === 'capture-times' ? '拍摄时间' : active === 'places'
           ? '地点管理'
           : active === 'photos'
             ? '全部相片'

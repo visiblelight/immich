@@ -79,6 +79,7 @@ export interface DisplayPhoto {
   tags?: PhotoTag[];
   group?: PhotoGroup;
   takenAt?: string | null;
+  captureStatus?: string;
   localTakenAt?: string | null;
   timeZone?: string | null;
   addedAt?: string | null;

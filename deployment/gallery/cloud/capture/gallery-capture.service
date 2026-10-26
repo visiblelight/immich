@@ -1,0 +1,16 @@
+[Unit]
+Description=Read and reconcile Gallery capture-time evidence
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gallery-capture/sync.sh
+UMask=0077
+TimeoutStartSec=30min
+Nice=10
+MemoryMax=512M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/gallery-capture

@@ -15,6 +15,9 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [拍摄时间 ADR 0024](decisions/0024-capture-time-evidence.md) | 相机钟表、定位时区与独立可撤销时间校正的确认范围 |
+| [拍摄时间数据字典](architecture/capture-time.md) | 0016 证据、确认、视图及权限 |
+| [拍摄时间核对交付](delivery/capture-time.md) | 本地真实证据、佳能/索尼验证与生产发布边界 |
 | [用户与互动 ADR 0023](decisions/0023-members-comments-and-likes.md) | 前台邮箱验证码用户、评论与点赞的已确认范围及分阶段边界 |
 | [用户与互动交付](delivery/community.md) | 本地真实接入、隔离验收与阿里云发信联调状态 |
 | [地区足迹 ADR 0021](decisions/0021-regional-visited-maps.md) | 已确认的中国省份及其他国家地区地图方案、位置保护与分阶段边界 |

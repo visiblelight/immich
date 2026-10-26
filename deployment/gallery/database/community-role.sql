@@ -20,5 +20,10 @@ GRANT SELECT ON gallery.published_album,gallery.published_photo,gallery.publishe
  gallery.published_article,gallery.published_article_photo,gallery.published_article_photo_media TO gallery_community;
 GRANT SELECT,INSERT,UPDATE,DELETE ON gallery.member,gallery.member_session,
  gallery.member_challenge,gallery.community_comment,gallery.community_like TO gallery_community;
+DO $$ BEGIN
+ IF to_regprocedure('gallery.capture_source_signature(timestamptz,timestamptz,text,double precision,double precision)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION gallery.capture_source_signature(timestamptz,timestamptz,text,double precision,double precision) TO gallery_community;
+ END IF;
+END $$;
 ALTER ROLE gallery_community SET search_path=pg_catalog,gallery;
 ALTER ROLE gallery_community SET statement_timeout='10s';

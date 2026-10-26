@@ -76,7 +76,8 @@ export async function visitedSnapshot(db: Kysely<unknown>) {
         taken_at: Date | null;
         local_taken_at: Date | null;
         time_zone: string | null;
-      }>`SELECT DISTINCT ON(asset_id) asset_id,photo_id,album_id,album_slug,latitude,longitude,location_mode,taken_at,local_taken_at,time_zone
+        capture_status: string;
+      }>`SELECT DISTINCT ON(asset_id) asset_id,photo_id,album_id,album_slug,latitude,longitude,location_mode,taken_at,local_taken_at,time_zone,capture_status
       FROM gallery.published_photo WHERE latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY asset_id,(location_mode='approximate') DESC,album_id,photo_id`.execute(trx)
     ).rows;
@@ -103,6 +104,7 @@ export async function visitedSnapshot(db: Kysely<unknown>) {
         takenAt: row.taken_at?.toISOString() ?? null,
         localTakenAt: row.local_taken_at?.toISOString() ?? null,
         timeZone: row.time_zone,
+        captureStatus: row.capture_status,
       });
     }
     const gap = (

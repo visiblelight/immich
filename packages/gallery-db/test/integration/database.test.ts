@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { captureTimes } from './capture-times.ts';
 import { placesAndFilters } from './places.ts';
 import { regionalVisits } from './regional-visits.ts';
 import { articles } from './articles.ts';
@@ -194,6 +195,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           '0013',
           '0014',
           '0015',
+          '0016',
         ]);
         assert.deepEqual(await migrate(migrator), []);
         await assert.rejects(migrate(admin), /require gallery_migrator/);
@@ -203,7 +205,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
               "SELECT count(*) FROM information_schema.tables WHERE table_schema='gallery' AND table_type='BASE TABLE'",
             )
           ).rows[0].count,
-          '42',
+          '44',
         );
       },
     );
@@ -425,6 +427,16 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           await communityRecovery(config);
         },
       );
+      return;
+    }
+    if (process.env.GALLERY_TEST_FOCUS === 'capture') {
+      await admin.query("INSERT INTO gallery.site(id,name) VALUES(1,'Capture test')");
+    await t.test('capture evidence, atomic confirmation, stale source, rollback and publication boundaries', async()=>{
+      const captureAssets=[randomUUID(),randomUUID()];
+      for(const asset of captureAssets)await sourceAsset(asset,ids.owner);
+      await album('capture-test',null,'exact',captureAssets);
+      await captureTimes(adminDb,publicDb,owner,ids.user,captureAssets,'capture-test');
+    });
       return;
     }
     const country = await album('georgia', null, 'hidden', [], assets[0]!);
@@ -1392,6 +1404,12 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
         );
       },
     );
+    await t.test('capture evidence, atomic confirmation, stale source, rollback and publication boundaries', async()=>{
+      const captureAssets=[randomUUID(),randomUUID()];
+      for(const asset of captureAssets)await sourceAsset(asset,ids.owner);
+      await album('capture-test',null,'exact',captureAssets);
+      await captureTimes(adminDb,publicDb,owner,ids.user,captureAssets,'capture-test');
+    });
     await t.test('full database backup and isolated recovery', async () => {
       await recovery(config, mediaRoot);
     });

@@ -1,7 +1,9 @@
 import type { DisplayPhoto } from './content.ts';
 
 /** Immich encodes wall-clock fields in localDateTime as UTC: do not convert them again. */
-export function captureTime(photo: Pick<DisplayPhoto, 'localTakenAt' | 'takenAt' | 'timeZone'>) {
+export function captureTime(
+  photo: Pick<DisplayPhoto, 'localTakenAt' | 'takenAt' | 'timeZone' | 'captureStatus'>,
+) {
   const local = photo.localTakenAt;
   if (!local || !Number.isFinite(Date.parse(local))) return { label: '拍摄时间', value: '时间未知' };
   const value = new Intl.DateTimeFormat('zh-CN', {
@@ -26,6 +28,10 @@ export function captureTime(photo: Pick<DisplayPhoto, 'localTakenAt' | 'takenAt'
         /* Unknown source zone. */
       }
   }
+  if (photo.captureStatus && ['suggested', 'unknown', 'conflict', 'stale'].includes(photo.captureStatus))
+    return { label: '相机记录时间', value: `${value}（时区待核对）` };
+  if (photo.captureStatus && ['verified', 'confirmed'].includes(photo.captureStatus) && !known)
+    return { label: '相机记录时间', value: `${value}（拍摄地点时区未知）` };
   return known
     ? { label: '当地拍摄时间', value: `${value} · ${zone}` }
     : { label: '记录时间', value: `${value}（时区未知）` };

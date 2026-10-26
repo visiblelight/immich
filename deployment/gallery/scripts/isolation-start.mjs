@@ -19,11 +19,20 @@ execFileSync(
     'gallery.isolation=true',
     '--env-file',
     envFile,
-    '--tmpfs',
-    '/var/lib/postgresql/data:rw',
+    // A fresh anonymous volume is still discarded with `docker rm -v`.
+    // Disk-backed WAL avoids exhausting a shared Docker VM during the 10k fixture.
+    '--mount',
+    'type=volume,destination=/var/lib/postgresql/data',
     '-p',
     '127.0.0.1::5432',
     image,
+    'postgres',
+    '-c', 'config_file=/etc/postgresql/postgresql.conf',
+    '-c', 'shared_buffers=64MB',
+    '-c', 'work_mem=4MB',
+    '-c', 'maintenance_work_mem=64MB',
+    '-c', 'max_parallel_maintenance_workers=0',
+    '-c', 'max_parallel_workers_per_gather=0',
   ],
   { stdio: 'pipe' },
 );

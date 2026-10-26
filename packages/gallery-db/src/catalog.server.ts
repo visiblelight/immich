@@ -112,6 +112,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
             taken_at: Date | null;
             local_taken_at: Date | null;
             time_zone: string | null;
+          capture_status: string;
             first_added_at: Date | null;
             estimated: boolean;
             title: string;
@@ -120,7 +121,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
             public_exif: DisplayPhoto['exif'];
             latitude: number | null;
             longitude: number | null;
-          }>`SELECT asset_id,tags,photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ${selectedIds ? sql`AND photo_id=ANY(${selectedIds}::uuid[])` : sql``} ORDER BY position,photo_id`.execute(
+          }>`SELECT asset_id,tags,photo_id,title,description,alt_text,public_exif,latitude,longitude,group_id,description_format,taken_at,local_taken_at,time_zone,capture_status,first_added_at,estimated FROM gallery.published_photo WHERE album_id=${active.id}::uuid ${selectedIds ? sql`AND photo_id=ANY(${selectedIds}::uuid[])` : sql``} ORDER BY position,photo_id`.execute(
             trx,
           )
         ).rows;
@@ -154,6 +155,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
           takenAt: p.taken_at?.toISOString() ?? null,
           localTakenAt: p.local_taken_at?.toISOString() ?? null,
           timeZone: p.time_zone,
+          captureStatus: p.capture_status,
           addedAt: p.first_added_at?.toISOString() ?? null,
           addedEstimated: p.estimated,
           albumId: active.id,
@@ -298,6 +300,7 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
           taken_at: Date | null;
           local_taken_at: Date | null;
           time_zone: string | null;
+          capture_status: string;
           title: string;
           description: string;
           alt_text: string;
@@ -309,7 +312,7 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
           focal_length: number | null;
           iso: number | null;
           exposure_time: string | null;
-        }>`SELECT p.id,p.title,p.description,p.alt_text,p.group_id,p.description_format,s.taken_at,s.local_taken_at,s.time_zone,p.immich_asset_id AS asset,s.make,s.model,s.lens_model,s.f_number,s.focal_length,s.iso,s.exposure_time FROM gallery.album_photo p JOIN gallery.admin_source_asset s ON s.asset_id=p.immich_asset_id WHERE p.album_id=${albumId}::uuid ORDER BY p.position,p.id`.execute(
+        }>`SELECT p.id,p.title,p.description,p.alt_text,p.group_id,p.description_format,s.taken_at,s.local_taken_at,s.time_zone,s.capture_status,p.immich_asset_id AS asset,s.make,s.model,s.lens_model,s.f_number,s.focal_length,s.iso,s.exposure_time FROM gallery.album_photo p JOIN gallery.admin_source_asset s ON s.asset_id=p.immich_asset_id WHERE p.album_id=${albumId}::uuid ORDER BY p.position,p.id`.execute(
           trx,
         )
       ).rows;
@@ -338,6 +341,7 @@ export async function draftCatalog(db: Kysely<unknown>, albumId: string) {
           takenAt: p.taken_at?.toISOString() ?? null,
           localTakenAt: p.local_taken_at?.toISOString() ?? null,
           timeZone: p.time_zone,
+          captureStatus: p.capture_status,
           title: p.title,
           description: p.description_format === 'plain' ? literalMarkdown(p.description) : p.description,
           alt: p.alt_text,
