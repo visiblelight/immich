@@ -1,6 +1,6 @@
 # 拍摄时间证据维护
 
-2026-10-26 旧版定时采集已上线，生产仍运行该版本。2026-10-28 本目录增加主动读取队列和 GPS 自动换算，当前仅本地验收，未安装到生产；见 [本轮交付](../../../../docs/gallery/delivery/capture-refresh.md)。新照片进入 Gallery 后，由独立维护任务读取已有原片及 sidecar 的时间字段；不会改写文件、生成照片副本或扩大公开范围。
+2026-10-26 旧版定时采集上线；2026-10-28 主动读取队列和 GPS 自动换算已获验收并发布，生产新版任务已安装启用；见 [本轮交付](../../../../docs/gallery/delivery/capture-refresh.md)。新照片进入 Gallery 后，由独立维护任务读取已有原片及 sidecar 的时间字段；不会改写文件、生成照片副本或扩大公开范围。
 
 下次获准发布时的顺序：停止旧 timer 并等待服务结束 → 数据库备份 → Gallery 0017 迁移 → 新前后台构建 → 运行本目录 `install.sh` → `systemctl start gallery-capture.service` → 核对统计、原片与关联未变 → 验证通过后 `systemctl enable --now gallery-capture.timer`。维护主机需要 Python 3。安装不自动开启任务。
 
