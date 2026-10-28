@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { sql, type Kysely } from 'kysely';
 import { adminCaptureTimes, importCaptureEvidence, reviewCaptureTimes } from '../../src/capture.server.ts';
+import { requestCaptureRefresh, claimCaptureRefresh, finishCaptureRefresh } from '../../src/capture-refresh.server.ts';
 import { publicCatalog, publicPhotoFeed, visitedSnapshot } from '../../src/index.server.ts';
 export async function captureTimes(
   db: Kysely<unknown>,
@@ -90,13 +91,15 @@ export async function captureTimes(
       sourceSignature: p.source_signature,
     };
   };
-  const input = { mode: 'suggestion', items: [await selection()] };
+  const automatic = (await publicCatalog(pub, albumSlug)).active!.photos.find(p=>p.localTakenAt==='2017-01-31T19:00:00.000Z');
+  assert.equal(automatic?.captureStatus,'verified','GPS result is visible without a manual confirmation');
+  const input = { mode: 'manual', sourceZone:'UTC+08:00', items: [await selection()] };
   const proposed = await reviewCaptureTimes(db, user, input);
   assert.equal(proposed.preview[0]!.after, '2017-01-31T19:00:00.000Z');
-  assert.equal(proposed.preview[0]!.dateChanged, true);
+  assert.equal(proposed.preview[0]!.dateChanged, false);
   assert.equal(
     (await adminCaptureTimes(db)).photos.find((p) => p.asset_id === id)!.capture_status,
-    'suggested',
+    'verified',
   );
   const visit = randomUUID();
   await owner.query(
@@ -118,9 +121,13 @@ export async function captureTimes(
   );
   assert.equal(
     (await adminCaptureTimes(db)).photos.find((p) => p.asset_id === id)!.capture_status,
-    'suggested',
+    'verified',
   );
   await reviewCaptureTimes(db, user, input, true);
+  // A changed analysis policy must re-evaluate old evidence without invalidating manual decisions.
+  await owner.query(`UPDATE gallery.capture_evidence SET analysis=jsonb_set(analysis,'{status}','"suggested"') WHERE asset_id=$1`,[id]);
+  assert.equal((await importCaptureEvidence(db,report)).imported,1);
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.capture_status,'confirmed');
   await assert.rejects(reviewCaptureTimes(db, user, input, true), /变化/);
   const visible = (await publicCatalog(pub, albumSlug)).active!;
   const fixed = visible.photos.find((p) => p.captureStatus === 'confirmed')!;
@@ -138,6 +145,8 @@ export async function captureTimes(
   assert.equal(manual.label, '人工行程');
   assert.equal(await snapshot(), before, 'Gallery corrections must not write Immich rows');
   await reviewCaptureTimes(db, user, { mode: 'disable', items: [await selection()] }, true);
+  await owner.query(`UPDATE gallery.capture_evidence SET analysis=jsonb_set(analysis,'{status}','"suggested"') WHERE asset_id=$1`,[id]);
+  assert.equal((await importCaptureEvidence(db,report)).imported,1);
   assert.equal(
     (await publicCatalog(pub, albumSlug)).active!.photos.find((p) => p.id === fixed.id)!.localTakenAt,
     '2017-02-01T01:00:00.000Z',
@@ -160,8 +169,54 @@ export async function captureTimes(
     /最新/,
   );
   assert.equal((await importCaptureEvidence(db, report)).stale, 1);
+  const queue = async()=> (await sql<{token:string;state:string}>`SELECT token,state FROM gallery.capture_refresh WHERE asset_id=${id}::uuid`.execute(db)).rows[0]!;
+  await assert.rejects(requestCaptureRefresh(db,user,{assets:[id,randomUUID()]}),/来源/);
+  assert.equal((await sql`SELECT * FROM gallery.capture_refresh`.execute(db)).rows.length,0);
+  await requestCaptureRefresh(db,user,{assets:[id]});
+  const queued=await queue();
+  await requestCaptureRefresh(db,user,{assets:[id]});
+  assert.equal((await queue()).token,queued.token,'double clicks share a request');
+  const jobs=await claimCaptureRefresh(db);
+  assert.equal(jobs.length,1);
+  assert.equal((await claimCaptureRefresh(db)).length,0,'only one worker claims a request');
+  await importCaptureEvidence(db,report,jobs);
+  assert.equal((await queue()).state,'failed','a changed source cannot finish with old evidence');
+  await requestCaptureRefresh(db,user,{assets:[id]});
+  const retry=await claimCaptureRefresh(db);
+  await finishCaptureRefresh(db,jobs,new Set([id]),'failure');
+  assert.equal((await queue()).state,'reading','late completion cannot overwrite a retry');
+  const fresh=await selection();
+  const refreshedReport={...report,photos:[{...report.photos[0]!,sourceSignature:fresh.sourceSignature}]};
+  await importCaptureEvidence(db,refreshedReport,retry);
+  assert.equal((await queue()).state,'completed');
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.capture_status,'verified');
+  // Adding a location does not invent a GPS timestamp; after rereading, manual correction is available.
+  await requestCaptureRefresh(db,user,{assets:[id]});
+  await importCaptureEvidence(db,{...refreshedReport,photos:[{...refreshedReport.photos[0]!,evidence:{...base,gpsUtc:null,gpsStatus:'Measurement Void',gpsPositionValid:false,gpsPositionMatches:false}}]},await claimCaptureRefresh(db));
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.capture_status,'unknown');
+  await reviewCaptureTimes(db,user,{mode:'manual',sourceZone:'UTC+08:00',items:[await selection()]},true);
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.capture_status,'confirmed');
+  // Failed reads keep the last evidence, and old jobs cannot replace it even when source fields match.
+  const goodVersion=(await selection()).version;
+  await importCaptureEvidence(db,{...refreshedReport,photos:[{...refreshedReport.photos[0]!,evidence:{...base,clock:'2017-02-02T01:00:00.000Z'}}]},jobs);
+  assert.equal((await selection()).version,goodVersion);
+  await requestCaptureRefresh(db,user,{assets:[id]});
+  const failedJobs=await claimCaptureRefresh(db);
+  await importCaptureEvidence(db,{schemaVersion:1,photos:[],errors:[{assetId:id}]},failedJobs);
+  assert.equal((await queue()).state,'failed');
+  assert.equal((await selection()).version,goodVersion);
+  await assert.rejects(sql`SELECT * FROM gallery.capture_refresh`.execute(pub));
+  await requestCaptureRefresh(db,user,{assets:[id]});
+  await claimCaptureRefresh(db);
+  await owner.query("UPDATE gallery.capture_refresh SET started_at=now()-interval '16 minutes' WHERE asset_id=$1",[id]);
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.refresh_expired,true);
+  await requestCaptureRefresh(db,user,{assets:[id]});
+  assert.equal((await queue()).state,'queued','an expired worker does not block retry');
   await assert.rejects(sql`SELECT * FROM gallery.capture_evidence`.execute(pub));
   await owner.query('UPDATE public.asset SET "isOffline"=true WHERE id=$1', [id]);
+  await assert.rejects(requestCaptureRefresh(db,user,{assets:[id]}),/来源/);
+  assert.equal((await claimCaptureRefresh(db)).length,0);
+  assert.equal((await queue()).state,'failed');
   assert.ok(!(await adminCaptureTimes(db)).photos.some((p) => p.asset_id === id));
   assert.ok(!(await publicCatalog(pub, albumSlug)).active!.photos.some((p) => p.id === fixed.id));
 }

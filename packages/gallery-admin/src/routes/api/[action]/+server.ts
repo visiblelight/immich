@@ -4,6 +4,7 @@ import { GalleryError, ensure, uuid } from '@gallery/core';
 import {
   adminPlaces,
   reviewCaptureTimes,
+  requestCaptureRefresh,
   savePlace,
   photoLibrary,
   editPhotoLibrary,
@@ -148,6 +149,7 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies, g
     const user = locals.user;
     switch (params.action) {
       case 'capture-preview': return json(await reviewCaptureTimes(app.db, user, input));
+      case 'capture-refresh': return json(await requestCaptureRefresh(app.db, user, input));
       case 'capture-apply': return json(await reviewCaptureTimes(app.db, user, input, true));
       case 'media-attribution': return json(await saveMediaAttribution(app.db, user, input));
       case 'place-save':

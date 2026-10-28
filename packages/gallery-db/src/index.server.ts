@@ -52,3 +52,4 @@ export * from './community.server.ts';
 export * from './community-mail.server.ts';
 
 export { adminCaptureTimes, reviewCaptureTimes } from './capture.server.ts';
+export { requestCaptureRefresh } from './capture-refresh.server.ts';

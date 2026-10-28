@@ -1,6 +1,6 @@
 <script lang="ts">
   import {invalidateAll} from '$app/navigation';
-  import {tick} from 'svelte';
+  import {tick, onMount} from 'svelte';
   import MapAdminFrame from '$lib/MapAdminFrame.svelte';
   import type {PageData} from './$types';
   let {data}:{data:PageData}=$props();
@@ -9,14 +9,43 @@
   type Row=PageData['photos'][number];
   type Change={assetId:string;filename:string;before:string|null;after:string|null;timeZone:string|null;sourceZone:string|null;secondsChanged:number;dateChanged:boolean;manualVisits:number};
   let preview=$state<Change[]>([]),payload=$state<Record<string,unknown>|null>(null);
+  let waiting=$state<string[]>([]);
+  const processing=(p:Row)=>['queued','reading'].includes(p.refresh_state??'')&&!p.refresh_expired;
+  const canCorrect=(p:Row)=>!!p.evidence&&p.capture_status!=='stale'&&!processing(p);
   const pending=(p:Row)=>['suggested','unknown','conflict','stale'].includes(p.capture_status);
-  const labels:Record<string,string>={legacy:'尚未核对',verified:'时区明确',confirmed:'已确认',suggested:'待确认建议',unknown:'缺少依据',conflict:'证据冲突',stale:'来源已变化'};
+  const labels:Record<string,string>={legacy:'尚未核对',verified:'自动核对',confirmed:'已确认',suggested:'待确认建议',unknown:'缺少依据',conflict:'证据冲突',stale:'来源已变化'};
   const visible=$derived(data.photos.filter(p=>(filter==='all'||(filter==='review'?pending(p):filter==='confirmed'?['verified','confirmed'].includes(p.capture_status):p.capture_status==='legacy'))&&[p.filename,p.model,p.time_zone,p.evidence?.destinationZone].filter(Boolean).join(' ').toLowerCase().includes(query.toLowerCase())));
   const chosen=$derived(data.photos.filter(p=>selected.includes(p.asset_id)));
   const rows=$derived(visible.slice((page-1)*40,page*40));
   const clock=(v:string|null|undefined)=>v?v.replace('T',' ').replace(/(?:\.\d+)?Z$/,''):'时间未知';
   function changeFilter(value:string){filter=value;page=1;selected=[];}
   function toggle(p:Row,checked:boolean){selected=checked?[...selected,p.asset_id]:selected.filter(id=>id!==p.asset_id);}
+  function reportFinished(){
+    if(!waiting.length)return;
+    const active=data.photos.filter(p=>waiting.includes(p.asset_id));
+    if(active.some(processing))return;
+    const errors=active.filter(p=>p.refresh_state==='failed'||p.refresh_expired);
+    failed=errors.length>0;
+    message=errors.length?'部分照片读取未完成，请查看各行提示后重试。':`已重新读取 ${active.length} 张照片，显示结果已更新。`;
+    waiting=[];
+  }
+  onMount(()=>{
+    let refreshing=false;
+    const timer=setInterval(async()=>{
+      if(refreshing||busy||dialog?.open||document.visibilityState!=='visible'||!data.photos.some(processing))return;
+      refreshing=true;
+      try{await invalidateAll();reportFinished();}catch{message='暂时无法刷新处理状态，请稍后刷新页面。';failed=true;}
+      finally{refreshing=false;}
+    },2500);
+    return()=>clearInterval(timer);
+  });
+  async function reread(assets:string[]){
+    busy=true;message='';failed=false;
+    try{
+      await api('refresh',{assets});waiting=[...new Set([...waiting,...assets])];
+      await invalidateAll();selected=[];message='已加入读取队列，完成后页面会自动更新。';reportFinished();
+    }catch(e){message=(e as Error).message;failed=true;}finally{busy=false;}
+  }
   async function api(action:string,input:Record<string,unknown>){
     const response=await fetch('/api/capture-'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)});
     const result=await response.json();if(!response.ok)throw new Error(result.message);return result;
@@ -40,22 +69,25 @@
 <MapAdminFrame active="capture-times" user={data.user} publicOrigin={data.publicOrigin}>
   <section class="map-admin capture-manager">
     <h1>拍摄时间</h1>
-    <p>核对相机记录的时间与拍摄地点时区。校正仅在 Gallery 生效，可以撤销。</p>
+    <p>拍摄时区明确，或 GPS 时间与位置相互吻合时自动换算；其余照片再人工核对。校正仅在 Gallery 生效，可以撤销。</p>
     <div class="tabs" aria-label="时间核对筛选">
       {#each [['review','待核对'],['confirmed','已确认'],['legacy','未采集 / 已停用'],['all','全部']] as [id,label]}
         <button class:active={filter===id} onclick={()=>changeFilter(id!)}>{label}{id==='review'?' '+data.photos.filter(pending).length:''}</button>
       {/each}
     </div>
     <div class="controls"><label>查找照片<input aria-label="查找照片" placeholder="文件名、相机或时区" bind:value={query} oninput={()=>{page=1;selected=[];}} /></label><span>{visible.length} 张照片</span></div>
-    {#if message&&!dialog?.open}<div class="notice" class:failure={failed} role={failed?'alert':'status'}>{message}</div>{/if}
-    {#if chosen.length}<div class="selection"><span>已选择 {chosen.length} 张</span><button disabled={busy||chosen.some(p=>p.analysis?.status!=='suggested')} onclick={()=>start('suggestion')}>核对建议</button><button disabled={busy} onclick={()=>start('manual')}>指定相机时区</button><button class="secondary" disabled={busy} onclick={()=>start('disable')}>停用校正</button></div>{/if}
+    {#if message&&!dialog?.open}<div class="notice" class:failure={failed} role={failed?'alert':'status'}>{message}{#if !waiting.length&&!failed}<button class="text-action" onclick={()=>changeFilter('all')}>查看全部照片</button>{/if}</div>{/if}
+    {#if chosen.length}<div class="selection"><span>已选择 {chosen.length} 张</span><button disabled={busy||chosen.some(processing)} onclick={()=>reread(chosen.map(p=>p.asset_id))}>重新读取</button><button disabled={busy||chosen.some(p=>!canCorrect(p)||p.analysis?.status!=='suggested')} onclick={()=>start('suggestion')}>核对建议</button><button disabled={busy||chosen.some(p=>!canCorrect(p))} onclick={()=>start('manual')}>指定相机时区</button><button class="secondary" disabled={busy||chosen.some(p=>!canCorrect(p))} onclick={()=>start('disable')}>停用校正</button></div>{/if}
     <div class="table-wrap"><table>
-      <thead><tr><th><input type="checkbox" aria-label="选择本页可核对照片" checked={rows.filter(p=>p.evidence&&p.capture_status!=='stale').length>0&&rows.filter(p=>p.evidence&&p.capture_status!=='stale').every(p=>selected.includes(p.asset_id))} onchange={e=>{selected=e.currentTarget.checked?rows.filter(p=>p.evidence&&p.capture_status!=='stale').map(p=>p.asset_id):[];}} /></th><th>照片</th><th>当前展示</th><th>建议 / 依据</th></tr></thead>
+      <thead><tr><th><input type="checkbox" aria-label="选择本页照片" checked={rows.length>0&&rows.every(p=>selected.includes(p.asset_id))} onchange={e=>{selected=e.currentTarget.checked?rows.map(p=>p.asset_id):[];}} /></th><th>照片</th><th>当前展示</th><th>建议 / 依据</th></tr></thead>
       <tbody>{#each rows as p(p.asset_id)}<tr>
-        <td><input type="checkbox" aria-label={'选择 '+p.filename} checked={selected.includes(p.asset_id)} disabled={!p.evidence||p.capture_status==='stale'} onchange={e=>toggle(p,e.currentTarget.checked)} /></td>
+        <td><input type="checkbox" aria-label={'选择 '+p.filename} checked={selected.includes(p.asset_id)} onchange={e=>toggle(p,e.currentTarget.checked)} /></td>
         <td><strong>{p.filename}</strong><small>{p.model??'相机未知'}</small>{#if p.album_slug&&p.photo_id}<a href={data.publicOrigin+'/albums/'+p.album_slug+'?photo='+p.photo_id} target="_blank" rel="noreferrer">查看照片 ↗</a>{/if}<small>{p.capture_status==='legacy'&&p.mode==='disabled'?'已停用':labels[p.capture_status]}</small></td>
         <td><time>{clock(p.effective_local_at)}</time><small>{p.effective_zone??(['verified','confirmed'].includes(p.capture_status)?'拍摄地点时区未知':'时区未确认')}</small><details><summary>原始记录</summary><small>Immich：{clock(p.local_taken_at)} · {p.time_zone??'未知'}</small><small>相机：{clock(p.evidence?.clock)}</small><small>GPS UTC：{clock(p.evidence?.gpsUtc)}</small></details></td>
-        <td>{#if p.capture_status==='stale'}来源时间或位置已变化，请重新采集证据。{:else if p.analysis}<strong>{p.analysis.status==='suggested'?clock(p.analysis.localTakenAt):''}</strong><small>{p.analysis.status==='suggested'?p.analysis.timeZone??'地点时区未知':''}</small><p>{p.analysis.reason}</p>{#if p.analysis.gpsDifferenceSeconds!==null}<small>相机与 GPS 校验差：{p.analysis.gpsDifferenceSeconds.toFixed(1)} 秒</small>{/if}{:else}<p>等待只读采集时间元数据，当前保留 Immich 记录。</p>{/if}</td>
+        <td>{#if p.capture_status==='stale'}<p>来源时间或位置已变化，请重新读取后核对。</p>{:else if p.analysis}<strong>{p.analysis.status==='suggested'?clock(p.analysis.localTakenAt):''}</strong><small>{p.analysis.status==='suggested'?p.analysis.timeZone??'地点时区未知':''}</small><p>{p.analysis.reason}</p>{#if p.analysis.gpsDifferenceSeconds!==null}<small>相机与 GPS 校验差：{p.analysis.gpsDifferenceSeconds.toFixed(1)} 秒</small>{/if}{:else}<p>尚未读取时间信息，可点击重新读取。</p>{/if}
+          <div class="read-state"><button class="text-action" disabled={busy||processing(p)} onclick={()=>reread([p.asset_id])}>{processing(p)?p.refresh_state==='queued'?'等待读取…':'正在读取…':p.refresh_state==='failed'||p.refresh_expired?'重试读取':'重新读取'}</button>
+          <span role="status">{#if p.refresh_expired}读取暂未完成，可以重试。{:else if p.refresh_state==='failed'}{p.refresh_error}{:else if processing(p)}完成后自动更新{:else if p.refresh_state==='completed'&&p.refresh_finished_at}已读取 · {new Date(p.refresh_finished_at).toLocaleTimeString('zh-CN',{hourCycle:'h23'})}{/if}</span></div>
+        </td>
       </tr>{/each}</tbody>
     </table>{#if rows.length===0}<p class="empty">{filter==='review'?'目前没有已采集的待核对照片。':'没有符合条件的照片。'}</p>{/if}</div>
     {#if visible.length>40}<div class="pagination"><button disabled={page===1} onclick={()=>{page--;selected=[];}}>上一页</button><span>{page} / {Math.ceil(visible.length/40)}</span><button disabled={page*40>=visible.length} onclick={()=>{page++;selected=[];}}>下一页</button></div>{/if}
@@ -72,5 +104,6 @@
   </div>
 </dialog>
 <style>
+  .read-state{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px}.read-state span{font-size:12px;color:#7b8676}.text-action{border:0!important;background:transparent!important;padding:4px 0!important;color:#36593e!important;cursor:pointer;font-size:13px;white-space:nowrap}.text-action:disabled{opacity:.55;cursor:default}.notice .text-action{margin-left:16px}
   .capture-manager{max-width:1500px}.tabs{display:flex;flex-wrap:wrap;gap:4px;background:#eff2eb;border-radius:7px;padding:4px;width:fit-content;margin:28px 0}.tabs button{background:transparent;color:#62725a}.tabs button.active{background:white;color:#31553d;box-shadow:0 1px 4px #0000000d}.controls,.selection,.pagination{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:20px 0}.controls label{display:flex;gap:12px;align-items:center}.controls input{width:300px}.controls span{color:#7a8575;font-size:13px}.selection{position:sticky;top:0;z-index:3;background:#f8faf5;padding:12px}.selection .secondary{background:white;color:#36593e;border:1px solid #d5ded1}.table-wrap{overflow-x:auto;border:1px solid #e0e5dc;border-radius:8px;background:white}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:20px 16px;border-bottom:1px solid #e4e8e1;vertical-align:top}th{background:#f5f7f2;color:#7a8575;font-weight:500}td:first-child,th:first-child{width:24px}td:nth-child(2){min-width:200px}td:nth-child(3){min-width:230px}small{display:block;color:#7b8676;font-size:12px;margin-top:7px}td a{display:block;margin-top:8px;color:#36593e}td p{margin:6px 0}time{white-space:nowrap}details{margin-top:12px}summary{cursor:pointer;color:#6c7867}.empty{padding:24px}.pagination{justify-content:center}.failure{color:#9b3c2c!important;background:#fff1eb!important;padding:12px;border-radius:6px}dialog{border:1px solid #dce3d6;border-radius:12px;padding:0;width:min(760px,calc(100vw - 32px));max-height:85dvh;color:#2d352d;background:#fafbf8}dialog::backdrop{background:#13201666}.review{padding:28px}.review p{font-size:13px;line-height:1.7;color:#737f6c}.review label{display:block;margin:16px 0}.review input{display:block;margin:8px 0;padding:10px;border:1px solid #d5ded1;border-radius:5px;width:100%;box-sizing:border-box}.review button{padding:10px 18px;border:1px solid #d5ded1;border-radius:5px;background:white;color:#31553d;cursor:pointer}.review button:disabled{opacity:.5;cursor:default}.review .primary{background:#36593e;color:white}.change{padding:18px 0;border-bottom:1px solid #e0e5dc}.change div{margin-top:10px;font-size:14px}.dialog-actions{display:flex;justify-content:flex-end;gap:12px;position:sticky;bottom:-28px;background:#fafbf8;padding:18px 0 0}.change p{margin-bottom:0}@media(max-width:600px){.controls input{width:200px}.review{padding:20px}}
 </style>

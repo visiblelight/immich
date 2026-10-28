@@ -4,6 +4,7 @@ set -eu
 source_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 install -d -m 700 /opt/gallery-capture /var/lib/gallery-capture
 install -m 700 "$source_dir/sync.sh" /opt/gallery-capture/sync.sh
+install -m 600 "$source_dir/worker.py" /opt/gallery-capture/worker.py
 install -m 600 "$source_dir/../../scripts/collect-capture-evidence.cjs" /opt/gallery-capture/collect-capture-evidence.cjs
 install -m 644 "$source_dir/gallery-capture.service" "$source_dir/gallery-capture.timer" /etc/systemd/system/
 systemctl daemon-reload

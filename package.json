@@ -14,6 +14,7 @@
     "gallery:local:public": "node --env-file=.gallery-local/runtime/public.env packages/gallery-public/build/index.js",
     "gallery:local:admin": "node --env-file=.gallery-local/runtime/admin.env packages/gallery-admin/build/index.js",
     "gallery:capture:import": "node packages/gallery-db/scripts/capture-import.ts",
+    "gallery:capture:worker": "python3 deployment/gallery/cloud/capture/worker.py --local --watch",
     "gallery:doctor": "node deployment/gallery/scripts/doctor.mjs",
     "gallery:check": "pnpm --filter '@gallery/*' -r run check",
     "gallery:build": "pnpm --filter '@gallery/*' -r run build",

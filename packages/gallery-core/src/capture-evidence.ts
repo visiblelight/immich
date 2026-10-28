@@ -137,9 +137,11 @@ export function analyzeCapture(e: CaptureEvidence): CaptureResult {
   return {
     ...result,
     ...correctedCapture(e, sourceZone),
-    status: 'suggested',
+    status: e.destinationZone ? 'verified' : 'suggested',
     sourceZone,
-    reason: `GPS 时间支持相机使用 ${sourceZone}，仍需确认相机设置；不自动应用。`,
+    reason: e.destinationZone
+      ? `GPS 时间、位置与相机钟表一致，已按 ${sourceZone} 自动换算；保留相机记录的秒数。`
+      : `GPS 时间支持相机使用 ${sourceZone}，但缺少拍摄地点时区，仍需核对。`,
     gpsDifferenceSeconds: drift,
   };
 }

@@ -1,6 +1,6 @@
 # 拍摄时间证据与校正数据字典
 
-对应迁移：0016；确认范围：[ADR 0024](../decisions/0024-capture-time-evidence.md)。不修改 Immich schema、数据或媒体，也不向发布快照复制 GPS。
+对应迁移：0016、0017；确认范围：[ADR 0024](../decisions/0024-capture-time-evidence.md)、[ADR 0025](../decisions/0025-capture-auto-refresh.md)。不修改 Immich schema、数据或媒体，也不向发布快照复制 GPS。
 
 ## 表
 
@@ -15,6 +15,21 @@
 | analysis | jsonb | verified/suggested/unknown/conflict、原因、建议源时区、UTC 时刻、当地钟表及 GPS 校验差 |
 | version | bigint | 每次有效证据变化递增，默认 1 |
 | collected_at | timestamptz | 最近证据变化的采集时刻；相同输入不更新 |
+
+相同证据在分析规则升级后可更新 analysis 与 version/collected_at，但 fingerprint 不变，已确认或停用的决定继续生效。可靠 GPS 的自动结果为 verified，保留相机秒数。
+
+`gallery.capture_refresh`（0017）：每个 asset 保留最近一次主动读取请求，无 Immich 外键。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| asset_id | uuid PK | 当前合格 Gallery 照片 |
+| token | uuid | 每次新请求的代次；旧任务不能覆盖新请求 |
+| state | text | queued / reading / completed / failed |
+| requested_by | uuid FK | Gallery 管理员 |
+| requested_at / started_at / finished_at | timestamptz | 请求、领取、完成时间，后两项可空 |
+| error | text nullable | 固定安全提示，不记录路径、密码或原始错误 |
+
+仅 gallery_admin 有 SELECT/INSERT/UPDATE，公共及 community 角色无访问权。入队检查当前来源资格；维护进程独占领取最多 100 项，并对失去资格的请求标为失败。等待超过两分钟、读取超过十五分钟可重试。导入证据与完成状态在同一事务中落库；任务代次变化则丢弃旧结果。失败不覆盖最近有效证据。全量自动扫描不生成请求记录。
 
 `gallery.capture_correction`：每个 asset 一条当前人工决定；完整历史记录在 `audit_event`。
 

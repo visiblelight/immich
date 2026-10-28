@@ -19,12 +19,14 @@ const canon: CaptureEvidence = {
   gpsPositionValid: true,
   gpsPositionMatches: true,
 };
-test('Canon GPS suggests Beijing source clock without applying or replacing exposure seconds', () => {
+test('Complete GPS evidence automatically verifies Beijing source clock without replacing exposure seconds', () => {
   const r = analyzeCapture(canon);
-  assert.equal(r.status, 'suggested');
+  assert.equal(r.status, 'verified');
   assert.equal(r.sourceZone, 'UTC+08:00');
   assert.equal(r.localTakenAt, '2017-01-23T12:21:37.000Z');
   assert.equal(r.gpsDifferenceSeconds, -45.911);
+  assert.equal(analyzeCapture({...canon,gpsStatus:'Measurement Active'}).status,'verified');
+  assert.equal(analyzeCapture({...canon,destinationZone:null}).status,'suggested');
 });
 test('Sony explicit camera offset with manually supplied destination is preserved', () => {
   const r = analyzeCapture({

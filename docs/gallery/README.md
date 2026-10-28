@@ -15,8 +15,10 @@ Gallery 是独立的摄影相册与游记展示平台。Immich 集中管理全�
 
 | 文档 | 阅读目的 |
 |---|---|
+| [GPS 自动换算与重新读取 ADR 0025](decisions/0025-capture-auto-refresh.md) | 完整 GPS 证据自动换算、独立读取任务和人工决定保护 |
+| [拍摄时间重新读取交付](delivery/capture-refresh.md) | 本地实现、验证结果及尚未发布的边界 |
 | [拍摄时间 ADR 0024](decisions/0024-capture-time-evidence.md) | 相机钟表、定位时区与独立可撤销时间校正的确认范围 |
-| [拍摄时间数据字典](architecture/capture-time.md) | 0016 证据、确认、视图及权限 |
+| [拍摄时间数据字典](architecture/capture-time.md) | 0016 证据与确认、0017 读取队列、视图及权限 |
 | [拍摄时间核对交付](delivery/capture-time.md) | 本地真实证据、佳能/索尼验证与生产发布边界 |
 | [用户与互动 ADR 0023](decisions/0023-members-comments-and-likes.md) | 前台邮箱验证码用户、评论与点赞的已确认范围及分阶段边界 |
 | [用户与互动交付](delivery/community.md) | 本地真实接入、隔离验收与阿里云发信联调状态 |

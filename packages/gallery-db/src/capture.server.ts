@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { finishCaptureRefresh, type CaptureJob } from './capture-refresh.server.ts';
 import { sql, type Kysely } from 'kysely';
 import { ensure, uuid, type GalleryUser } from '@gallery/core';
 import {
@@ -45,18 +47,26 @@ function validateEvidence(raw: unknown): CaptureEvidence {
   };
 }
 /** Maintenance import only, no HTTP endpoint. Uses the regular admin role and never reads Immich tables. */
-export async function importCaptureEvidence(db: Kysely<unknown>, report: unknown) {
+export async function importCaptureEvidence(db: Kysely<unknown>, report: unknown, jobs: CaptureJob[] = []) {
   const r = report as {
     schemaVersion: number;
     photos: { assetId: string; sourceSignature: string; evidence: unknown }[];
   };
   ensure(r?.schemaVersion === 1 && Array.isArray(r.photos) && r.photos.length <= 100000, '证据文件无效。');
   const result = { imported: 0, unchanged: 0, stale: 0 };
+  const accepted = new Set<string>();
   await db.transaction().execute(async (trx) => {
     await sql`SELECT id FROM gallery.site WHERE id=1 FOR UPDATE`.execute(trx);
+    const currentJobs = new Set<string>();
+    ensure(jobs.length <= 100, '读取任务过多。');
+    for (const job of jobs) {
+      const match = await sql`SELECT asset_id FROM gallery.capture_refresh WHERE asset_id=${uuid(job.assetId)}::uuid AND token=${uuid(job.token)}::uuid AND state='reading'`.execute(trx);
+      if (match.rows.length) currentJobs.add(job.assetId);
+    }
     for (const item of r.photos) {
       const id = uuid(item.assetId),
         evidence = validateEvidence(item.evidence);
+      if (jobs.length && !currentJobs.has(id)) continue;
       const current = (
         await sql<{
           source_signature: string;
@@ -73,15 +83,17 @@ export async function importCaptureEvidence(db: Kysely<unknown>, report: unknown
         await sql<{
           fingerprint: string;
           source_signature: string;
-        }>`SELECT fingerprint,source_signature FROM gallery.capture_evidence WHERE asset_id=${id}::uuid`.execute(
+          analysis: CaptureResult;
+        }>`SELECT fingerprint,source_signature,analysis FROM gallery.capture_evidence WHERE asset_id=${id}::uuid`.execute(
           trx,
         )
       ).rows[0];
-      if (old?.fingerprint === fingerprint && old.source_signature === current.source_signature) {
+      const analysis = analyzeCapture(evidence);
+      accepted.add(id);
+      if (old?.fingerprint === fingerprint && old.source_signature === current.source_signature && isDeepStrictEqual(old.analysis, analysis)) {
         result.unchanged++;
         continue;
       }
-      const analysis = analyzeCapture(evidence);
       await sql`INSERT INTO gallery.capture_evidence(asset_id,source_signature,fingerprint,evidence,analysis) VALUES(${id}::uuid,${current.source_signature},${fingerprint},${JSON.stringify(evidence)}::jsonb,${JSON.stringify(analysis)}::jsonb)
       ON CONFLICT(asset_id) DO UPDATE SET source_signature=excluded.source_signature,fingerprint=excluded.fingerprint,evidence=excluded.evidence,analysis=excluded.analysis,version=gallery.capture_evidence.version+1,collected_at=now()`.execute(
         trx,
@@ -91,6 +103,7 @@ export async function importCaptureEvidence(db: Kysely<unknown>, report: unknown
       );
       result.imported++;
     }
+    await finishCaptureRefresh(trx, jobs, accepted, '未能读取最新时间信息，或来源再次变化，请重新读取。');
   });
   return result;
 }
@@ -118,11 +131,18 @@ export async function adminCaptureTimes(db: Kysely<unknown>) {
       album_slug: string | null;
       photo_id: string | null;
       manual_visits: number;
+      refresh_state: string | null;
+      refresh_error: string | null;
+      refresh_finished_at: Date | null;
+      refresh_expired: boolean;
     }>`SELECT r.asset_id,r.filename,r.model,r.source_signature,r.taken_at,r.local_taken_at,r.time_zone,s.taken_at AS effective_taken_at,s.local_taken_at AS effective_local_at,s.time_zone AS effective_zone,s.capture_status,
     e.evidence,e.analysis,e.fingerprint,e.version::text,c.version::text AS correction_version,c.mode,e.collected_at,
+    job.state AS refresh_state,job.error AS refresh_error,job.finished_at AS refresh_finished_at,
+    coalesce((job.state='queued' AND job.requested_at<now()-interval '2 minutes') OR (job.state='reading' AND job.started_at<now()-interval '15 minutes'),false) AS refresh_expired,
     link.album_slug,link.photo_id,((SELECT count(*) FROM gallery.visit_override_asset v WHERE v.asset_id=r.asset_id)+(SELECT count(*) FROM gallery.region_visit_override_asset v WHERE v.asset_id=r.asset_id))::int AS manual_visits
     FROM gallery.capture_source_asset r JOIN gallery.photo p ON p.immich_asset_id=r.asset_id JOIN gallery.admin_source_asset s ON s.asset_id=r.asset_id
     LEFT JOIN gallery.capture_evidence e ON e.asset_id=r.asset_id LEFT JOIN gallery.capture_correction c ON c.asset_id=r.asset_id
+    LEFT JOIN gallery.capture_refresh job ON job.asset_id=r.asset_id
     LEFT JOIN LATERAL(SELECT album_slug,photo_id FROM gallery.published_photo WHERE asset_id=r.asset_id ORDER BY album_id LIMIT 1) link ON true
     ORDER BY r.local_taken_at DESC NULLS LAST,r.asset_id`.execute(db)
   ).rows;
@@ -134,6 +154,7 @@ export async function adminCaptureTimes(db: Kysely<unknown>) {
       effective_taken_at: r.effective_taken_at?.toISOString() ?? null,
       effective_local_at: r.effective_local_at?.toISOString() ?? null,
       collected_at: r.collected_at?.toISOString() ?? null,
+      refresh_finished_at: r.refresh_finished_at?.toISOString() ?? null,
       version: r.version ?? '0',
       correction_version: r.correction_version ?? '0',
     })),

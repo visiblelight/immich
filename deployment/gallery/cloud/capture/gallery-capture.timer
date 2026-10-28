@@ -1,8 +1,8 @@
 [Unit]
-Description=Refresh capture-time evidence after each completed scan
+Description=Process requested capture reads and periodically refresh evidence
 [Timer]
 OnBootSec=2min
-OnUnitInactiveSec=10min
-AccuracySec=30s
+OnUnitInactiveSec=15s
+AccuracySec=1s
 [Install]
 WantedBy=timers.target

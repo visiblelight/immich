@@ -71,6 +71,7 @@ export async function assertDatabaseCompatibility(
   );
   await sql`SELECT article_id,album_id,group_id FROM gallery.published_article_group LIMIT 0`.execute(db);
   if (service === 'gallery-admin') {
+    await sql`SELECT asset_id,token,state FROM gallery.capture_refresh LIMIT 0`.execute(db);
     await sql`SELECT asset_id,source_signature FROM gallery.capture_source_asset LIMIT 0`.execute(db);
     await sql`SELECT asset_id,fingerprint,version FROM gallery.capture_evidence LIMIT 0`.execute(db);
     await sql`SELECT asset_id,mode,version FROM gallery.capture_correction LIMIT 0`.execute(db);
