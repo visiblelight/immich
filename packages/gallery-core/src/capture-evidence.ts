@@ -65,13 +65,25 @@ export function instantForClock(clock: string, zone: string): number {
   if (matches.length !== 1) throw new Error('该时间处于夏令时切换的重复或缺失时段，请改用明确的 UTC 偏移。');
   return matches[0]!;
 }
-export function correctedCapture(e: CaptureEvidence, sourceZone: string) {
+export function validCaptureZone(zone: unknown): zone is string {
+  if (typeof zone !== 'string' || !zone || zone.length > 80) return false;
+  if (offsetMinutes(zone) !== null) return true;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: zone }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+export function correctedCapture(e: CaptureEvidence, sourceZone: string, destinationZone = e.destinationZone) {
   if (!e.clock) throw new Error('缺少相机拍摄时间，不能校正。');
+  if (!validCaptureZone(sourceZone)) throw new RangeError('相机时区无效。');
+  if (destinationZone !== null && !validCaptureZone(destinationZone)) throw new RangeError('拍摄地点时区无效。');
   const instant = instantForClock(e.clock, sourceZone);
   return {
     takenAt: new Date(instant).toISOString(),
-    localTakenAt: e.destinationZone ? clockAt(instant, e.destinationZone) : e.clock,
-    timeZone: e.destinationZone,
+    localTakenAt: destinationZone ? clockAt(instant, destinationZone) : e.clock,
+    timeZone: destinationZone,
   };
 }
 export function analyzeCapture(e: CaptureEvidence): CaptureResult {
@@ -118,7 +130,7 @@ export function analyzeCapture(e: CaptureEvidence): CaptureResult {
     return {
       ...result,
       reason: invalidFix
-        ? 'GPS 标记无效，不能用于推断拍摄时区。'
+        ? '已读取相机拍摄时间，但 GPS 定位无效。请分别确认相机使用的时区和拍摄地点时区。'
         : gps !== null && !e.gpsPositionMatches
           ? 'GPS 位置与当前地点不一致，请人工核对。'
           : result.reason,

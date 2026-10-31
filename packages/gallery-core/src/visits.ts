@@ -1,3 +1,5 @@
+import { validCaptureZone } from './capture-evidence.ts';
+
 export interface VisitEvidence {
   id: string;
   country: string;
@@ -14,14 +16,7 @@ export interface InferredVisit {
   photoIds: string[];
 }
 export function knownTimeZone(zone: string | null | undefined) {
-  if (!zone) return false;
-  if (/^(UTC|GMT)([+-](\d|1[0-4])(:[0-5]\d)?)?$/.test(zone)) return true;
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: zone }).format(0);
-    return true;
-  } catch {
-    return false;
-  }
+  return validCaptureZone(zone);
 }
 export function evidenceDate(photo: VisitEvidence) {
   if (photo.captureStatus && ['suggested','unknown','conflict','stale'].includes(photo.captureStatus)) return null;

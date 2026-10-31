@@ -2,22 +2,32 @@
   import {invalidateAll} from '$app/navigation';
   import {tick, onMount} from 'svelte';
   import MapAdminFrame from '$lib/MapAdminFrame.svelte';
+  import CaptureReviewFields from '$lib/CaptureReviewFields.svelte';
+  import CaptureChanges from '$lib/CaptureChanges.svelte';
+  import {captureChange, captureTime, confirmedCameraZone} from '@gallery/core';
   import type {PageData} from './$types';
   let {data}:{data:PageData}=$props();
   let query=$state(''),filter=$state('review'),page=$state(1),selected=$state<string[]>([]),busy=$state(false),message=$state(''),failed=$state(false);
   let mode=$state<'manual'|'suggestion'|'disable'>('suggestion'),sourceZone=$state('UTC+08:00'),dialog=$state<HTMLDialogElement>();
   type Row=PageData['photos'][number];
-  type Change={assetId:string;filename:string;before:string|null;after:string|null;timeZone:string|null;sourceZone:string|null;secondsChanged:number;dateChanged:boolean;manualVisits:number};
+  type Change=ReturnType<typeof captureChange>&{assetId:string;filename:string;manualVisits:number};
+  let destinations=$state<Record<string,string>>({});
   let preview=$state<Change[]>([]),payload=$state<Record<string,unknown>|null>(null);
   let waiting=$state<string[]>([]);
   const processing=(p:Row)=>['queued','reading'].includes(p.refresh_state??'')&&!p.refresh_expired;
   const canCorrect=(p:Row)=>!!p.evidence&&p.capture_status!=='stale'&&!processing(p);
-  const pending=(p:Row)=>['suggested','unknown','conflict','stale'].includes(p.capture_status);
+  const pending=(p:Row)=>['suggested','unknown','conflict','stale'].includes(p.capture_status)||(['verified','confirmed'].includes(p.capture_status)&&!p.effective_zone);
   const labels:Record<string,string>={legacy:'尚未核对',verified:'自动核对',confirmed:'已确认',suggested:'待确认建议',unknown:'缺少依据',conflict:'证据冲突',stale:'来源已变化'};
   const visible=$derived(data.photos.filter(p=>(filter==='all'||(filter==='review'?pending(p):filter==='confirmed'?['verified','confirmed'].includes(p.capture_status):p.capture_status==='legacy'))&&[p.filename,p.model,p.time_zone,p.evidence?.destinationZone].filter(Boolean).join(' ').toLowerCase().includes(query.toLowerCase())));
   const chosen=$derived(data.photos.filter(p=>selected.includes(p.asset_id)));
   const rows=$derived(visible.slice((page-1)*40,page*40));
   const clock=(v:string|null|undefined)=>v?v.replace('T',' ').replace(/(?:\.\d+)?Z$/,''):'时间未知';
+  function currentCaption(p:Row){
+    const photo={takenAt:p.effective_taken_at,localTakenAt:p.effective_local_at,timeZone:p.effective_zone,captureStatus:p.capture_status};
+    const zone=['suggested','unknown','conflict','stale'].includes(p.capture_status)?null:p.effective_zone||confirmedCameraZone(photo);
+    return captureTime(photo).label+(zone?' · '+zone:'');
+  }
+  function clearPreview(){preview=[];payload=null;message='';}
   function changeFilter(value:string){filter=value;page=1;selected=[];}
   function toggle(p:Row,checked:boolean){selected=checked?[...selected,p.asset_id]:selected.filter(id=>id!==p.asset_id);}
   function reportFinished(){
@@ -50,11 +60,17 @@
     const response=await fetch('/api/capture-'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)});
     const result=await response.json();if(!response.ok)throw new Error(result.message);return result;
   }
-  async function start(next:typeof mode){mode=next;preview=[];payload=null;message='';await tick();dialog!.showModal();if(next!=='manual')await check();}
+  async function start(next:typeof mode){
+    mode=next;clearPreview();
+    const zones=[...new Set(chosen.map(p=>p.confirmed_source_zone).filter(Boolean))];
+    sourceZone=zones.length===1&&chosen.every(p=>p.confirmed_source_zone===zones[0])?zones[0]!:'UTC+08:00';
+    destinations=Object.fromEntries(chosen.map(p=>[p.asset_id,p.capture_status==='confirmed'?p.effective_zone??'':p.evidence?.destinationZone??'']));
+    await tick();dialog!.showModal();if(next!=='manual')await check();
+  }
   async function check(){
     busy=true;message='';failed=false;preview=[];payload=null;
     try{
-      const input={mode,sourceZone,items:chosen.map(p=>({assetId:p.asset_id,version:p.version,correctionVersion:p.correction_version,sourceSignature:p.source_signature}))};
+      const input={mode,sourceZone,items:chosen.map(p=>({assetId:p.asset_id,version:p.version,correctionVersion:p.correction_version,sourceSignature:p.source_signature,...(mode==='manual'?{destinationZone:destinations[p.asset_id]?.trim()||null}:{})}))};
       const result=await api('preview',input);preview=result.preview;payload=input;
     }catch(e){message=(e as Error).message;failed=true;}finally{busy=false;}
   }
@@ -77,13 +93,13 @@
     </div>
     <div class="controls"><label>查找照片<input aria-label="查找照片" placeholder="文件名、相机或时区" bind:value={query} oninput={()=>{page=1;selected=[];}} /></label><span>{visible.length} 张照片</span></div>
     {#if message&&!dialog?.open}<div class="notice" class:failure={failed} role={failed?'alert':'status'}>{message}{#if !waiting.length&&!failed}<button class="text-action" onclick={()=>changeFilter('all')}>查看全部照片</button>{/if}</div>{/if}
-    {#if chosen.length}<div class="selection"><span>已选择 {chosen.length} 张</span><button disabled={busy||chosen.some(processing)} onclick={()=>reread(chosen.map(p=>p.asset_id))}>重新读取</button><button disabled={busy||chosen.some(p=>!canCorrect(p)||p.analysis?.status!=='suggested')} onclick={()=>start('suggestion')}>核对建议</button><button disabled={busy||chosen.some(p=>!canCorrect(p))} onclick={()=>start('manual')}>指定相机时区</button><button class="secondary" disabled={busy||chosen.some(p=>!canCorrect(p))} onclick={()=>start('disable')}>停用校正</button></div>{/if}
+    {#if chosen.length}<div class="selection"><span>已选择 {chosen.length} 张</span><button disabled={busy||chosen.some(processing)} onclick={()=>reread(chosen.map(p=>p.asset_id))}>重新读取</button><button disabled={busy||chosen.some(p=>!canCorrect(p)||p.analysis?.status!=='suggested')} onclick={()=>start('suggestion')}>核对建议</button><button disabled={busy||chosen.some(p=>!canCorrect(p)||!p.evidence?.clock)} onclick={()=>start('manual')}>确认拍摄时间</button><button class="secondary" disabled={busy||chosen.some(p=>!canCorrect(p))} onclick={()=>start('disable')}>停用校正</button></div>{/if}
     <div class="table-wrap"><table>
       <thead><tr><th><input type="checkbox" aria-label="选择本页照片" checked={rows.length>0&&rows.every(p=>selected.includes(p.asset_id))} onchange={e=>{selected=e.currentTarget.checked?rows.map(p=>p.asset_id):[];}} /></th><th>照片</th><th>当前展示</th><th>建议 / 依据</th></tr></thead>
       <tbody>{#each rows as p(p.asset_id)}<tr>
         <td><input type="checkbox" aria-label={'选择 '+p.filename} checked={selected.includes(p.asset_id)} onchange={e=>toggle(p,e.currentTarget.checked)} /></td>
         <td><strong>{p.filename}</strong><small>{p.model??'相机未知'}</small>{#if p.album_slug&&p.photo_id}<a href={data.publicOrigin+'/albums/'+p.album_slug+'?photo='+p.photo_id} target="_blank" rel="noreferrer">查看照片 ↗</a>{/if}<small>{p.capture_status==='legacy'&&p.mode==='disabled'?'已停用':labels[p.capture_status]}</small></td>
-        <td><time>{clock(p.effective_local_at)}</time><small>{p.effective_zone??(['verified','confirmed'].includes(p.capture_status)?'拍摄地点时区未知':'时区未确认')}</small><details><summary>原始记录</summary><small>Immich：{clock(p.local_taken_at)} · {p.time_zone??'未知'}</small><small>相机：{clock(p.evidence?.clock)}</small><small>GPS UTC：{clock(p.evidence?.gpsUtc)}</small></details></td>
+        <td><time>{clock(p.effective_local_at)}</time><small>{currentCaption(p)}</small>{#if ['verified','confirmed'].includes(p.capture_status)&&!p.effective_zone}<small>拍摄时刻已确定，地点时区待确认</small>{/if}<details><summary>原始记录</summary><small>Immich：{clock(p.local_taken_at)} · {p.time_zone??'未知'}</small><small>相机：{clock(p.evidence?.clock)}</small><small>GPS UTC：{clock(p.evidence?.gpsUtc)}</small><small>GPS 定位：{p.evidence?.gpsStatus?['A','Measurement Active','Active'].includes(p.evidence.gpsStatus)?'有效':'无效':'未记录状态'}</small></details></td>
         <td>{#if p.capture_status==='stale'}<p>来源时间或位置已变化，请重新读取后核对。</p>{:else if p.analysis}<strong>{p.analysis.status==='suggested'?clock(p.analysis.localTakenAt):''}</strong><small>{p.analysis.status==='suggested'?p.analysis.timeZone??'地点时区未知':''}</small><p>{p.analysis.reason}</p>{#if p.analysis.gpsDifferenceSeconds!==null}<small>相机与 GPS 校验差：{p.analysis.gpsDifferenceSeconds.toFixed(1)} 秒</small>{/if}{:else}<p>尚未读取时间信息，可点击重新读取。</p>{/if}
           <div class="read-state"><button class="text-action" disabled={busy||processing(p)} onclick={()=>reread([p.asset_id])}>{processing(p)?p.refresh_state==='queued'?'等待读取…':'正在读取…':p.refresh_state==='failed'||p.refresh_expired?'重试读取':'重新读取'}</button>
           <span role="status">{#if p.refresh_expired}读取暂未完成，可以重试。{:else if p.refresh_state==='failed'}{p.refresh_error}{:else if processing(p)}完成后自动更新{:else if p.refresh_state==='completed'&&p.refresh_finished_at}已读取 · {new Date(p.refresh_finished_at).toLocaleTimeString('zh-CN',{hourCycle:'h23'})}{/if}</span></div>
@@ -96,14 +112,14 @@
 <dialog bind:this={dialog} aria-labelledby="capture-review-title" oncancel={e=>{if(busy)e.preventDefault();}}>
   <div class="review"><h2 id="capture-review-title">{mode==='disable'?'停用时间校正':'确认拍摄时间'}</h2>
     <p>{mode==='disable'?'以下照片将恢复 Immich 的原时间显示。':'先核对前后变化，再应用到明确选中的照片。相机时间的秒数保持不变。'}</p>
-    {#if mode==='manual'}<label>相机当时采用的时区<input bind:value={sourceZone} oninput={()=>{preview=[];payload=null;}} placeholder="UTC+08:00 或 Asia/Shanghai" /></label><button disabled={busy} onclick={check}>预览变化</button>{/if}
+    {#if mode==='manual'}<CaptureReviewFields photos={chosen} bind:sourceZone bind:destinations disabled={busy} onchange={clearPreview} /><button disabled={busy} onclick={check}>预览变化</button>{/if}
     {#if message}<p role="alert" class="failure">{message}</p>{/if}
     {#if busy&&!preview.length}<p role="status">正在核对…</p>{/if}
-    {#each preview as p}<div class="change"><strong>{p.filename}</strong><div>{clock(p.before)} → <b>{clock(p.after)}</b></div><small>{p.timeZone??'拍摄地点时区未知'}{p.sourceZone?' · 相机采用 '+p.sourceZone:''}</small>{#if p.dateChanged}<p>日期发生变化，月份筛选和自动行程日期会随之更新。</p>{/if}{#if p.secondsChanged}<p>拍摄时刻变化 {p.secondsChanged/3600} 小时，拍摄时间排序将使用新结果。</p>{/if}{#if p.manualVisits}<p>关联 {p.manualVisits} 段人工到访记录，已填写的行程日期保持不变。</p>{/if}</div>{/each}
+    <CaptureChanges changes={preview} />
     <div class="dialog-actions"><button disabled={busy} onclick={()=>dialog!.close()}>取消</button><button class="primary" disabled={busy||!payload||!preview.length} onclick={apply}>{busy?'处理中…':mode==='disable'?'确认停用':'确认应用'}</button></div>
   </div>
 </dialog>
 <style>
   .read-state{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px}.read-state span{font-size:12px;color:#7b8676}.text-action{border:0!important;background:transparent!important;padding:4px 0!important;color:#36593e!important;cursor:pointer;font-size:13px;white-space:nowrap}.text-action:disabled{opacity:.55;cursor:default}.notice .text-action{margin-left:16px}
-  .capture-manager{max-width:1500px}.tabs{display:flex;flex-wrap:wrap;gap:4px;background:#eff2eb;border-radius:7px;padding:4px;width:fit-content;margin:28px 0}.tabs button{background:transparent;color:#62725a}.tabs button.active{background:white;color:#31553d;box-shadow:0 1px 4px #0000000d}.controls,.selection,.pagination{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:20px 0}.controls label{display:flex;gap:12px;align-items:center}.controls input{width:300px}.controls span{color:#7a8575;font-size:13px}.selection{position:sticky;top:0;z-index:3;background:#f8faf5;padding:12px}.selection .secondary{background:white;color:#36593e;border:1px solid #d5ded1}.table-wrap{overflow-x:auto;border:1px solid #e0e5dc;border-radius:8px;background:white}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:20px 16px;border-bottom:1px solid #e4e8e1;vertical-align:top}th{background:#f5f7f2;color:#7a8575;font-weight:500}td:first-child,th:first-child{width:24px}td:nth-child(2){min-width:200px}td:nth-child(3){min-width:230px}small{display:block;color:#7b8676;font-size:12px;margin-top:7px}td a{display:block;margin-top:8px;color:#36593e}td p{margin:6px 0}time{white-space:nowrap}details{margin-top:12px}summary{cursor:pointer;color:#6c7867}.empty{padding:24px}.pagination{justify-content:center}.failure{color:#9b3c2c!important;background:#fff1eb!important;padding:12px;border-radius:6px}dialog{border:1px solid #dce3d6;border-radius:12px;padding:0;width:min(760px,calc(100vw - 32px));max-height:85dvh;color:#2d352d;background:#fafbf8}dialog::backdrop{background:#13201666}.review{padding:28px}.review p{font-size:13px;line-height:1.7;color:#737f6c}.review label{display:block;margin:16px 0}.review input{display:block;margin:8px 0;padding:10px;border:1px solid #d5ded1;border-radius:5px;width:100%;box-sizing:border-box}.review button{padding:10px 18px;border:1px solid #d5ded1;border-radius:5px;background:white;color:#31553d;cursor:pointer}.review button:disabled{opacity:.5;cursor:default}.review .primary{background:#36593e;color:white}.change{padding:18px 0;border-bottom:1px solid #e0e5dc}.change div{margin-top:10px;font-size:14px}.dialog-actions{display:flex;justify-content:flex-end;gap:12px;position:sticky;bottom:-28px;background:#fafbf8;padding:18px 0 0}.change p{margin-bottom:0}@media(max-width:600px){.controls input{width:200px}.review{padding:20px}}
+  .capture-manager{max-width:1500px}.tabs{display:flex;flex-wrap:wrap;gap:4px;background:#eff2eb;border-radius:7px;padding:4px;width:fit-content;margin:28px 0}.tabs button{background:transparent;color:#62725a}.tabs button.active{background:white;color:#31553d;box-shadow:0 1px 4px #0000000d}.controls,.selection,.pagination{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:20px 0}.controls label{display:flex;gap:12px;align-items:center}.controls input{width:300px}.controls span{color:#7a8575;font-size:13px}.selection{position:sticky;top:0;z-index:3;background:#f8faf5;padding:12px}.selection .secondary{background:white;color:#36593e;border:1px solid #d5ded1}.table-wrap{overflow-x:auto;border:1px solid #e0e5dc;border-radius:8px;background:white}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:20px 16px;border-bottom:1px solid #e4e8e1;vertical-align:top}th{background:#f5f7f2;color:#7a8575;font-weight:500}td:first-child,th:first-child{width:24px}td:nth-child(2){min-width:200px}td:nth-child(3){min-width:230px}small{display:block;color:#7b8676;font-size:12px;margin-top:7px}td a{display:block;margin-top:8px;color:#36593e}td p{margin:6px 0}time{white-space:nowrap}details{margin-top:12px}summary{cursor:pointer;color:#6c7867}.empty{padding:24px}.pagination{justify-content:center}.failure{color:#9b3c2c!important;background:#fff1eb!important;padding:12px;border-radius:6px}dialog{border:1px solid #dce3d6;border-radius:12px;padding:0;width:min(760px,calc(100vw - 32px));max-height:85dvh;color:#2d352d;background:#fafbf8}dialog::backdrop{background:#13201666}.review{padding:28px}.review p{font-size:13px;line-height:1.7;color:#737f6c}.review button{padding:10px 18px;border:1px solid #d5ded1;border-radius:5px;background:white;color:#31553d;cursor:pointer}.review button:disabled{opacity:.5;cursor:default}.review .primary{background:#36593e;color:white}.dialog-actions{display:flex;justify-content:flex-end;gap:12px;position:sticky;bottom:-28px;background:#fafbf8;padding:18px 0 0}@media(max-width:600px){.controls input{width:200px}.review{padding:20px}}
 </style>

@@ -2,11 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { finishCaptureRefresh, type CaptureJob } from './capture-refresh.server.ts';
 import { sql, type Kysely } from 'kysely';
-import { ensure, uuid, type GalleryUser } from '@gallery/core';
+import { captureChange, ensure, uuid, type GalleryUser } from '@gallery/core';
 import {
   analyzeCapture,
   correctedCapture,
   validClock,
+  validCaptureZone,
   type CaptureEvidence,
   type CaptureResult,
 } from '../../gallery-core/src/capture-evidence.ts';
@@ -127,6 +128,9 @@ export async function adminCaptureTimes(db: Kysely<unknown>) {
       version: string | null;
       correction_version: string | null;
       mode: string | null;
+      correction_source_zone: string | null;
+      latitude: number | null;
+      longitude: number | null;
       collected_at: Date | null;
       album_slug: string | null;
       photo_id: string | null;
@@ -135,8 +139,8 @@ export async function adminCaptureTimes(db: Kysely<unknown>) {
       refresh_error: string | null;
       refresh_finished_at: Date | null;
       refresh_expired: boolean;
-    }>`SELECT r.asset_id,r.filename,r.model,r.source_signature,r.taken_at,r.local_taken_at,r.time_zone,s.taken_at AS effective_taken_at,s.local_taken_at AS effective_local_at,s.time_zone AS effective_zone,s.capture_status,
-    e.evidence,e.analysis,e.fingerprint,e.version::text,c.version::text AS correction_version,c.mode,e.collected_at,
+    }>`SELECT r.asset_id,r.filename,r.model,r.source_signature,r.taken_at,r.local_taken_at,r.time_zone,r.latitude,r.longitude,s.taken_at AS effective_taken_at,s.local_taken_at AS effective_local_at,s.time_zone AS effective_zone,s.capture_status,
+    e.evidence,e.analysis,e.fingerprint,e.version::text,c.version::text AS correction_version,c.mode,c.source_zone AS correction_source_zone,e.collected_at,
     job.state AS refresh_state,job.error AS refresh_error,job.finished_at AS refresh_finished_at,
     coalesce((job.state='queued' AND job.requested_at<now()-interval '2 minutes') OR (job.state='reading' AND job.started_at<now()-interval '15 minutes'),false) AS refresh_expired,
     link.album_slug,link.photo_id,((SELECT count(*) FROM gallery.visit_override_asset v WHERE v.asset_id=r.asset_id)+(SELECT count(*) FROM gallery.region_visit_override_asset v WHERE v.asset_id=r.asset_id))::int AS manual_visits
@@ -147,8 +151,15 @@ export async function adminCaptureTimes(db: Kysely<unknown>) {
     ORDER BY r.local_taken_at DESC NULLS LAST,r.asset_id`.execute(db)
   ).rows;
   return {
-    photos: rows.map((r) => ({
+    photos: rows.map(({latitude, longitude, correction_source_zone, ...r}) => ({
       ...r,
+      // Immich's location zone is only a candidate, never trusted as the camera offset.
+      destination_candidate: r.evidence?.destinationZone ?? (
+        latitude !== null && longitude !== null && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 &&
+        (latitude !== 0 || longitude !== 0) && r.time_zone?.includes('/') && validCaptureZone(r.time_zone) ? r.time_zone : null
+      ),
+      destination_candidate_source: r.evidence?.destinationZone ? '已核对的位置' : 'Immich 地点记录（需确认）',
+      confirmed_source_zone: r.capture_status === 'confirmed' ? correction_source_zone : r.capture_status === 'verified' ? r.analysis?.sourceZone ?? null : null,
       taken_at: r.taken_at?.toISOString() ?? null,
       local_taken_at: r.local_taken_at?.toISOString() ?? null,
       effective_taken_at: r.effective_taken_at?.toISOString() ?? null,
@@ -172,6 +183,7 @@ export async function reviewCaptureTimes(
     version: string;
     correctionVersion: string;
     sourceSignature: string;
+    destinationZone?: string | null;
   }[];
   ensure(Array.isArray(items) && items.length > 0 && items.length <= 100, '请选择 1–100 张照片。');
   ensure(new Set(items.map((i) => i.assetId)).size === items.length, '不能重复选择照片。');
@@ -202,25 +214,26 @@ export async function reviewCaptureTimes(
       ensure(mode !== 'suggestion' || row.analysis?.status === 'suggested', '这张照片没有可以确认的建议。');
       ensure(mode === 'disable' || zone, '缺少可确认的相机时区。');
       let resolved: ReturnType<typeof correctedCapture> | null = null;
+      // Omitted fields preserve old clients' behavior. Explicit null confirms only the camera clock.
+      const destinationZone = mode === 'manual' && item.destinationZone !== undefined
+        ? item.destinationZone : row.evidence.destinationZone;
+      ensure(mode === 'disable' || destinationZone === null || validCaptureZone(destinationZone), '拍摄地点时区无效，请填写 Asia/Jerusalem 或 UTC+02:00，暂不确定可以留空。');
       try {
-        resolved = mode === 'disable' ? null : correctedCapture(row.evidence, zone!);
+        resolved = mode === 'disable' ? null : correctedCapture(row.evidence, zone!, destinationZone);
       } catch (e) {
-        ensure(false, e instanceof RangeError ? '时区无效，请填写 UTC+08:00 或 Asia/Shanghai 这样的时区。' : e instanceof Error ? e.message : '时区无效。');
+        ensure(false, e instanceof RangeError ? '相机时区无效，请填写 UTC+08:00 或 Asia/Shanghai 这样的时区。' : e instanceof Error ? e.message : '时区无效。');
       }
       const after = resolved?.localTakenAt ?? row.local_taken_at,
         afterInstant = resolved?.takenAt ?? row.taken_at;
       preview.push({
         assetId: id,
         filename: row.filename,
-        before: row.effective_local_at,
-        after,
+        ...captureChange(
+          {takenAt: row.effective_taken_at, localTakenAt: row.effective_local_at, timeZone: row.effective_zone, captureStatus: row.capture_status},
+          {takenAt: afterInstant, localTakenAt: after, timeZone: resolved ? resolved.timeZone : row.time_zone, captureStatus: resolved ? 'confirmed' : 'legacy'},
+        ),
         timeZone: resolved ? resolved.timeZone : row.time_zone,
         sourceZone: mode === 'disable' ? null : (zone ?? null),
-        secondsChanged:
-          afterInstant && row.effective_taken_at
-            ? (Date.parse(afterInstant) - Date.parse(row.effective_taken_at)) / 1000
-            : 0,
-        dateChanged: row.effective_local_at?.slice(0, 10) !== after?.slice(0, 10),
         manualVisits: row.manual_visits,
       });
       if (apply) {

@@ -15,6 +15,7 @@ export * from './markdown.ts';
 export * from './photo-order.ts';
 export * from './album-item.ts';
 export * from './capture-time.ts';
+export * from './capture-review.ts';
 export * from './visits.ts';
 export * from './visited.ts';
 export * from './admin-albums.ts';

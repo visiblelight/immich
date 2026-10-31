@@ -5,6 +5,7 @@ import { sql, type Kysely } from 'kysely';
 import { adminCaptureTimes, importCaptureEvidence, reviewCaptureTimes } from '../../src/capture.server.ts';
 import { requestCaptureRefresh, claimCaptureRefresh, finishCaptureRefresh } from '../../src/capture-refresh.server.ts';
 import { publicCatalog, publicPhotoFeed, visitedSnapshot } from '../../src/index.server.ts';
+import {captureTime, evidenceDate} from '@gallery/core';
 export async function captureTimes(
   db: Kysely<unknown>,
   pub: Kysely<unknown>,
@@ -213,6 +214,42 @@ export async function captureTimes(
   await requestCaptureRefresh(db,user,{assets:[id]});
   assert.equal((await queue()).state,'queued','an expired worker does not block retry');
   await assert.rejects(sql`SELECT * FROM gallery.capture_evidence`.execute(pub));
+  // A location hint may be offered with invalid GPS, but only an explicit manual choice may use it.
+  const protectedBefore=await snapshot();
+  const invalidFixReport={...refreshedReport,photos:[{...refreshedReport.photos[0]!,evidence:{...base,destinationZone:null,gpsStatus:'Measurement Void'}}]};
+  await importCaptureEvidence(db,invalidFixReport);
+  const candidate=(await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!;
+  assert.equal(candidate.destination_candidate,'Asia/Amman');
+  assert.equal(candidate.evidence!.destinationZone,null);
+  assert.equal(candidate.capture_status,'unknown');
+  const cameraOnly={mode:'manual',sourceZone:'UTC+08:00',items:[{...await selection(),destinationZone:null}]};
+  const cameraPreview=await reviewCaptureTimes(db,user,cameraOnly);
+  assert.equal(cameraPreview.preview[0]!.afterCaption,'相机时间 · UTC+08:00');
+  assert.equal(cameraPreview.preview[0]!.destinationPending,true);
+  assert.equal((await selection()).correctionVersion,candidate.correction_version,'preview must not write a correction');
+  await reviewCaptureTimes(db,user,cameraOnly,true);
+  const cameraPhoto=(await publicCatalog(pub,albumSlug)).active!.photos.find(p=>p.id===fixed.id)!;
+  assert.equal(cameraPhoto.takenAt,'2017-01-31T17:00:00.000Z');
+  assert.equal(cameraPhoto.timeZone,null);
+  assert.match(captureTime(cameraPhoto).value,/UTC\+08:00.*待确认/);
+  assert.equal(evidenceDate({...cameraPhoto,country:'JO',takenAt:cameraPhoto.takenAt??null,localTakenAt:cameraPhoto.localTakenAt??null,timeZone:cameraPhoto.timeZone??null}),null);
+  const destinationInput={mode:'manual',sourceZone:'UTC+08:00',items:[{...await selection(),destinationZone:'Asia/Jerusalem'}]};
+  await assert.rejects(reviewCaptureTimes(db,user,{...destinationInput,items:[...destinationInput.items,{...await selection(sony),destinationZone:'invalid-zone'}]},true),/拍摄地点时区无效/);
+  assert.equal((await selection()).correctionVersion,destinationInput.items[0]!.correctionVersion,'bad batch must roll back valid earlier items');
+  await reviewCaptureTimes(db,user,destinationInput,true);
+  const localPhoto=(await publicCatalog(pub,albumSlug)).active!.photos.find(p=>p.id===fixed.id)!;
+  assert.equal(localPhoto.localTakenAt,'2017-01-31T19:00:00.000Z');
+  assert.equal(localPhoto.timeZone,'Asia/Jerusalem');
+  assert.equal(captureTime(localPhoto).label,'当地拍摄时间');
+  const saved=(await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!;
+  assert.equal(saved.fingerprint,candidate.fingerprint,'manual destination must not change evidence fingerprints');
+  assert.equal(saved.confirmed_source_zone,'UTC+08:00');
+  await importCaptureEvidence(db,invalidFixReport);
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.effective_zone,'Asia/Jerusalem','rereading identical evidence preserves the manual destination');
+  assert.equal((await visitedSnapshot(pub)).visits.find(v=>v.id===visit)!.start,'2017-02-01');
+  assert.equal(await snapshot(),protectedBefore,'manual destination must not edit Immich metadata');
+  await reviewCaptureTimes(db,user,{mode:'disable',items:[await selection()]},true);
+  assert.equal((await publicCatalog(pub,albumSlug)).active!.photos.find(p=>p.id===fixed.id)!.takenAt,'2017-01-31T23:00:00.000Z');
   await owner.query('UPDATE public.asset SET "isOffline"=true WHERE id=$1', [id]);
   await assert.rejects(requestCaptureRefresh(db,user,{assets:[id]}),/来源/);
   assert.equal((await claimCaptureRefresh(db)).length,0);

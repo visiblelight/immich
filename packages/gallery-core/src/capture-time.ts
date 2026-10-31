@@ -1,4 +1,12 @@
 import type { DisplayPhoto } from './content.ts';
+import { offsetZone, validCaptureZone } from './capture-evidence.ts';
+
+/** Only derive a camera offset after its instant has been explicitly verified/confirmed. */
+export function confirmedCameraZone(photo: Pick<DisplayPhoto, 'localTakenAt' | 'takenAt' | 'timeZone' | 'captureStatus'>) {
+  if (photo.timeZone || !['verified', 'confirmed'].includes(photo.captureStatus ?? '') || !photo.localTakenAt || !photo.takenAt) return null;
+  const offset = (Date.parse(photo.localTakenAt) - Date.parse(photo.takenAt)) / 60000;
+  return Number.isInteger(offset) && offset >= -720 && offset <= 840 ? offsetZone(offset) : null;
+}
 
 /** Immich encodes wall-clock fields in localDateTime as UTC: do not convert them again. */
 export function captureTime(
@@ -17,21 +25,13 @@ export function captureTime(
     timeZone: 'UTC',
   }).format(new Date(local));
   const zone = photo.timeZone?.trim();
-  let known = false;
-  if (zone) {
-    known = /^(?:UTC|GMT)(?:[+-](?:[0-9]|1[0-4])(?::[0-5][0-9])?)?$/.test(zone);
-    if (!known)
-      try {
-        new Intl.DateTimeFormat('en', { timeZone: zone }).format(0);
-        known = true;
-      } catch {
-        /* Unknown source zone. */
-      }
-  }
+  const known = validCaptureZone(zone);
   if (photo.captureStatus && ['suggested', 'unknown', 'conflict', 'stale'].includes(photo.captureStatus))
     return { label: '相机记录时间', value: `${value}（时区待核对）` };
-  if (photo.captureStatus && ['verified', 'confirmed'].includes(photo.captureStatus) && !known)
-    return { label: '相机记录时间', value: `${value}（拍摄地点时区未知）` };
+  if (photo.captureStatus && ['verified', 'confirmed'].includes(photo.captureStatus) && !known) {
+    const cameraZone = confirmedCameraZone(photo);
+    return { label: '相机时间', value: `${value}${cameraZone ? ' · ' + cameraZone : ''}（拍摄地点时区待确认）` };
+  }
   return known
     ? { label: '当地拍摄时间', value: `${value} · ${zone}` }
     : { label: '记录时间', value: `${value}（时区未知）` };

@@ -57,3 +57,9 @@
 - 审计 action：capture.collect、capture.confirm、capture.disable，记录证据指纹、操作人及前后有效时间。没有覆盖相册、照片组、文章或到访记录的写入。
 
 来源的时间/GPS 更新后即时失效；文件内部元数据改变但 Immich 尚未更新的情况，由下一次只读扫描发现。已停用决定绑定当前证据；新的来源证据需要重新核对。证据采集范围为已经进入 Gallery 的合格照片，并非任意已知 asset ID。
+
+## 分别确认地点时区（ADR 0026，无新增迁移）
+
+人工核对允许为每张照片显式传入 `destinationZone`（IANA 或合法 UTC 偏移）；null 表示只确认相机时区，省略时保持旧接口沿用证据地点的行为。地点候选来自已有证据或带有效范围坐标的 Immich IANA 时区字段，后者必须由管理员主动选用。候选不写入证据，不参与自动判断，不影响 fingerprint。
+
+结果仍保存于 `capture_correction.resolved.timeZone/localTakenAt/takenAt`，相机时区保存在原有 `source_zone`。没有地点时区时 `resolved.timeZone=null`，前台只对 verified/confirmed 记录通过钟表与真实时刻之差显示相机 UTC 偏移；不会据此生成地点时区或自动到访日期。既有来源变化失效、版本并发、停用及权限规则保持不变。
