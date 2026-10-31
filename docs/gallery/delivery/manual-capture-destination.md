@@ -1,6 +1,6 @@
 # 人工确认拍摄地点时区交付
 
-2026-11-01，确认范围见 [ADR 0026](../decisions/0026-manual-capture-destination.md)。用户已授权验证后发布生产；实现和本地验证已完成，生产验收记录待补充。
+2026-11-01，确认范围见 [ADR 0026](../decisions/0026-manual-capture-destination.md)。用户已授权验证后发布生产；实现、本地验证与生产验收均已完成。
 
 ## 实现
 
@@ -22,3 +22,12 @@
 - 浏览器验证前三张的地点字段默认留空；只确认相机时区显示 UTC+08:00 和地点待确认；主动选用候选后得到 16:17:29、16:15:06、16:06:11，第四张为 15:56:26。修改地点后旧预览立即清除。
 - 真实本地图库的照片预览通过：相机时间与当地时间分别标注；前台显示“相机时间 · UTC+08:00（拍摄地点时区待确认）”。实际本地照片仅做预览，没有为验证而改写其校正记录。
 - 本地私有截图与日志位于 `.gallery-local/capture-refresh/manual-*`，不提交到仓库。
+
+## 生产发布与验收
+
+- 功能提交 `9cedc284244c64a1649f779a789f75d9b240e6a2` 已推送 `codex/gallery`。[Gallery 流水线 41219975244](https://github.com/visiblelight/immich/actions/runs/41219975244) 的检查、镜像构建和生产部署均成功。
+- 生产镜像为 `ghcr.io/visiblelight/gallery@sha256:a83bc52b70a492d3a8b2bd7f42be853d913949f566cc5c9719c877455d87471c`。上一版本为 `80d94b39f4d9880c3905bc76c51a84655a7c66c0`；无数据库迁移，仅更新 Gallery 前后台。
+- 发布前完成数据库备份、备份目录读取与摘要检查，保存在服务器私有目录 `/srv/vision/backups/before-manual-capture-20261101`。发布前后及浏览器预览后两次核对：611 张照片的原始/有效时间、来源、证据指纹和校正状态一致；96 条人工校正记录完全一致；27 张 Immich 来源及 Gallery 内容表的行数与完整内容摘要一致。
+- 生产页面验证前三张地点默认留空，先预览得到“相机时间 · UTC+08:00”和“地点时区待确认”；主动选用各照片地点候选后，前三张预览为 16:17:29、16:15:06、16:06:11，第四张为 15:56:26。修改输入会清除旧预览。以上仅预览并取消，未替用户确认候选地点，也未保存生产照片的校正。
+- 生产前台照片信息正确显示“相机时间 · UTC+08:00（拍摄地点时区待确认）”。公网前后台 readiness 均 200，匿名管理页 303 到登录页，生产 design 路由 404；`gallery-capture.timer` 正常启用。
+- 只读比对脚本、快照与结果保存在 `/srv/vision/manual-capture-release-20261101`。生产预览截图为本机 `.gallery-local/capture-refresh/manual-production-preview.png`，验证日志为 `manual-production-verification.log`。没有执行 Immich 媒体或元数据写入，也没有触发 OSS 文件替换。
