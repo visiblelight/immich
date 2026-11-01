@@ -1,6 +1,6 @@
 # 拍摄时间确认复用与后台核验
 
-状态：2026-11-01 本地实现及完整回归通过，用户已验收并授权提交、推送和生产发布；生产结果待发布后记录。需求见 [ADR 0028](../decisions/0028-capture-confirmation-reuse.md)。
+状态：2026-11-01 本地验收后已提交、推送并发布生产。需求见 [ADR 0028](../decisions/0028-capture-confirmation-reuse.md)。
 
 ## 实现
 
@@ -26,3 +26,15 @@
 - 浏览器验证到访国家排序；文章照片直达能打开组内指定图片，组内切换及关闭正常，封面独立直达正常，无新增控制台错误。复用示例验证 2017 年北京时间 18:21:37 → 约旦 12:21:37，源钟表改变后转入重新核对。
 - `gallery:smoke` 通过。完整隔离回归首次发现逐张关联公开链接导致超时，已改为一次汇总并验证查询恢复；重跑 `gallery:test:db` 29 项全部通过，包括文章公开资格与直达、国家/省级排序、时间确认、用户互动及完整备份恢复。Gallery 引起的 Immich 结构漂移为 0，上游迁移/结构检查通过。
 - 本地验收入口：`http://localhost:3101/capture-times`、`http://localhost:3101/visits`、`http://localhost:3101/design/capture-confirmation`。验收截图保存在忽略目录 `.gallery-local/capture-reuse/`，不提交图库截图。
+
+## 生产发布（2026-11-01）
+
+- 应用提交：`667d972ae31efb3a7483566ac57127c65dcde892`；[Gallery CI 41263738253](https://github.com/visiblelight/immich/actions/runs/41263738253) 的检查、镜像、部署全部成功。
+- 当前镜像：`ghcr.io/visiblelight/gallery@sha256:83df5aa08848a8be05b0c2fe78bf1ad1eede98b8ad17d220cfc14c788e8e86f9`。仅更新 Gallery 前后台；前后台 readiness 均为 200。
+- 生产备份：`/srv/vision/backups/before-capture-reuse-667d972ae31e`，包含完整数据库、角色、私有配置、旧版本及时间读取任务；校验和与备份目录可读性验证通过。应用发布前使用专用迁移角色应用 0018，611 条证据均取得匹配的时间基线。
+- 只读验收：611 张照片，609 张自动核对或已确认，剩余 2 张原有缺少时间依据的照片；没有新增人工待核对。569 张有相册链接、37 张有文章链接、5 张使用后台核验入口。国家与省级到访排序均通过，人工到访保持原成员。
+- 浏览器实测重新读取：进入“正在更新拍摄时间”、暂时移出人工待核对；任务返回 `unchanged: 1 / readErrors: 0` 后，无手动刷新即更新列表和提示。现有 DJI 照片的文章直链打开正确的大图，3840 像素预览加载正常，无浏览器错误。
+- 发布前后 Immich 结构、asset/asset_exif/asset_file/相册以及 Gallery 内容、关联、人工行程和时间确认记录的快照一致。定时读取任务已恢复运行。
+- 对 Gallery 引用到的 2,294 个原片及衍生文件逐一计算 SHA-256，发布前后完全一致；没有修改 Immich 原片、缩略图、预览或元数据。
+- 验收证据位于忽略目录 `.gallery-local/capture-reuse/production-*`，不将真实照片、私有清单或配置提交仓库。
+- 回退可恢复 `/srv/vision/releases/previous` 指向的 `9cedc284244c64a1649f779a789f75d9b240e6a2` 应用。0018 为兼容性新增列，可保留，无需回滚整个数据库。
