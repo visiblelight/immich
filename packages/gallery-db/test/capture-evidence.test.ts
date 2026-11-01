@@ -116,7 +116,7 @@ test('camera-only confirmation determines sorting instant without claiming a loc
   assert.equal(r.localTakenAt,canon.clock);
   assert.equal(r.timeZone,null);
   assert.equal(captureTime(photo).label,'相机时间');
-  assert.match(captureTime(photo).value,/UTC\+08:00.*地点时区待确认/);
+  assert.match(captureTime(photo).value,/UTC\+08:00.*拍摄地时区未知/);
   assert.equal(evidenceDate({...photo,id:'a',country:'JO'}),null);
   const change=captureChange({takenAt:'2017-01-23T16:21:37Z',localTakenAt:canon.clock,timeZone:null,captureStatus:'unknown'},photo);
   assert.equal(change.before,change.after);

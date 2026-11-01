@@ -197,6 +197,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           '0015',
           '0016',
           '0017',
+          '0018',
         ]);
         assert.deepEqual(await migrate(migrator), []);
         await assert.rejects(migrate(admin), /require gallery_migrator/);
@@ -1166,6 +1167,7 @@ test('Gallery on real PostgreSQL 14 with actual runtime logins', async (t) => {
           .visits.find((v) => v.id === correction)!;
         assert.equal(reduced.count, 1);
         const overview = await adminVisitIndex(adminDb);
+        assert.deepEqual(overview.records.map(v=>v.placeName),overview.records.map(v=>v.placeName).sort((a,b)=>a.localeCompare(b,'zh-CN')),'countries are grouped before dates');
         assert.ok(overview.records.some((v) => v.country === 'FR'));
         assert.ok(overview.records.some((v) => v.country === 'GE'));
         assert.ok(

@@ -33,6 +33,7 @@ import {
   readPublishedDerivative,
   publicPhotoFeed,
 } from '../../src/index.server.ts';
+import {adminCaptureTimes} from '../../src/capture.server.ts';
 import { articleImageKey, type ArticleNode } from '../../../gallery-core/src/article.ts';
 export async function articles(
   db: Kysely<unknown>,
@@ -392,6 +393,11 @@ export async function articles(
       0,
     );
     assert.ok((await readArticlePhotoDerivative(pub, id2, album, asset, 'preview', root)).bytes.length);
+    const captureLink=(await adminCaptureTimes(db)).photos.find(p=>p.asset_id===asset)!;
+    assert.equal(captureLink.public_kind,'article');
+    assert.equal(captureLink.public_path,`/records/${second.slug}#photo-${photoId}`);
+    assert.equal((await publicArticle(pub,second.slug)).images[articleImageKey(photo)]!.photoId,photoId);
+
     await assert.rejects(readArticlePhotoDerivative(pub, randomUUID(), album, asset, 'preview', root));
     const picker = await articleMediaOptions(db, 'photo', '', album);
     assert.equal(picker.items[0]!.hidden, true);

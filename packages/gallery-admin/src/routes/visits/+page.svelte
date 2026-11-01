@@ -244,7 +244,7 @@
       <span>{data.visits.page} / {data.visits.pages}</span>
       {#if data.visits.page < data.visits.pages}<a href={listLink({ page: String(data.visits.page + 1) })}>下一页</a>{:else}<span>下一页</span>{/if}
     </nav>{/if}
-    <p class="date-note">日期仅表示照片中的到访证据。待核对或已失效的记录可通过状态筛选集中处理。</p>
+    <p class="date-note">同一地点的记录排列在一起。人工整理的到访保留已选照片，后来新增或补全信息的照片仍自动整理；如果属于同一行程，可勾选后合并。日期仅表示照片中的到访证据。</p>
     {#if editing}<div class="shade">
         <div
           use:focusDialog

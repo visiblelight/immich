@@ -26,11 +26,15 @@ export function captureTime(
   }).format(new Date(local));
   const zone = photo.timeZone?.trim();
   const known = validCaptureZone(zone);
-  if (photo.captureStatus && ['suggested', 'unknown', 'conflict', 'stale'].includes(photo.captureStatus))
+  if (photo.captureStatus === 'stale')
+    return { label: '拍摄时间', value: `${value}（正在更新拍摄时间）` };
+  if (photo.captureStatus === 'unknown')
+    return { label: '相机记录时间', value: `${value}（时区未知）` };
+  if (photo.captureStatus && ['suggested', 'conflict'].includes(photo.captureStatus))
     return { label: '相机记录时间', value: `${value}（时区待核对）` };
   if (photo.captureStatus && ['verified', 'confirmed'].includes(photo.captureStatus) && !known) {
     const cameraZone = confirmedCameraZone(photo);
-    return { label: '相机时间', value: `${value}${cameraZone ? ' · ' + cameraZone : ''}（拍摄地点时区待确认）` };
+    return { label: '相机时间', value: `${value}${cameraZone ? ' · ' + cameraZone : ''}（拍摄地时区未知）` };
   }
   return known
     ? { label: '当地拍摄时间', value: `${value} · ${zone}` }

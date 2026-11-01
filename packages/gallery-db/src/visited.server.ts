@@ -371,7 +371,8 @@ export async function adminVisitIndex(db: Kysely<unknown>, options: {
     && (!query || `${v.placeName} ${v.label} ${v.start ?? ''} ${v.end ?? ''}`.toLocaleLowerCase().includes(query))
     && (!status || (status === 'auto' ? !v.manual : status === 'manual' ? v.manual
       : status === 'review' ? v.needsReview : v.invalid)))
-    .sort((a, b) => Number(a.invalid) - Number(b.invalid)
+    .sort((a, b) => a.placeName.localeCompare(b.placeName, 'zh-CN') || a.place.localeCompare(b.place)
+      || Number(a.invalid) - Number(b.invalid)
       || (b.start ?? '').localeCompare(a.start ?? '') || a.id.localeCompare(b.id));
   const pages = Math.max(1, Math.ceil(filtered.length / 20)), current = Math.min(page, pages);
   return { records: filtered.slice((current - 1) * 20, current * 20), total: filtered.length,

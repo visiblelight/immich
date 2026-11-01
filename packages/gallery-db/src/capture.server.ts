@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { finishCaptureRefresh, type CaptureJob } from './capture-refresh.server.ts';
 import { sql, type Kysely } from 'kysely';
 import { captureChange, ensure, uuid, type GalleryUser } from '@gallery/core';
+import {reuseCameraZone} from '../../gallery-core/src/capture-reuse.ts';
 import {
   analyzeCapture,
   correctedCapture,
@@ -70,8 +71,8 @@ export async function importCaptureEvidence(db: Kysely<unknown>, report: unknown
       if (jobs.length && !currentJobs.has(id)) continue;
       const current = (
         await sql<{
-          source_signature: string;
-        }>`SELECT s.source_signature FROM gallery.capture_source_asset s JOIN gallery.photo p ON p.immich_asset_id=s.asset_id WHERE s.asset_id=${id}::uuid`.execute(
+          source_signature: string; source_time_signature: string;
+        }>`SELECT s.source_signature,gallery.capture_source_signature(s.taken_at,s.local_taken_at,NULL,NULL,NULL) AS source_time_signature FROM gallery.capture_source_asset s JOIN gallery.photo p ON p.immich_asset_id=s.asset_id WHERE s.asset_id=${id}::uuid`.execute(
           trx,
         )
       ).rows[0];
@@ -84,24 +85,40 @@ export async function importCaptureEvidence(db: Kysely<unknown>, report: unknown
         await sql<{
           fingerprint: string;
           source_signature: string;
-          analysis: CaptureResult;
-        }>`SELECT fingerprint,source_signature,analysis FROM gallery.capture_evidence WHERE asset_id=${id}::uuid`.execute(
+          analysis: CaptureResult; evidence: CaptureEvidence; source_time_signature: string|null;
+        }>`SELECT fingerprint,source_signature,analysis,evidence,source_time_signature FROM gallery.capture_evidence WHERE asset_id=${id}::uuid`.execute(
           trx,
         )
       ).rows[0];
       const analysis = analyzeCapture(evidence);
+      const correction=(await sql<{source_signature:string;evidence_fingerprint:string;source_zone:string|null;mode:string;resolved:Record<string,unknown>;updated_by:string|null}>
+        `SELECT source_signature,evidence_fingerprint,source_zone,mode,resolved,updated_by FROM gallery.capture_correction WHERE asset_id=${id}::uuid`.execute(trx)).rows[0];
+      const reused=old && correction?.mode==='confirmed' && correction.source_zone &&
+        correction.source_signature===old.source_signature && correction.evidence_fingerprint===old.fingerprint &&
+        old.source_time_signature===current.source_time_signature &&
+        (correction.source_signature!==current.source_signature || correction.evidence_fingerprint!==fingerprint)
+        ? reuseCameraZone(old.evidence,evidence,correction.source_zone) : null;
+
       accepted.add(id);
       if (old?.fingerprint === fingerprint && old.source_signature === current.source_signature && isDeepStrictEqual(old.analysis, analysis)) {
+        if(!old.source_time_signature) await sql`UPDATE gallery.capture_evidence SET source_time_signature=${current.source_time_signature} WHERE asset_id=${id}::uuid`.execute(trx);
         result.unchanged++;
         continue;
       }
-      await sql`INSERT INTO gallery.capture_evidence(asset_id,source_signature,fingerprint,evidence,analysis) VALUES(${id}::uuid,${current.source_signature},${fingerprint},${JSON.stringify(evidence)}::jsonb,${JSON.stringify(analysis)}::jsonb)
-      ON CONFLICT(asset_id) DO UPDATE SET source_signature=excluded.source_signature,fingerprint=excluded.fingerprint,evidence=excluded.evidence,analysis=excluded.analysis,version=gallery.capture_evidence.version+1,collected_at=now()`.execute(
+      await sql`INSERT INTO gallery.capture_evidence(asset_id,source_signature,source_time_signature,fingerprint,evidence,analysis) VALUES(${id}::uuid,${current.source_signature},${current.source_time_signature},${fingerprint},${JSON.stringify(evidence)}::jsonb,${JSON.stringify(analysis)}::jsonb)
+      ON CONFLICT(asset_id) DO UPDATE SET source_signature=excluded.source_signature,source_time_signature=excluded.source_time_signature,fingerprint=excluded.fingerprint,evidence=excluded.evidence,analysis=excluded.analysis,version=gallery.capture_evidence.version+1,collected_at=now()`.execute(
         trx,
       );
       await sql`INSERT INTO gallery.audit_event(id,action,target_type,target_id,details) VALUES(${randomUUID()}::uuid,'capture.collect','photo',${id},${JSON.stringify({ fingerprint, previous: old?.fingerprint ?? null, status: analysis.status })}::jsonb)`.execute(
         trx,
       );
+      if(reused && correction) {
+        const resolved={...reused,cameraConfirmationReused:true};
+        await sql`UPDATE gallery.capture_correction SET source_signature=${current.source_signature},evidence_fingerprint=${fingerprint},
+          resolved=${JSON.stringify(resolved)}::jsonb,version=version+1,updated_at=now() WHERE asset_id=${id}::uuid`.execute(trx);
+        await sql`INSERT INTO gallery.audit_event(id,action,target_type,target_id,details) VALUES(${randomUUID()}::uuid,'capture.reuse-camera-zone','photo',${id},
+          ${JSON.stringify({sourceZone:correction.source_zone,confirmedBy:correction.updated_by,previousEvidence:old!.fingerprint,evidence:fingerprint,before:correction.resolved,after:resolved})}::jsonb)`.execute(trx);
+      }
       result.imported++;
     }
     await finishCaptureRefresh(trx, jobs, accepted, '未能读取最新时间信息，或来源再次变化，请重新读取。');
@@ -129,30 +146,44 @@ export async function adminCaptureTimes(db: Kysely<unknown>) {
       correction_version: string | null;
       mode: string | null;
       correction_source_zone: string | null;
+      camera_confirmation_reused: boolean;
       latitude: number | null;
       longitude: number | null;
       collected_at: Date | null;
       album_slug: string | null;
       photo_id: string | null;
+      public_path: string | null;
+      public_kind: string | null;
       manual_visits: number;
       refresh_state: string | null;
       refresh_error: string | null;
       refresh_finished_at: Date | null;
       refresh_expired: boolean;
-    }>`SELECT r.asset_id,r.filename,r.model,r.source_signature,r.taken_at,r.local_taken_at,r.time_zone,r.latitude,r.longitude,s.taken_at AS effective_taken_at,s.local_taken_at AS effective_local_at,s.time_zone AS effective_zone,s.capture_status,
-    e.evidence,e.analysis,e.fingerprint,e.version::text,c.version::text AS correction_version,c.mode,c.source_zone AS correction_source_zone,e.collected_at,
+    }>`WITH public_links AS MATERIALIZED (
+      SELECT DISTINCT ON(asset_id) asset_id,album_slug,photo_id,public_path,public_kind FROM (
+        SELECT asset_id,album_slug,photo_id,'/albums/'||album_slug||'?photo='||photo_id::text AS public_path,'album'::text AS public_kind,0 AS priority
+        FROM gallery.published_photo
+        UNION ALL
+        SELECT p.asset_id,NULL,p.photo_id,'/records/'||a.slug||'#photo-'||p.photo_id::text,'article',1
+        FROM gallery.published_article_photo p JOIN gallery.published_article a ON a.id=p.article_id
+      ) candidates ORDER BY asset_id,priority,public_path
+    )
+    SELECT r.asset_id,r.filename,r.model,r.source_signature,r.taken_at,r.local_taken_at,r.time_zone,r.latitude,r.longitude,s.taken_at AS effective_taken_at,s.local_taken_at AS effective_local_at,s.time_zone AS effective_zone,s.capture_status,
+    e.evidence,e.analysis,e.fingerprint,e.version::text,c.version::text AS correction_version,c.mode,c.source_zone AS correction_source_zone,coalesce(s.capture_status='confirmed' AND c.resolved->>'cameraConfirmationReused'='true',false) AS camera_confirmation_reused,e.collected_at,
     job.state AS refresh_state,job.error AS refresh_error,job.finished_at AS refresh_finished_at,
     coalesce((job.state='queued' AND job.requested_at<now()-interval '2 minutes') OR (job.state='reading' AND job.started_at<now()-interval '15 minutes'),false) AS refresh_expired,
-    link.album_slug,link.photo_id,((SELECT count(*) FROM gallery.visit_override_asset v WHERE v.asset_id=r.asset_id)+(SELECT count(*) FROM gallery.region_visit_override_asset v WHERE v.asset_id=r.asset_id))::int AS manual_visits
+    link.album_slug,link.photo_id,link.public_path,link.public_kind,((SELECT count(*) FROM gallery.visit_override_asset v WHERE v.asset_id=r.asset_id)+(SELECT count(*) FROM gallery.region_visit_override_asset v WHERE v.asset_id=r.asset_id))::int AS manual_visits
     FROM gallery.capture_source_asset r JOIN gallery.photo p ON p.immich_asset_id=r.asset_id JOIN gallery.admin_source_asset s ON s.asset_id=r.asset_id
     LEFT JOIN gallery.capture_evidence e ON e.asset_id=r.asset_id LEFT JOIN gallery.capture_correction c ON c.asset_id=r.asset_id
     LEFT JOIN gallery.capture_refresh job ON job.asset_id=r.asset_id
-    LEFT JOIN LATERAL(SELECT album_slug,photo_id FROM gallery.published_photo WHERE asset_id=r.asset_id ORDER BY album_id LIMIT 1) link ON true
+      AND NOT coalesce(job.state='failed' AND e.source_signature=r.source_signature AND e.collected_at>job.finished_at,false)
+    LEFT JOIN public_links link ON link.asset_id=r.asset_id
     ORDER BY r.local_taken_at DESC NULLS LAST,r.asset_id`.execute(db)
   ).rows;
   return {
     photos: rows.map(({latitude, longitude, correction_source_zone, ...r}) => ({
       ...r,
+      has_location: latitude !== null && longitude !== null && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 && (latitude !== 0 || longitude !== 0),
       // Immich's location zone is only a candidate, never trusted as the camera offset.
       destination_candidate: r.evidence?.destinationZone ?? (
         latitude !== null && longitude !== null && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 &&

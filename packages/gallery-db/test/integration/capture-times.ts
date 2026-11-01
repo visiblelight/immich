@@ -5,7 +5,7 @@ import { sql, type Kysely } from 'kysely';
 import { adminCaptureTimes, importCaptureEvidence, reviewCaptureTimes } from '../../src/capture.server.ts';
 import { requestCaptureRefresh, claimCaptureRefresh, finishCaptureRefresh } from '../../src/capture-refresh.server.ts';
 import { publicCatalog, publicPhotoFeed, visitedSnapshot } from '../../src/index.server.ts';
-import {captureTime, evidenceDate} from '@gallery/core';
+import {captureTime, captureReviewState, evidenceDate} from '@gallery/core';
 export async function captureTimes(
   db: Kysely<unknown>,
   pub: Kysely<unknown>,
@@ -190,7 +190,8 @@ export async function captureTimes(
   const refreshedReport={...report,photos:[{...report.photos[0]!,sourceSignature:fresh.sourceSignature}]};
   await importCaptureEvidence(db,refreshedReport,retry);
   assert.equal((await queue()).state,'completed');
-  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.capture_status,'verified');
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.capture_status,'confirmed');
+  assert.equal((await adminCaptureTimes(db)).photos.find(p=>p.asset_id===id)!.camera_confirmation_reused,true);
   // Adding a location does not invent a GPS timestamp; after rereading, manual correction is available.
   await requestCaptureRefresh(db,user,{assets:[id]});
   await importCaptureEvidence(db,{...refreshedReport,photos:[{...refreshedReport.photos[0]!,evidence:{...base,gpsUtc:null,gpsStatus:'Measurement Void',gpsPositionValid:false,gpsPositionMatches:false}}]},await claimCaptureRefresh(db));
@@ -231,7 +232,7 @@ export async function captureTimes(
   const cameraPhoto=(await publicCatalog(pub,albumSlug)).active!.photos.find(p=>p.id===fixed.id)!;
   assert.equal(cameraPhoto.takenAt,'2017-01-31T17:00:00.000Z');
   assert.equal(cameraPhoto.timeZone,null);
-  assert.match(captureTime(cameraPhoto).value,/UTC\+08:00.*待确认/);
+  assert.match(captureTime(cameraPhoto).value,/UTC\+08:00.*拍摄地时区未知/);
   assert.equal(evidenceDate({...cameraPhoto,country:'JO',takenAt:cameraPhoto.takenAt??null,localTakenAt:cameraPhoto.localTakenAt??null,timeZone:cameraPhoto.timeZone??null}),null);
   const destinationInput={mode:'manual',sourceZone:'UTC+08:00',items:[{...await selection(),destinationZone:'Asia/Jerusalem'}]};
   await assert.rejects(reviewCaptureTimes(db,user,{...destinationInput,items:[...destinationInput.items,{...await selection(sony),destinationZone:'invalid-zone'}]},true),/拍摄地点时区无效/);
@@ -250,6 +251,58 @@ export async function captureTimes(
   assert.equal(await snapshot(),protectedBefore,'manual destination must not edit Immich metadata');
   await reviewCaptureTimes(db,user,{mode:'disable',items:[await selection()]},true);
   assert.equal((await publicCatalog(pub,albumSlug)).active!.photos.find(p=>p.id===fixed.id)!.takenAt,'2017-01-31T23:00:00.000Z');
+  // Simulate adding GPS only in the isolated fixture, then run the same refresh flow used by the page.
+  const stateOf=async(asset:string)=>(await adminCaptureTimes(db)).photos.find(p=>p.asset_id===asset)!;
+  await owner.query('UPDATE public.asset_exif SET latitude=NULL,longitude=NULL WHERE "assetId"=$1',[sony]);
+  const sonyEvidence={...report.photos[1]!.evidence,explicitOffset:null,destinationZone:null};
+  await importCaptureEvidence(db,{schemaVersion:1,photos:[{assetId:sony,sourceSignature:(await selection(sony)).sourceSignature,evidence:sonyEvidence}]});
+  assert.equal(captureReviewState(await stateOf(sony)),'original');
+  await reviewCaptureTimes(db,user,{mode:'manual',sourceZone:'UTC+08:00',items:[{...await selection(sony),destinationZone:null}]},true);
+  const withoutGps=await stateOf(sony);
+  assert.equal(withoutGps.has_location,false);
+  assert.equal(withoutGps.effective_zone,null);
+  assert.equal(captureReviewState(withoutGps),'confirmed','a known source clock with no GPS is not a manual task');
+  await owner.query('UPDATE public.asset_exif SET latitude=38.7167,longitude=-9.1333 WHERE "assetId"=$1',[sony]);
+  const afterAddingGps=await snapshot();
+  const staleSony=await stateOf(sony);
+  assert.equal(staleSony.has_location,true);
+  assert.equal(captureReviewState(staleSony),'updating','new GPS is processing, not a manual review');
+  await requestCaptureRefresh(db,user,{assets:[sony]});
+  assert.equal(captureReviewState(await stateOf(sony)),'updating');
+  const allJobs=await claimCaptureRefresh(db);
+  const sonyJobs=allJobs.filter(job=>job.assetId===sony);
+  await finishCaptureRefresh(db,allJobs.filter(job=>job.assetId!==sony),new Set(),'读取未完成，请重新读取。');
+  assert.equal(sonyJobs.length,1);
+  await importCaptureEvidence(db,{schemaVersion:1,photos:[{assetId:sony,sourceSignature:staleSony.source_signature,evidence:{...sonyEvidence,destinationZone:'Europe/Lisbon'}}]},sonyJobs);
+  const completeSony=await stateOf(sony);
+  assert.equal(completeSony.refresh_state,'completed');
+  assert.equal(completeSony.capture_status,'confirmed');
+  assert.equal(completeSony.camera_confirmation_reused,true);
+  assert.notEqual(completeSony.correction_version,withoutGps.correction_version);
+  assert.equal(completeSony.confirmed_source_zone,'UTC+08:00');
+  assert.equal(captureReviewState(completeSony),'confirmed');
+  assert.equal(completeSony.effective_local_at,'2026-07-27T11:19:28.822Z','Lisbon summer offset uses the capture date');
+  assert.equal(await snapshot(),afterAddingGps,'Gallery update must not change Immich rows');
+  assert.equal((await visitedSnapshot(pub)).visits.find(v=>v.id===visit)!.start,'2017-02-01','manual visits remain unchanged');
+  await requestCaptureRefresh(db,user,{assets:[sony]});
+  await finishCaptureRefresh(db,await claimCaptureRefresh(db),new Set(),'读取未完成，请重新读取。');
+  assert.equal(captureReviewState(await stateOf(sony)),'failed');
+  await owner.query('UPDATE public.asset_exif SET longitude=-9.1334 WHERE "assetId"=$1',[sony]);
+  const beforeBackground=await snapshot();
+  await importCaptureEvidence(db,{schemaVersion:1,photos:[{assetId:sony,sourceSignature:(await selection(sony)).sourceSignature,evidence:{...sonyEvidence,destinationZone:'Europe/Lisbon'}}]});
+  assert.equal(captureReviewState(await stateOf(sony)),'confirmed','a later full scan supersedes an old failure without inventing a queue job');
+  assert.equal(await snapshot(),beforeBackground);
+  const reusedVersion=(await selection(sony)).correctionVersion;
+  await owner.query(`UPDATE public.asset SET "fileCreatedAt"="fileCreatedAt"+interval '1 hour' WHERE id=$1`,[sony]);
+  const changedReport=async()=>({schemaVersion:1,photos:[{assetId:sony,sourceSignature:(await selection(sony)).sourceSignature,evidence:{...sonyEvidence,destinationZone:'Europe/Lisbon'}}]});
+  await importCaptureEvidence(db,await changedReport());
+  assert.equal((await stateOf(sony)).capture_status,'unknown','changing raw source time invalidates old camera confirmation even if EXIF was not updated');
+  assert.equal((await selection(sony)).correctionVersion,reusedVersion);
+  await owner.query('UPDATE public.asset_exif SET longitude=-9.1335 WHERE "assetId"=$1',[sony]);
+  await importCaptureEvidence(db,await changedReport());
+  assert.equal((await stateOf(sony)).capture_status,'unknown','later GPS changes cannot revive an invalidated time decision');
+
+  await requestCaptureRefresh(db,user,{assets:[id]});
   await owner.query('UPDATE public.asset SET "isOffline"=true WHERE id=$1', [id]);
   await assert.rejects(requestCaptureRefresh(db,user,{assets:[id]}),/来源/);
   assert.equal((await claimCaptureRefresh(db)).length,0);

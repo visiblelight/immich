@@ -44,6 +44,7 @@
     publishedAt={article.publishedAt}
     document={article.document}
     resolveImage={(node) => article.images[articleImageKey(node)] ?? null}
+    linkedImages={Object.values(article.images).flatMap(image=>image.items??[image])}
     related={article.related}
     {interaction}
   />

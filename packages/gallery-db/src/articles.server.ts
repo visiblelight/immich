@@ -288,6 +288,7 @@ export async function articleImageMap(db: Db, id: string, content: ArticleConten
       if (p)
         images[key] = {
           id: `${p.album_id}:${p.asset_id}`,
+          photoId: p.photo_id,
           ref: p.asset_id,
           kind: 'photo',
           album: p.album_id,
@@ -367,6 +368,7 @@ async function resolveArticleGroup(
   if (!photos.length) return null;
   const items: ArticleMediaOption[] = photos.map((p) => ({
     id: `${album}:${p.asset_id}`,
+    photoId: p.photo_id,
     kind: 'photo',
     ref: p.asset_id,
     album,

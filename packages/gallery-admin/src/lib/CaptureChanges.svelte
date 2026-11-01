@@ -11,7 +11,7 @@
       <div><small>当前 · {p.beforeCaption}</small><time>{clock(p.before)}</time></div>
       <div><small>确认后 · {p.afterCaption}</small><time class="result">{clock(p.after)}</time></div>
     </div>
-    {#if p.destinationPending}<p>拍摄时刻已确定；地点时区待确认，暂按相机时区显示，自动行程不使用该日期。</p>{/if}
+    {#if p.destinationPending}<p>拍摄时刻已确定；拍摄地时区未知，暂按相机时区显示，自动行程不使用该日期。</p>{/if}
     {#if p.secondsChanged}<p>用于排序的拍摄时刻{p.secondsChanged<0?'提前':'推后'} {hours(p.secondsChanged)} 小时。{p.destinationPending?'这不代表已换算为当地时间。':''}</p>{:else}<p>用于排序的拍摄时刻保持不变。</p>{/if}
     {#if p.dateChanged}<p>显示日期发生变化，月份筛选随之更新。{!p.destinationPending?'自动行程使用确认后的当地日期。':''}</p>{/if}
     {#if p.manualVisits}<p>关联 {p.manualVisits} 段人工到访记录，已填写的行程日期保持不变。</p>{/if}

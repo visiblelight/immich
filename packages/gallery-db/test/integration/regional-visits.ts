@@ -50,6 +50,7 @@ export async function regionalVisits(
   assert.equal(nationalIndex.records[0]!.id, countryId);
   assert.equal(nationalIndex.records[0]!.placeName, '中国');
   const provinceIndex = await adminVisitIndex(db, { scope: 'region' });
+  assert.deepEqual(provinceIndex.records.map(v=>v.placeName),provinceIndex.records.map(v=>v.placeName).sort((a,b)=>a.localeCompare(b,'zh-CN')));
   assert.ok(provinceIndex.records.some((v) => v.id === provinceId && v.region === 'CN-FJ'));
   assert.ok(provinceIndex.records.some((v) => v.region === 'CN-JX'), 'all provinces are visible without a province selection');
   assert.ok(!provinceIndex.records.some((v) => v.id === countryId), 'national and provincial journeys stay independent');

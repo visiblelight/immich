@@ -8,9 +8,10 @@
     type ArticleDocument,
     type ArticleImageResolver,
     type ArticleNode,
+    type ArticleImage,
   } from '../../../gallery-core/src/article';
   import './article.css';
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
   import Icon from '../Icon.svelte';
   import { exitViewerFullscreen, enterViewerFullscreen } from '../viewer-fullscreen';
   let copied = $state(false);
@@ -80,6 +81,7 @@
     document,
     resolveImage,
     related = [],
+    linkedImages = [],
     interaction,
   }: {
     title: string;
@@ -89,6 +91,7 @@
     document: ArticleDocument;
     resolveImage: ArticleImageResolver;
     related?: { title: string; href: string }[];
+    linkedImages?: ArticleImage[];
     interaction?: Snippet;
   } = $props();
   let dialog: HTMLDialogElement;
@@ -96,7 +99,8 @@
   let active = $state(false);
   const headings = $derived(articleHeadings(document));
   const html = $derived(renderArticle(document, resolveImage));
-  const images = $derived(articleDisplayImages(document, resolveImage));
+  let linkedImage=$state<ArticleImage|null>(null);
+  const images = $derived(linkedImage?[linkedImage]:articleDisplayImages(document, resolveImage));
   let rangeStart = $state(0);
   let rangeEnd = $state(0);
   function carouselState(track: HTMLElement) {
@@ -126,14 +130,39 @@
       return;
     }
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-article-image]');
-    if (button) {
-      current = Number(button.dataset.articleImage);
-      rangeStart = Number(button.dataset.groupStart ?? 0);
-      rangeEnd = button.dataset.groupSize ? rangeStart + Number(button.dataset.groupSize) : images.length;
-      dialog.showModal();
-      active = true;
-    }
+    if (button) showImage(button);
   }
+  function showImage(button:HTMLButtonElement){
+    linkedImage=null;
+    current = Number(button.dataset.articleImage);
+    rangeStart = Number(button.dataset.groupStart ?? 0);
+    rangeEnd = button.dataset.groupSize ? rangeStart + Number(button.dataset.groupSize) : images.length;
+    if(!images[current])return;
+    if(!dialog.open)dialog.showModal();
+    active = true;
+  }
+  onMount(()=>{
+    let disposed=false;
+    const followPhoto=async()=>{
+      const hash=window.location.hash;
+      if(!/^#photo-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(hash))return;
+      await tick();if(disposed)return;
+      const button=readerElement.querySelector<HTMLButtonElement>(`${hash}[data-article-image]`);
+      if(button){
+        button.scrollIntoView({block:'center',behavior:'instant'});
+        showImage(button);
+      }else{
+        // A cover-only photo is still authorized by this article, even without a body anchor.
+        const photo=linkedImages.find(image=>image.photoId===hash.slice(7));
+        if(!photo)return;
+        linkedImage=photo;current=0;rangeStart=0;rangeEnd=1;
+        if(!dialog.open)dialog.showModal();active=true;
+      }
+    };
+    void followPhoto();
+    window.addEventListener('hashchange',followPhoto);
+    return()=>{disposed=true;window.removeEventListener('hashchange',followPhoto);};
+  });
   function move(direction: number) {
     let next = current + direction;
     while (next >= rangeStart && next < rangeEnd && !images[next]) next += direction;

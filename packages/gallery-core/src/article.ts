@@ -12,6 +12,7 @@ export type ArticleNode = {
 };
 export type ArticleDocument = { schemaVersion: 1; doc: ArticleNode };
 export type ArticleImage = {
+  photoId?: string;
   src: string;
   preview: string;
   alt: string;
@@ -324,6 +325,12 @@ export function renderArticle(document: ArticleDocument, resolve: ArticleImageRe
   const clean = validateArticleDocument(document);
   let heading = 0;
   let image = 0;
+  const anchored=new Set<string>();
+  const photoAnchor=(image:ArticleImage)=>{
+    if(!image.photoId||!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(image.photoId)||anchored.has(image.photoId))return '';
+    anchored.add(image.photoId);
+    return ` id="photo-${image.photoId}"`;
+  };
   function render(node: ArticleNode): string {
     const children = () => (node.content ?? []).map(render).join('');
     if (node.type === 'text') {
@@ -382,7 +389,7 @@ export function renderArticle(document: ArticleDocument, resolve: ArticleImageRe
         .map((item) => {
           const index = image++;
           return item && articleLink(item.src) && articleLink(item.preview)
-            ? `<button type="button" class="article-image" data-article-image="${index}" data-group-start="${start}" data-group-size="${items.length}" aria-label="沉浸查看：${escape(item.alt)}"><img src="${escape(item.src)}" alt="${escape(item.alt)}" loading="lazy" decoding="async"></button>`
+            ? `<button type="button" class="article-image"${photoAnchor(item)} data-article-image="${index}" data-group-start="${start}" data-group-size="${items.length}" aria-label="沉浸查看：${escape(item.alt)}"><img src="${escape(item.src)}" alt="${escape(item.alt)}" loading="lazy" decoding="async"></button>`
             : '<div class="article-image-unavailable">图片暂不可用</div>';
         })
         .join('');
@@ -411,7 +418,7 @@ export function renderArticle(document: ArticleDocument, resolve: ArticleImageRe
       const mediaUrl = (url: string) => !!articleLink(url) || /^blob:https?:\/\//.test(url);
       if (!mediaUrl(resolved.src) || !mediaUrl(resolved.preview))
         return '<figure><div class="article-image-unavailable">图片暂不可用</div></figure>';
-      return `<figure><button type="button" class="article-image" data-article-image="${index}" aria-label="沉浸查看：${escape(resolved.alt)}"><img src="${escape(resolved.src)}" alt="${escape(resolved.alt)}" ${resolved.width && resolved.height && Number.isSafeInteger(resolved.width) && Number.isSafeInteger(resolved.height) ? `width="${resolved.width}" height="${resolved.height}"` : ''} loading="lazy" decoding="async"></button>${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`;
+      return `<figure><button type="button" class="article-image"${photoAnchor(resolved)} data-article-image="${index}" aria-label="沉浸查看：${escape(resolved.alt)}"><img src="${escape(resolved.src)}" alt="${escape(resolved.alt)}" ${resolved.width && resolved.height && Number.isSafeInteger(resolved.width) && Number.isSafeInteger(resolved.height) ? `width="${resolved.width}" height="${resolved.height}"` : ''} loading="lazy" decoding="async"></button>${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`;
     }
     const tag = (
       {
