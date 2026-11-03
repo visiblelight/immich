@@ -1,15 +1,18 @@
 # Apply after docker/docker-compose.dev.yml; use only after isolated validation.
 services:
   immich-init:
-    image: immich-server-dev:gallery-v3.2.0
+    image: immich-server-dev:gallery-v3.3.3
   immich-server:
-    image: immich-server-dev:gallery-v3.2.0
+    image: immich-server-dev:gallery-v3.3.3
     environment:
       pnpm_config_verify_deps_before_run: error
-      IMMICH_SOURCE_REF: v3.2.0
-      IMMICH_SOURCE_COMMIT: 1b6098c9dbfffe978bec2d414606ed7a4c8e019a
-      IMMICH_SOURCE_URL: https://github.com/immich-app/immich/commit/1b6098c9dbfffe978bec2d414606ed7a4c8e019a
+      IMMICH_SOURCE_REF: v3.3.3
+      IMMICH_SOURCE_COMMIT: d2dac658fe1c67e8bbd08aa18200a32e5d45b9e4
+      IMMICH_SOURCE_URL: https://github.com/immich-app/immich/commit/d2dac658fe1c67e8bbd08aa18200a32e5d45b9e4
   immich-web:
-    image: immich-server-dev:gallery-v3.2.0
+    image: immich-server-dev:gallery-v3.3.3
     environment:
       pnpm_config_verify_deps_before_run: error
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning@sha256:73915f07e1f4289ba45b174c58443db74cef47ddf502613f475fc5e52458ea42
+    # Match production dependencies while keeping local source editable.

@@ -34,3 +34,21 @@ GitHub compare 返回 288 个提交；完整 Git tree（未截断）与本地迁
 一致备份位于服务器 `/srv/vision/backups/immich-333-20261017T101624Z`，包含完整数据库、角色、约 19GB 媒体、私有配置及校验清单。回滚必须使用相匹配的数据库、媒体及旧版本，不能只降级 Immich 镜像。备份保留后磁盘可用约 6.4GB，后续容量管理需保留有效恢复副本。
 
 首次启动在停止服务前因 Git 递归访问测试素材子模块退出，未更改数据库。升级脚本改为不递归获取生产不使用的测试子模块后重试成功。日常 `GALLERY_DEPLOY_ENABLED` 已恢复为 true。发布由 GitHub 构建镜像、服务器执行备份和迁移，本机仅发起并检查状态。
+
+## 2026-10-18 本地开发环境同步
+
+经用户授权，主工作目录 `codex/gallery` 已快进到生产已验证源码 `987ff0b184ff201e05918d36e283e1c586e9c731`（应用版本 `3624f9631`）。Immich server/web 使用 v3.3.3 源码构建的 `immich-server-dev:gallery-v3.3.3`，仍保留开发模式和热更新；ML 使用生产相同摘要的 v3.3.3 镜像，并保留开发源码挂载与模型缓存。Node 为 24.21.0，pnpm 为 11.27.1，原数据库、Redis、媒体目录及端口不变。
+
+升级前停止本地应用写入，将完整数据库、角色、照片、文章素材、运行配置、原始 mise.lock 与修改补丁保存到 `.gallery-local/local-upgrade-333/`。先在隔离临时库恢复本地备份，验证 33 张 Gallery 表全部一致，再执行新版官方迁移：100 项迁移、零漂移、Gallery 数据无变化。随后对真实开发库迁移并重启服务，得到相同结果。
+
+最终核对：原有 19 个 Immich 资产、2 个相册、2 个账号数量不变；33 张 Gallery 表全部数据一致；91 个原有媒体文件（不计运行时挂载标记）的 SHA-256 一致。API 与 Web 代理均返回 v3.3.3；Gallery 两个 readiness 为 ready，相册、原有文章与封面图片均 HTTP 200。Gallery doctor/check/build 通过，check 无错误或警告。临时恢复容器和内部网络已清理，备份保留；未修改生产环境。
+
+原用户 mise.lock 中删除的三段 FFmpeg 平台配置，在上游锁文件重排后按原意保留，同时接受新版 Node/pnpm 锁定条目；原文件及补丁另有备份，未将用户修改提交。开发 Compose 的版本变更及本记录保留在工作区。
+
+后续启动使用 `docker/docker-compose.dev.yml` 叠加 `deployment/gallery/upgrade/dev-compose.yml`。已安装依赖时，使用 `up -d --no-build --no-deps immich-server immich-web immich-machine-learning`；Gallery 仍通过 `gallery:local:public` / `gallery:local:admin` 根脚本启动。不要用旧 v3.2.0 镜像直接打开升级后的库；需要回退时须停止写入，并恢复配套源码、数据库及媒体备份。恢复用 `database.before.dump`，数据-only SQL 仅用于比较，不能替代完整恢复。
+
+## 2026-11-03 本地配置归档
+
+用户授权将此前保留在工作区的本地升级覆盖配置和本节升级记录单独提交并推送，不发布生产。`dev-compose.yml` 固定本地 server/web/init 为 gallery-v3.3.3，标记已验证源码提交，并将 ML 固定到已验收摘要；本轮不再执行升级或迁移，也不重启服务。
+
+已通过开发基础 Compose 与覆盖文件的合并配置校验（`docker compose config --quiet`）及 Git 空白检查。2026-10-18 的升级、数据保留与恢复结果仍为历史验收，本轮未重跑。用户要求继续保留 `mise.lock` 的现有差异，未纳入提交。此提交使用 `[skip ci]`，避免触发生产发布；回退本次代码归档不等于可用旧镜像打开已升级数据库。
