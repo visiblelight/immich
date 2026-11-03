@@ -2,7 +2,8 @@
 
 These instructions apply to Gallery work. Preserve Immich's existing architecture and tooling for unrelated work.
 
-- Read `docs/gallery/README.md` and the relevant approved design before changing Gallery behavior. Track actual implementation separately from accepted requirements.
+- Start with `docs/gallery/handoff/README.md` and `docs/gallery/handoff/current-state.md` when resuming without chat history or on a new machine. Then read `docs/gallery/README.md` and the relevant approved design before changing Gallery behavior. Track actual implementation separately from accepted requirements.
+- Keep the handoff current after feature delivery, environment changes and deployment. Record verified versions and outstanding work; never put secrets or private asset inventories in documentation. Historical MVP status and one-off scripts are not current operating instructions.
 - Product branch: `codex/gallery`. Keep `main` as an upstream mirror. Do not merge upstream versions into the working database without an isolated upgrade validation.
 - Gallery code belongs in `packages/gallery-*`; deployment and developer tooling in `deployment/gallery`; documentation in `docs/gallery`.
 - Node and pnpm versions follow the repository's `mise.toml` and root `packageManager`. Do not silently change them or the existing `mise.lock`.

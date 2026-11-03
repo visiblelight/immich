@@ -1,5 +1,7 @@
 # Gallery MVP 需求与页面流程
 
+> 2026-11-03 接手说明：本文记录早期 MVP 需求，不是现有功能清单。地图、文章、用户互动等后续需求由对应 ADR 扩展；接手先读[当前产品约定](../handoff/architecture-and-product.md)。
+
 2026-09-12 范围补充：用户已确认增加“去过”，采用原创世界地图、公开照片推导到访、人工校正和三种真实底图，见 [ADR 0006](../decisions/0006-visited-map.md)。这替代本文旧的地图暂缓约定；实际状态见 [去过交付记录](../delivery/visited-map.md)，当前仍处于区域样稿视觉评审阶段。
 
 2026-09-11 补充：本文早期的两项导航、文字块正文和逐张排序规则，由已确认的 [ADR 0004](../decisions/0004-markdown-photo-groups.md) 更新；实际完成及验证范围见 [交互升级记录](../delivery/interaction-upgrade.md)。

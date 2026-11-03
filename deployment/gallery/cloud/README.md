@@ -1,6 +1,8 @@
 # 全新 ECS 部署
 
-与已有 HTTPS 入口共用服务器；不导入本地测试库或媒体。`compose.yml` 使用已验证的 Immich v3.2.0 server／PG14／Valkey，机器学习镜像另行填写同版本固定摘要。Gallery 镜像标签采用实际产品提交，禁用设计样例。
+> 已有生产环境不要重新执行初始化。日常接手、发布、备份局限与恢复范围见[生产运维指南](../../../docs/gallery/handoff/production-operations.md)。
+
+与已有 HTTPS 入口共用服务器；不导入本地测试库或媒体。`compose.yml` 使用已验证的 Immich v3.3.3 server／PG14／Valkey，机器学习镜像另行填写同版本固定摘要。Gallery 镜像标签采用实际产品提交，禁用设计样例。
 
 1. 将 `compose.env.example` 复制到仓库外的受保护目录，生成独立随机密码。Immich 环境文件设置 DB_HOSTNAME=database、DB_USERNAME=postgres、DB_DATABASE_NAME=immich、DB_PASSWORD、REDIS_HOSTNAME=redis 和 IMMICH_MACHINE_LEARNING_URL=http://immich-machine-learning:3003。Gallery public/admin 各自只接收受限角色 URL、来源衍生图根、共享地图加密密钥；后台在可信单层代理后设置 ADDRESS_HEADER=x-forwarded-for、XFF_DEPTH=1。
 2. 创建数据目录与 `vision-edge` 外部网络；将已有代理连接至 edge 网络，并在其 Compose 中持久化网络声明。数据库只接 vision-data 网络；Gallery 只挂载 thumbs 与独立文章素材。文章目录给 node UID 1000 写权限。
@@ -22,7 +24,7 @@ python3 deployment/gallery/cloud/render-proxy.py \
 
 上线记录与实际验证边界见 `docs/gallery/delivery/cloud-launch.md`。
 
-一致性检查点使用 `sh deployment/gallery/cloud/backup.sh /absolute/compose.env /absolute/new-backup-dir`。脚本只短暂停止本项目原本运行的写入服务，成功或失败均尝试恢复；目标目录必须尚不存在。备份包含凭据，保持私有权限，导出目的地应明确授权。此脚本不自动安排周期，也不把同盘副本当作异机备份。
+一致性检查点使用 `sh deployment/gallery/cloud/backup.sh /absolute/compose.env /absolute/new-backup-dir`。脚本只暂停原本运行的 admin、immich-server 和 immich-machine-learning，成功或失败均尝试恢复；当前还需另行覆盖 public 互动写入、时间采集任务与全局角色导出，不能单凭此脚本认定取得完整停写恢复点；目标目录必须尚不存在。备份包含凭据，保持私有权限，导出目的地应明确授权。此脚本不自动安排周期，也不把同盘副本当作异机备份。
 
 ## 独立入口与自动发布（2026-09-17）
 

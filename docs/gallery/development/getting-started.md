@@ -1,6 +1,6 @@
 # Gallery 本地开发
 
-状态：本地功能 MVP。2026-09-11。实际登录和操作优先阅读 [MVP 本地使用](mvp-local.md)。
+更新：2026-11-03。换机及无聊天记录接手优先阅读[交接入口](../handoff/README.md)与[本地迁移](../handoff/local-and-transfer.md)。本文保留通用工具和命令说明；实际服务状态见[当前状态](../handoff/current-state.md)。
 
 ## 当前能力边界
 
@@ -12,8 +12,8 @@
 
 宿主机安装／更新依赖前，先阅读 [Immich 开发依赖挂载注意事项](immich-dependency-mounts.md)。本机曾出现宿主机重建 node_modules 后，运行中的 Immich 容器读到 macOS 依赖而退出的情况；安装前停止相应开发容器，安装后重新启动并检查实际 API 响应。
 
-- Node：24.15.0，与根 mise.toml 一致。
-- pnpm：11.22.0，与根 packageManager 一致。
+- Node：24.21.0，与根 mise.toml 一致。
+- pnpm：11.27.1，与根 packageManager 一致。
 - TypeScript 使用与 Immich Web 相同的 `@typescript/typescript6` 6.0.2 别名包；这个包的命令名是 `tsc6`，不要假定安装后会提供 `tsc`。
 - 新机器优先使用已有 mise 安装这两个工具，不需要为 Gallery 安装整个 Immich 的 Java/FFmpeg/移动端工具链。
 - 此机器默认 Node 为 22；本轮在 `.gallery-local/toolchain/` 安装了经官方 SHA-256 校验的 Node 24，Corepack/pnpm、缓存均在 `.gallery-local/`，不修改全局默认 Node。
@@ -73,7 +73,7 @@ gallery:smoke 会用系统分配的临时端口启动两个生产构建，验证
 
 `.github/workflows/gallery.yml` 在 Gallery 分支／PR 上执行固定工具链、过滤安装、检查、测试、构建及 HTTP 冒烟，不依赖 Immich 官方专用密钥。不改变上游已有 workflow；未来向 fork 推送 PR 时，上游 workflow 可能仍被 GitHub 同时触发，需要按运行结果独立处理。
 
-源码包版本统一为 0.1.0-dev.0。当前来源、上游观察值和未验证升级候选保存在 `deployment/gallery/baseline.json`。源提交、构建产物、数据库迁移状态分开记录。
+源码包版本统一为 0.1.0-dev.0。Immich 来源与工具链记录在 `deployment/gallery/baseline.json`；该文件仍含早期阶段状态和测试计数，不代表当前上线状态。最新验收与实际部署见交接当前状态。源提交、构建产物、数据库迁移状态分开记录。
 
 ## 阶段 C 视觉预览
 
