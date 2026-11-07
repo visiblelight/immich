@@ -1,10 +1,10 @@
 # 当前状态与接续事项
 
-核对时间：2026-11-03，Asia/Shanghai。以下为一次只读检查的快照；下次接手先重新检查。不要据此启动或覆盖服务。
+核对时间：2026-11-07，Asia/Shanghai，本轮更新 Gallery 应用发布及线上验收。其余环境/运维现状保留 2026-11-03 的只读检查快照，未重新核验的细节不能当作实时状态；下次接手先重新检查。不要据此启动或覆盖服务。
 
-## 2026-11-07 子相册发布准备
+## 2026-11-07 子相册已发布
 
-子相册已改为 4:3 大封面卡片，直接子相册一次完整展示，并移除子相册的加载结束提示。用户已验收本地效果并授权提交、推送和生产发布；实际部署结果将于完成后更新。见[实现与验证记录](../delivery/child-albums.md)。本机 3102 为这次候选构建预览，3100/3101 保持原服务；没有修改图库数据，既有 `mise.lock` 改动保留不动。11-07 发布前核验生产仍为下列应用版本，前后台 ready，根盘可用约 51G；其余历史服务细节仍以 11-03 检查为准。
+子相册已改为 4:3 大封面卡片，直接子相册一次完整展示，并移除子相册的加载结束提示。用户验收后已提交、推送并经 CI 发布，线上桌面/手机与旧链接验收通过，前后台 ready。见[实现与验证记录](../delivery/child-albums.md)。本机 3102 为这次候选构建预览，3100/3101 保持原服务；没有修改图库数据，既有 `mise.lock` 改动保留不动。11-07 发布前根盘可用约 51G；其余历史服务细节仍以 11-03 检查为准。
 
 ## 代码、工具链和生产版本
 
@@ -16,14 +16,14 @@
 | upstream | `https://github.com/immich-app/immich.git` |
 | 文档整理前 HEAD | `579f33529`：上次生产验收文档提交；不是本次归档后的 HEAD |
 | 本地升级配置归档 | `abdca3c60`；交接文档在其后的独立提交归档，当前 HEAD 用 `git log -1` 核对 |
-| 生产实际应用提交 | `667d972ae31efb3a7483566ac57127c65dcde892` |
-| 生产镜像 | `ghcr.io/visiblelight/gallery@sha256:83df5aa08848a8be05b0c2fe78bf1ad1eede98b8ad17d220cfc14c788e8e86f9` |
+| 生产实际应用提交 | `6fdcefef96d5af906891ee850ec4390e76dbc96d` |
+| 生产镜像 | `ghcr.io/visiblelight/gallery@sha256:1b0391761e964fb6be9b483479cafdfb7b6803ba15ae5d4e33e7be6d8f53aa94` |
 | Immich 基线 | `v3.3.3`，源码 `d2dac658fe1c67e8bbd08aa18200a32e5d45b9e4`；生产版本接口实测 3.3.3 |
 | Gallery 数据库 | 生产迁移 18 项，`0001` 至 `0018` |
 | Node / pnpm | `24.21.0` / `11.27.1`；以后以 `mise.toml`、根 `packageManager` 为准 |
-| 最近完整功能验收 | [2026-11-01 交付记录](../delivery/capture-confirmation-reuse.md)；[CI 41263738253](https://github.com/visiblelight/immich/actions/runs/41263738253) |
+| 最近完整功能验收 | [2026-11-07 交付记录](../delivery/child-albums.md)；[CI 42383550792](https://github.com/visiblelight/immich/actions/runs/42383550792) |
 
-文档提交与应用提交不同是正常现象：本次两个归档提交均使用 `[skip ci]`，不重新构建或发布生产应用。不要仅按文件扩展名推断 CI 是否会执行，deployment/gallery 下的文档也匹配 workflow。`deployment/gallery/baseline.json` 的 Immich/toolchain 信息可参考，但 `phase`、`productionReady`、早期迁移数量等仍是历史阶段字段，**不能用来判断现在是否已上线**；本轮未修改这个受工具读取的文件。
+文档提交与应用提交不同是正常现象：11-03 两个归档提交均使用 `[skip ci]`，11-07 功能提交正常触发部署，部署后的验收文档仍用 `[skip ci]`。不要仅按文件扩展名推断 CI 是否会执行，deployment/gallery 下的文档也匹配 workflow。`deployment/gallery/baseline.json` 的 Immich/toolchain 信息可参考，但 `phase`、`productionReady`、早期迁移数量等仍是历史阶段字段，**不能用来判断现在是否已上线**；本轮未修改这个受工具读取的文件。
 
 没有在本次任务查询上游新版本，也没有升级 Immich；“当前基线”不等于“今天最新稳定版”。
 
@@ -51,6 +51,8 @@
 服务器还有 Edge、JVS、访问统计和图片检测等服务，本机还有 CVAT；它们不属于普通 Gallery 发布的重启范围。
 
 ## 最新已交付行为
+
+2026-11-07 已交付子相册大封面和一次完整展示，根相册/照片连续加载保持原行为。106 项单元测试及 29 项完整隔离数据库回归通过，线上验收见本文最新交付链接。
 
 2026-11-01 的生产版已经包含：
 

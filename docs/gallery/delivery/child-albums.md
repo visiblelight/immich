@@ -1,6 +1,6 @@
 # 子相册大封面与完整展示
 
-日期：2026-11-07。用户已验收本地效果并授权发布生产；本次应用提交将触发既有 CI，实际上线结果在发布完成后记录。
+日期：2026-11-07。用户已验收本地效果并授权发布生产；已提交、推送并完成生产验收。
 
 ## 行为
 
@@ -19,3 +19,13 @@
 - 第二轮完整 `gallery:test:db` 29 项通过，包含用户互动、拍摄时间和备份恢复；Gallery 引起的 Immich 结构漂移为 0，上游迁移及结构检查通过。隔离容器与临时测试库已由脚本清理。
 
 本机预览端口 3102，复用现有本地公开图库配置，并将进程的 `PORT`、`ORIGIN` 和 `GALLERY_PUBLIC_ORIGIN` 同步到 3102；不能只改监听端口，否则互动计数请求会被来源校验拒绝。readiness、互动数量读取均实测 200。原有 3100/3101 服务未替换。截图及验证产物留在忽略目录 `.gallery-local/child-albums/`。
+
+## 生产发布与验收
+
+- 应用提交：`6fdcefef96d5af906891ee850ec4390e76dbc96d`；[Gallery CI 42383550792](https://github.com/visiblelight/immich/actions/runs/42383550792) 的 foundation、image、deploy 全部成功。
+- 生产镜像：`ghcr.io/visiblelight/gallery@sha256:1b0391761e964fb6be9b483479cafdfb7b6803ba15ae5d4e33e7be6d8f53aa94`；服务器 current 记录与应用提交一致，public/admin 均 healthy、ready。
+- 本次只更新 public/admin；Immich server/ML、数据库和 Redis 保持原有运行状态且 healthy，没有新增数据库迁移或导入本地数据。
+- 用户反馈页面的三本直接子相册和九张直接照片，发布前后 ID 集合完全一致。普通地址、旧 `albumsPage=2`、旧游标和拍摄时间排序均返回全部子相册；页面不再包含子相册结束提示。
+- 线上浏览器实测 1440px 桌面三列，封面约 416 × 312；390px 手机两列，封面约 161 × 120，无横向溢出、无浏览器控制台错误。截图保存在本机忽略目录，未进入版本库。
+- 发布前应用为 `667d972ae31efb3a7483566ac57127c65dcde892`，镜像 `ghcr.io/visiblelight/gallery@sha256:83df5aa08848a8be05b0c2fe78bf1ad1eede98b8ad17d220cfc14c788e8e86f9`，本次 previous 记录保留该版本。回退仅需恢复旧应用，不回滚数据库。
+- 后续验收文档提交使用 `[skip ci]`，不再次部署；既有 `mise.lock` 修改未提交、未改写。
