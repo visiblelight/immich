@@ -383,6 +383,29 @@ export async function httpWorkflow(asset: string, mediaRoot: string) {
       assert.equal((await once(browserCheck, 'exit'))[0], 0, 'Browser acceptance failed');
     }
 
+    // Details show every direct child, even through an old child-page or cursor link.
+    async function moveBrowseFixture(entry: { id: string }, parent: string) {
+      const state = await current(), album = state.albums.find((a: ManagedAlbum) => a.id === entry.id);
+      await api('save', {
+        id: album.id, version: album.version, draftVersion: album.draftVersion,
+        treeVersion: state.site.treeVersion, content: { ...album.draft, parent },
+      });
+      const saved = await current(), updated = saved.albums.find((a: ManagedAlbum) => a.id === entry.id);
+      await api('publish', { id: updated.id, version: updated.version, draftVersion: updated.draftVersion, treeVersion: saved.site.treeVersion });
+    }
+    const browseFixtures = [...albumsFirst.albums, ...albumsNext.albums];
+    for (const entry of browseFixtures) await moveBrowseFixture(entry, created.id);
+    for (const legacyQuery of ['', '&albumsPage=2', `&albumAfter=${encodeURIComponent(albumsFirst.albumWindow.next)}`]) {
+      const detail = await fetch(`${origins.public}/api/browse?kind=albums&slug=${content.slug}${legacyQuery}`).then(r => r.json());
+      assert.equal(detail.albums.filter((a: {parent: string}) => a.parent === created.id).length, 26);
+      assert.deepEqual(detail.albumWindow, { page: 1, total: 26, hasMore: false, next: null });
+      assert.ok(detail.albums.every((a: {photos: unknown[]}) => a.photos.length === 0));
+      assert.equal(detail.active.photos.length, 48);
+      assert.equal(detail.photoWindow.hasMore, true);
+    }
+    // Restore the pre-existing fixture tree before unrelated module checks run.
+    for (const entry of browseFixtures) await moveBrowseFixture(entry, '');
+
     // A group spanning the old 48-photo boundary is delivered atomically, including its cover.
     const grouped = structuredClone((await version()).content);
     const groupId = randomUUID();

@@ -731,8 +731,8 @@
               子相册 <span>{stream?.albums?.total ?? children.length}</span>
               {@render albumSorting()}
             </h2>
-            <div class="children-grid" class:compact-children={active.photos.length > 0}>
-              {#each stream ? children : children.slice(albumPage * 24, (albumPage + 1) * 24) as album (album.id)}<a
+            <div class="children-grid">
+              {#each children as album (album.id)}<a
                   class="album-card"
                   id={`album-${album.id}`}
                   href={link(album)}
@@ -748,7 +748,7 @@
                   </p></a
                 >{/each}
             </div>
-            {@render albumPagination()}{/if}
+          {/if}
           <div class="photo-list-heading">
             <h2 class="section-title">
               照片 <span>{stream ? active.count : active.photos.length}</span>
@@ -2218,37 +2218,6 @@
   }
   .breadcrumbs {
     margin-bottom: 12px;
-  }
-  .compact-children {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 24px;
-  }
-  .compact-children .album-card {
-    display: grid;
-    grid-template-columns: 54px minmax(0, 1fr);
-    column-gap: 12px;
-    align-items: center;
-    padding: 8px 14px 8px 8px;
-    border: 1px solid #e4e8df;
-    border-radius: 6px;
-  }
-  .compact-children .album-cover,
-  .compact-children .empty-cover {
-    grid-row: span 2;
-    width: 54px;
-    height: 44px;
-  }
-  .compact-children h2 {
-    font-size: 14px;
-    margin: 0;
-  }
-  .compact-children p {
-    font-size: 11px;
-  }
-  .compact-children + .photo-list-heading {
-    margin-top: 0;
   }
   .section-title {
     margin-bottom: 14px;

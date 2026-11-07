@@ -219,7 +219,7 @@ export async function publicCatalog(db: Kysely<unknown>, slug?: string, search =
       return { site, albums, active, photoWindow, albumSearch: { query, matchedIds: [...matchedIds] } };
     });
 }
-/** Only one batch plus breadcrumb metadata crosses the public response boundary. */
+/** Root albums are paged; album details include all direct children and breadcrumb metadata. */
 export async function publicAlbumBrowse(db: Kysely<unknown>, options: {
   slug?: string; search?: string; sort?: string; albumPage?: number; albumAfter?: string | null; albumAnchor?: string | null;
   photoPage?: number; photoAfter?: string | null; photoId?: string | null;
@@ -229,7 +229,11 @@ export async function publicAlbumBrowse(db: Kysely<unknown>, options: {
   const candidates = catalog.albums.filter(a => !catalog.active && catalog.albumSearch.query
     ? catalog.albumSearch.matchedIds.includes(a.id) : a.parent === (catalog.active?.id ?? ''));
   const dateKey = (value?: string | null) => value ? -new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
-  const batch = browseWindow(candidates, 24, a => [dateKey(sort === 'taken' ? a.takenAt : a.updatedAt), dateKey(a.updatedAt), a.id], { page: options.albumPage, after: options.albumAfter, anchor: options.albumAnchor ? a => a.id === options.albumAnchor : undefined });
+  // Child albums are one complete list. Ignore legacy child-page cursors so old links
+  // still show every child; photos keep their independent 48-item window.
+  const batch = browseWindow(candidates, catalog.active ? Math.max(1, candidates.length) : 24,
+    a => [dateKey(sort === 'taken' ? a.takenAt : a.updatedAt), dateKey(a.updatedAt), a.id],
+    catalog.active ? {} : { page: options.albumPage, after: options.albumAfter, anchor: options.albumAnchor ? a => a.id === options.albumAnchor : undefined });
   const parents: DisplayAlbum[] = [];
   let parent = catalog.active?.parent;
   while (parent && !parents.some(a => a.id === parent)) {
